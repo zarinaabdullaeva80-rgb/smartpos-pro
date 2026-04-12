@@ -87,6 +87,7 @@ import sessionsRoutes from './routes/sessions.js';
 import alertsRoutes from './routes/alerts.js';
 import backupRoutes from './routes/backup.js';
 import organizationsRoutes from './routes/organizations.js';
+import onboardingRoutes from './routes/onboarding.js';
 import schedulerRoutes from './routes/scheduler.js';
 import deliveriesRoutes from './routes/deliveries.js';
 import contractsRoutes from './routes/contracts.js';
@@ -299,6 +300,10 @@ app.use((req, res, next) => {
 // API Logger (логирование в БД)
 app.use(apiLogger({ logAll: false }));
 
+// Organization middleware (multi-tenant)
+import { attachOrganization } from './middleware/organization.js';
+
+
 // Раздача статических файлов (изображения товаров)
 app.use('/uploads', express.static('uploads'));
 
@@ -355,6 +360,7 @@ app.use('/api/contracts', contractsRoutes);
 app.use('/api/email-campaigns', emailCampaignsRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/onboarding', onboardingRoutes);
 
 
 // Health check

@@ -142,7 +142,7 @@ router.post('/login', async (req, res) => {
         let result;
         try {
             result = await pool.query(
-                'SELECT id, username, email, password_hash, full_name, role, is_active, user_type FROM users WHERE LOWER(username) = LOWER($1)',
+                'SELECT id, username, email, password_hash, full_name, role, is_active, user_type, organization_id FROM users WHERE LOWER(username) = LOWER($1)',
                 [username]
             );
         } catch (userQueryErr) {
@@ -322,7 +322,7 @@ router.post('/login', async (req, res) => {
 
         // Генерация токена
         const token = jwt.sign(
-            { userId: user.id, username: user.username, role: primaryRole, licenseId: userLicenseId },
+            { userId: user.id, username: user.username, role: primaryRole, licenseId: userLicenseId, organization_id: user.organization_id || 1 },
             process.env.JWT_SECRET || 'your-secret-key-change-in-production',
             { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
         );
@@ -373,6 +373,7 @@ router.post('/login', async (req, res) => {
                 role: primaryRole,
                 roles: userRoles,
                 license_id: userLicenseId,
+                organization_id: user.organization_id || 1,
                 user_type: user.user_type || 'employee',
                 is_first_login: isFirstTimeLicenseLogin
             },
@@ -399,7 +400,7 @@ router.get('/me', async (req, res) => {
 
         const result = await pool.query(
             `SELECT u.id, u.username, u.email, u.full_name, u.role, u.is_active,
-                    u.user_level, u.license_id, u.shop_id, u.user_type
+                    u.user_level, u.license_id, u.shop_id, u.user_type, u.organization_id
              FROM users u
              WHERE u.id = $1 AND u.is_active = true`,
             [decoded.userId]
@@ -422,7 +423,8 @@ router.get('/me', async (req, res) => {
             user_level: user.user_level,
             license_id: user.license_id,
             shop_id: user.shop_id,
-            user_type: user.user_type
+            user_type: user.user_type,
+            organization_id: user.organization_id || 1
         });
     } catch (error) {
         res.status(401).json({ error: 'Недействительный токен' });

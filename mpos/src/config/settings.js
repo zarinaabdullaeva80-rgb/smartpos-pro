@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 // 🌐 АДРЕС СЕРВЕРА
 // ========================================================
 // Облачный сервер по умолчанию (Railway) — используется как fallback
-const DEFAULT_CLOUD_URL = 'https://smartpos-pro-production.up.railway.app';
+const DEFAULT_CLOUD_URL = 'https://smartpos-pro-production-f885.up.railway.app';
 
 // Default server URL
 const DEFAULT_SERVER_URL = `${DEFAULT_CLOUD_URL}/api`;

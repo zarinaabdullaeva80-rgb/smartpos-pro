@@ -1,13 +1,19 @@
 import pool from '../config/database.js';
 
 /**
- * Middleware для добавления организации к запросу
- * Получает organization_id из пользователя и добавляет к req
+ * Middleware: attach organization_id from JWT token to request
+ * Falls back to database lookup if not in token
  */
 export const attachOrganization = async (req, res, next) => {
     try {
+        // 1. From JWT token (fastest)
+        if (req.user && req.user.organization_id) {
+            req.organizationId = req.user.organization_id;
+            return next();
+        }
+
+        // 2. From database lookup
         if (req.user && req.user.id) {
-            // Получить organization_id из пользователя
             const result = await pool.query(
                 'SELECT organization_id FROM users WHERE id = $1',
                 [req.user.id]
@@ -16,7 +22,6 @@ export const attachOrganization = async (req, res, next) => {
             if (result.rows.length > 0 && result.rows[0].organization_id) {
                 req.organizationId = result.rows[0].organization_id;
             } else {
-                // Дефолтная организация
                 req.organizationId = 1;
             }
         } else {
@@ -24,14 +29,25 @@ export const attachOrganization = async (req, res, next) => {
         }
         next();
     } catch (error) {
-        console.error('Error attaching organization:', error);
+        console.error('Error attaching organization:', error.message);
         req.organizationId = 1;
         next();
     }
 };
 
 /**
- * Middleware для проверки лицензии
+ * Middleware: enforce organization isolation
+ * Blocks access if user has no valid organization
+ */
+export const enforceOrganization = (req, res, next) => {
+    if (!req.organizationId) {
+        return res.status(403).json({ error: 'Organization not found' });
+    }
+    next();
+};
+
+/**
+ * Middleware: check license validity
  */
 export const checkLicense = async (req, res, next) => {
     try {
@@ -40,20 +56,19 @@ export const checkLicense = async (req, res, next) => {
         const result = await pool.query(`
             SELECT o.*, l.expires_at as license_expires, l.plan, l.max_users, l.max_products
             FROM organizations o
-            LEFT JOIN licenses l ON o.id = l.organization_id
+            LEFT JOIN licenses l ON o.id = l.organization_id AND l.is_active = true
             WHERE o.id = $1 AND o.is_active = true
         `, [orgId]);
 
         if (result.rows.length === 0) {
-            return res.status(403).json({ error: 'Организация не найдена или неактивна' });
+            return res.status(403).json({ error: 'Organization not found or inactive' });
         }
 
         const org = result.rows[0];
 
-        // Проверить срок лицензии
         if (org.license_expires && new Date(org.license_expires) < new Date()) {
             return res.status(403).json({
-                error: 'Срок лицензии истёк',
+                error: 'License expired',
                 license_expired: true,
                 expires_at: org.license_expires
             });
@@ -62,9 +77,22 @@ export const checkLicense = async (req, res, next) => {
         req.organization = org;
         next();
     } catch (error) {
-        console.error('Error checking license:', error);
-        next(); // Пропускаем если ошибка проверки
+        console.error('Error checking license:', error.message);
+        next();
     }
 };
 
-export default { attachOrganization, checkLicense };
+/**
+ * Helper: build org-filtered query
+ * Usage: const { text, values } = orgQuery('SELECT * FROM products', req.organizationId, [], 'WHERE');
+ */
+export function orgQuery(baseQuery, orgId, params = [], clause = 'WHERE') {
+    const paramIndex = params.length + 1;
+    const orgFilter = `${clause} organization_id = $${paramIndex}`;
+    return {
+        text: `${baseQuery} ${orgFilter}`,
+        values: [...params, orgId]
+    };
+}
+
+export default { attachOrganization, enforceOrganization, checkLicense, orgQuery };

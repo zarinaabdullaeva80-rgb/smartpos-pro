@@ -22,7 +22,7 @@ export const authenticate = async (req, res, next) => {
         try {
             const result = await pool.query(
                 `SELECT id, username, email, full_name, role, is_active,
-                        license_id, user_level, user_type, created_by_license_id
+                        license_id, user_level, user_type, created_by_license_id, organization_id
                  FROM users WHERE id = $1 AND is_active = true`,
                 [decoded.userId]
             );
@@ -51,7 +51,8 @@ export const authenticate = async (req, res, next) => {
             user_type: userData.user_type || null,
             license_id: userData.license_id || decoded.licenseId || null,
             licenseId: userData.license_id || decoded.licenseId || null,
-            created_by_license_id: userData.created_by_license_id || null
+            created_by_license_id: userData.created_by_license_id || null,
+            organization_id: userData.organization_id || decoded.organization_id || 1
         };
         next();
     } catch (error) {
@@ -81,7 +82,7 @@ export const optionalAuthenticate = async (req, res, next) => {
         let userData = null;
         try {
             const result = await pool.query(
-                `SELECT id, username, email, full_name, role, user_level, user_type, license_id, created_by_license_id
+                `SELECT id, username, email, full_name, role, user_level, user_type, license_id, created_by_license_id, organization_id
                  FROM users WHERE id = $1 AND is_active = true`,
                 [decoded.userId]
             );
@@ -110,7 +111,8 @@ export const optionalAuthenticate = async (req, res, next) => {
             userLevel: userData.user_level || null,
             license_id: userData.license_id || decoded.licenseId || null,
             licenseId: userData.license_id || decoded.licenseId || null,
-            created_by_license_id: userData.created_by_license_id || null
+            created_by_license_id: userData.created_by_license_id || null,
+            organization_id: userData.organization_id || decoded.organization_id || 1
         };
         next();
     } catch (error) {
