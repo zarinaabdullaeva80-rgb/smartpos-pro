@@ -1,0 +1,9 @@
+.vercel
+node_modules/
+dist/
+dist-electron/
+build/
+.env
+.env.local
+.env.*.local
+*.log

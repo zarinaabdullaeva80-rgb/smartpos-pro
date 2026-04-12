@@ -1,0 +1,117 @@
+{
+    "name": "smartpos-pro",
+    "version": "4.0.0",
+    "description": "SmartPOS Pro — система учёта и продаж",
+    "author": "SmartPOS Team",
+    "private": true,
+    "main": "electron/main.js",
+    "scripts": {
+        "start": "vite",
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "electron": "electron .",
+        "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:3000 && electron .\"",
+        "electron:build": "vite build && electron-builder",
+        "pack": "electron-builder --dir",
+        "dist": "electron-builder"
+    },
+    "dependencies": {
+        "app-builder-bin": "^4.0.0",
+        "axios": "^1.6.2",
+        "date-fns": "^3.6.0",
+        "jsbarcode": "^3.12.3",
+        "jspdf": "^3.0.4",
+        "jspdf-autotable": "^5.0.7",
+        "lucide-react": "^0.294.0",
+        "qrcode": "^1.5.4",
+        "qrcode.react": "^4.2.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-qr-code": "^2.0.18",
+        "react-router-dom": "^6.20.0",
+        "react-to-print": "^3.2.0",
+        "recharts": "^2.15.4",
+        "roboto-fontface": "^0.10.0",
+        "socket.io-client": "^4.6.2",
+        "xlsx": "^0.18.5",
+        "electron-updater": "^6.1.7"
+    },
+    "devDependencies": {
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.2.43",
+        "@types/react-dom": "^18.2.17",
+        "@vitejs/plugin-react": "^4.2.1",
+        "concurrently": "^8.2.2",
+        "electron": "^28.1.0",
+        "electron-builder": "^24.9.1",
+        "jsdom": "^28.0.0",
+        "png-to-ico": "^3.0.1",
+        "sharp": "^0.34.5",
+        "vite": "^5.0.8",
+        "vitest": "^4.0.18",
+        "wait-on": "^7.2.0"
+    },
+    "build": {
+        "appId": "com.smartpos.pro",
+        "productName": "SmartPOS Pro",
+        "asar": true,
+        "asarUnpack": [
+            "dist/**/*"
+        ],
+        "directories": {
+            "output": "dist-electron"
+        },
+        "files": [
+            "dist/**/*",
+            "electron/**/*"
+        ],
+        "win": {
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ],
+            "icon": "build/icon.ico",
+            "signAndEditExecutable": false
+        },
+        "extraResources": [
+            {
+                "from": "../server",
+                "to": "server",
+                "filter": [
+                    "**/*",
+                    "!node_modules/.cache/**",
+                    "!*.log",
+                    "!.env"
+                ]
+            }
+        ],
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "smartpos-pro",
+                "repo": "smartpos-pro"
+            }
+        ],
+        "nsis": {
+            "oneClick": true,
+            "perMachine": false,
+            "createDesktopShortcut": "always",
+            "createStartMenuShortcut": true,
+            "shortcutName": "SmartPOS Pro",
+            "runAfterFinish": true,
+            "installerIcon": "build/icon.ico",
+            "uninstallerIcon": "build/icon.ico",
+            "installerHeaderIcon": "build/icon.ico",
+            "deleteAppDataOnUninstall": false
+        }
+    }
+}

@@ -1,0 +1,163 @@
+### Тестирование новых API endpoints (Фазы 6-10)
+### Используйте REST Client extension в VS Code
+
+@baseUrl = http://localhost:5000/api
+@token = YOUR_JWT_TOKEN_HERE
+
+### ============================================
+### ФАЗА 6: Settings API
+### ============================================
+
+### Получить налоговые настройки
+GET {{baseUrl}}/settings/taxes/config
+Authorization: Bearer {{token}}
+
+### Обновить налоговые настройки
+PUT {{baseUrl}}/settings/taxes/config
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "default_tax_rate": 20,
+  "tax_rates": [0, 10, 20],
+  "tax_period": "monthly"
+}
+
+### Получить настройки синхронизации
+GET {{baseUrl}}/settings/sync/config
+Authorization: Bearer {{token}}
+
+### Получить категории (с иерархией)
+GET {{baseUrl}}/categories
+Authorization: Bearer {{token}}
+
+### ============================================
+### ФАЗА 7: Analytics API
+### ============================================
+
+### График продаж
+GET {{baseUrl}}/analytics/sales-chart?startDate=2024-01-01&endDate=2024-12-31&groupBy=month
+Authorization: Bearer {{token}}
+
+### Топ товары
+GET {{baseUrl}}/analytics/top-products?limit=10&sortBy=revenue
+Authorization: Bearer {{token}}
+
+### Производительность кассиров
+GET {{baseUrl}}/analytics/cashier-performance?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}
+
+### Отчёт по складам
+GET {{baseUrl}}/analytics/warehouse-report?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}
+
+### ============================================
+### ФАЗА 8: Notifications API
+### ============================================
+
+### Получить уведомления
+GET {{baseUrl}}/notifications?limit=20
+Authorization: Bearer {{token}}
+
+### Количество непрочитанных
+GET {{baseUrl}}/notifications/unread-count
+Authorization: Bearer {{token}}
+
+### Отметить как прочитанное
+POST {{baseUrl}}/notifications/mark-read/1
+Authorization: Bearer {{token}}
+
+### Получить подписки
+GET {{baseUrl}}/notifications/subscriptions
+Authorization: Bearer {{token}}
+
+### Тестовое email уведомление
+POST {{baseUrl}}/notifications/test-email
+Authorization: Bearer {{token}}
+
+### ============================================
+### ФАЗА 9: Warehouse API
+### ============================================
+
+### Создать оприходование
+POST {{baseUrl}}/warehouse/receipt
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "warehouseId": 1,
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 100,
+      "costPrice": 1500,
+      "batchNumber": "BATCH-001"
+    }
+  ],
+  "notes": "Тестовое оприходование"
+}
+
+### Создать списание
+POST {{baseUrl}}/warehouse/write-off
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "warehouseId": 1,
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 5
+    }
+  ],
+  "reason": "Испорченный товар"
+}
+
+### Создать перемещение
+POST {{baseUrl}}/warehouse/transfer
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "warehouseFromId": 1,
+  "warehouseToId": 2,
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 10
+    }
+  ],
+  "reason": "Перемещение на другой склад"
+}
+
+### Провести документ
+POST {{baseUrl}}/warehouse/confirm/1
+Authorization: Bearer {{token}}
+
+### Получить остатки
+GET {{baseUrl}}/warehouse/stock-balance?warehouseId=1
+Authorization: Bearer {{token}}
+
+### Получить движения
+GET {{baseUrl}}/warehouse/movements?productId=1&limit=50
+Authorization: Bearer {{token}}
+
+### Получить список документов
+GET {{baseUrl}}/warehouse/documents?type=receipt&status=confirmed
+Authorization: Bearer {{token}}
+
+### ============================================
+### ФАЗА 10: Finance API
+### ============================================
+
+### Детализированный P&L
+GET {{baseUrl}}/finance/profit-loss-detailed?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}
+
+### Cash Flow
+GET {{baseUrl}}/finance/cash-flow?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}
+
+### Анализ рентабельности
+GET {{baseUrl}}/finance/profitability?startDate=2024-01-01&endDate=2024-12-31
+Authorization: Bearer {{token}}

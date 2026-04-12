@@ -1,0 +1,13 @@
+# EAS Build ignore - reduce archive size
+node_modules/
+android/
+.expo/
+*.apk
+*.aab
+*.ipa
+*.tar.gz
+.git/
+
+# Large assets not needed for build
+assets/screenshots/
+assets/videos/

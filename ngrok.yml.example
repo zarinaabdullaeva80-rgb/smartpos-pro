@@ -1,0 +1,12 @@
+# Конфигурация ngrok для SmartPOS Pro
+# Скопируйте этот файл в C:\Users\[ваш_пользователь]\.ngrok2\ngrok.yml
+
+authtoken: ВАШ_ТОКЕН_СЮДА
+version: "2"
+
+tunnels:
+  smartpos:
+    proto: http
+    addr: 5000
+    # Раскомментируйте для платного плана (постоянный домен):
+    # hostname: smartpos.ngrok.io

@@ -1,0 +1,199 @@
+/* ═══════════════════════════════════════════
+   Login — NEON (Magenta-Purple-Blue)
+   ═══════════════════════════════════════════ */
+
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: var(--spacing-md);
+    background: #0a0010;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Animated neon gradient blobs */
+.login-container::before {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(255, 0, 128, 0.35) 0%, rgba(255, 0, 128, 0.1) 30%, transparent 70%);
+    top: -200px;
+    left: -200px;
+    animation: neonFloat 8s ease-in-out infinite;
+}
+
+.login-container::after {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(123, 47, 247, 0.35) 0%, rgba(0, 102, 255, 0.15) 30%, transparent 70%);
+    bottom: -200px;
+    right: -200px;
+    animation: neonFloat 8s ease-in-out infinite reverse;
+}
+
+@keyframes neonFloat {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.6;
+    }
+    33% {
+        transform: translate(30px, -30px) scale(1.1);
+        opacity: 0.8;
+    }
+    66% {
+        transform: translate(-20px, 20px) scale(0.95);
+        opacity: 0.7;
+    }
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+    padding: var(--spacing-2xl);
+    position: relative;
+    z-index: 1;
+    animation: fadeIn 0.6s ease-out;
+    background: rgba(20, 0, 40, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(123, 47, 247, 0.25);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 0 30px rgba(255, 0, 128, 0.1), 0 0 60px rgba(123, 47, 247, 0.1);
+}
+
+/* Neon gradient top border */
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #ff0080, #7b2ff7, #0066ff, transparent);
+    border-radius: 2px;
+    box-shadow: 0 0 10px rgba(255, 0, 128, 0.5);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: var(--spacing-xl);
+}
+
+.login-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #ff0080 0%, #7b2ff7 50%, #0066ff 100%);
+    border-radius: var(--radius-xl);
+    margin-bottom: var(--spacing-lg);
+    box-shadow: 0 0 25px rgba(255, 0, 128, 0.4), 0 0 50px rgba(123, 47, 247, 0.2);
+    color: white;
+    animation: neonIconPulse 3s ease-in-out infinite;
+}
+
+@keyframes neonIconPulse {
+    0%, 100% {
+        box-shadow: 0 0 20px rgba(255, 0, 128, 0.3), 0 0 40px rgba(123, 47, 247, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 30px rgba(255, 0, 128, 0.5), 0 0 60px rgba(123, 47, 247, 0.3), 0 0 80px rgba(0, 102, 255, 0.2);
+    }
+}
+
+.login-header h1 {
+    font-size: var(--font-size-3xl);
+    font-weight: 700;
+    margin-bottom: var(--spacing-sm);
+    background: linear-gradient(135deg, #ff3399 0%, #c9b0e8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.login-header p {
+    color: #8a6aad;
+    font-size: var(--font-size-base);
+}
+
+.login-form {
+    margin-bottom: var(--spacing-lg);
+}
+
+.login-footer {
+    text-align: center;
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid rgba(123, 47, 247, 0.2);
+}
+
+.alert {
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-lg);
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.alert-danger {
+    background: rgba(255, 0, 60, 0.12);
+    color: #ff3355;
+    border: 1px solid rgba(255, 0, 60, 0.3);
+    box-shadow: 0 0 10px rgba(255, 0, 60, 0.1);
+}
+
+/* Password Toggle Styles — Neon */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.password-input-wrapper input {
+    width: 100%;
+    padding-right: 48px !important;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 0;
+    height: 100%;
+    width: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #ff3399;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    outline: none;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.password-toggle:hover {
+    color: #ff66b2;
+    background: rgba(255, 0, 128, 0.1);
+}
+
+.password-toggle:active {
+    transform: scale(0.95);
+}
+
+.password-toggle svg {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}

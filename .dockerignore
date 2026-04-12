@@ -1,0 +1,43 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm
+.yarn
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+dist-electron/
+
+# Credentials
+credentials/
+*.pem
+*.key
+*.crt
+
+# Database
+*.sql.backup
+*.dump
+
+# PM2
+.pm2/

@@ -1,0 +1,196 @@
+/* ═══════════════════════════════════════════
+   Analytics — NEON (Magenta-Purple-Blue)
+   ═══════════════════════════════════════════ */
+
+.analytics-page {
+    padding: 24px;
+    min-height: 100vh;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(5, 0, 15, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+}
+
+.loading-overlay p {
+    margin-top: 16px;
+    color: #f0e6ff;
+    font-size: 16px;
+}
+
+/* Filters — Neon */
+.analytics-filters {
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    background: rgba(20, 0, 40, 0.4);
+    border: 1px solid rgba(123, 47, 247, 0.15);
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #8a6aad;
+}
+
+.filter-group input,
+.filter-group select {
+    padding: 8px 12px;
+    border: 1px solid rgba(123, 47, 247, 0.3);
+    border-radius: 6px;
+    background: rgba(26, 0, 48, 0.8);
+    color: #f0e6ff;
+    font-size: 14px;
+}
+
+/* Sections — Neon glass */
+.analytics-section {
+    background: rgba(20, 0, 40, 0.6);
+    backdrop-filter: blur(12px);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid rgba(123, 47, 247, 0.2);
+}
+
+.analytics-section h2 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #f0e6ff;
+    background: linear-gradient(135deg, #ff0080, #7b2ff7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.analytics-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #c9b0e8;
+}
+
+/* Charts */
+.charts-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.chart-container {
+    background: rgba(10, 0, 20, 0.4);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(123, 47, 247, 0.1);
+}
+
+/* Table — Neon */
+.analytics-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.analytics-table thead {
+    background: rgba(123, 47, 247, 0.08);
+}
+
+.analytics-table th {
+    padding: 12px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    color: #ff3399;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid rgba(123, 47, 247, 0.2);
+}
+
+.analytics-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid rgba(123, 47, 247, 0.08);
+    font-size: 14px;
+    color: #f0e6ff;
+}
+
+.analytics-table tbody tr:hover {
+    background: rgba(255, 0, 128, 0.04);
+}
+
+/* Names */
+.product-name, .cashier-name {
+    font-weight: 600;
+    color: #f0e6ff;
+}
+
+.product-code, .cashier-username {
+    font-size: 12px;
+    color: #8a6aad;
+    margin-top: 2px;
+}
+
+/* Text Colors — Neon */
+.text-primary { color: #ff0080 !important; }
+.text-success { color: #00ff88 !important; }
+.text-warning { color: #ff9500 !important; }
+
+/* Badges — Neon */
+.badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.badge-success {
+    background: rgba(0, 255, 136, 0.12);
+    color: #00ff88;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+.badge-warning {
+    background: rgba(255, 149, 0, 0.12);
+    color: #ff9500;
+    border: 1px solid rgba(255, 149, 0, 0.3);
+}
+
+/* Glass — Neon */
+.glass {
+    background: rgba(20, 0, 40, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(123, 47, 247, 0.2);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .analytics-filters {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .charts-row { grid-template-columns: 1fr; }
+    .analytics-table { font-size: 13px; }
+    .analytics-table th, .analytics-table td { padding: 8px; }
+}

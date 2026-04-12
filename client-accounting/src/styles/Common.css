@@ -1,0 +1,126 @@
+/* ═══════════════════════════════════════════
+   Common — NEON Utilities
+   ═══════════════════════════════════════════ */
+
+/* Toast animations */
+@keyframes slide-in {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+}
+
+/* Loading skeleton — Neon */
+.skeleton {
+    background: linear-gradient(100deg, rgba(26, 0, 48, 0.8) 30%, rgba(123, 47, 247, 0.1) 50%, rgba(26, 0, 48, 0.8) 70%);
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.skeleton-line { height: 12px; margin-bottom: 8px; border-radius: 4px; }
+.skeleton-title { height: 20px; width: 60%; margin-bottom: 12px; border-radius: 4px; }
+.skeleton-button { height: 36px; width: 100px; border-radius: 6px; }
+
+/* Loading overlay — Neon */
+.loading-overlay {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.loading-overlay::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10, 0, 20, 0.6);
+    cursor: wait;
+}
+
+/* Table — Neon rows */
+table.striped tr:nth-child(even) {
+    background-color: rgba(123, 47, 247, 0.04);
+}
+
+table.hoverable tbody tr:hover {
+    background-color: rgba(255, 0, 128, 0.06);
+    cursor: pointer;
+}
+
+/* Checkbox — Neon */
+input[type="checkbox"] {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    accent-color: #ff0080;
+}
+
+input[type="checkbox"]:indeterminate {
+    background-color: #7b2ff7;
+}
+
+/* Selected row — Neon glow */
+tr.selected {
+    background-color: rgba(255, 0, 128, 0.1) !important;
+    box-shadow: inset 0 0 10px rgba(255, 0, 128, 0.1);
+}
+
+/* Smooth transitions */
+* {
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button, a {
+    transition: all 0.15s ease;
+}
+
+/* Focus states — Neon glow */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 2px solid #ff0080;
+    outline-offset: 2px;
+    box-shadow: 0 0 10px rgba(255, 0, 128, 0.2);
+}
+
+/* Disabled states */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Scrollbar — Neon */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0a0010; }
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(255, 0, 128, 0.5), rgba(123, 47, 247, 0.5));
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(255, 0, 128, 0.7), rgba(123, 47, 247, 0.7));
+}
+
+/* Print */
+@media print {
+    .no-print { display: none !important; }
+    body { background: white; }
+    .sidebar { display: none; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .hide-mobile { display: none; }
+}
+@media (min-width: 769px) {
+    .show-mobile-only { display: none; }
+}

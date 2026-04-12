@@ -1,0 +1,57 @@
+{
+    "_comment": "SmartPOS Pro — конфигурация клиента. Настройте под конкретного клиента и сохраните.",
+    "client_name": "Название магазина",
+    "client_id": "",
+    
+    "variants": {
+        "_comment": "Какие платформы нужны этому клиенту",
+        "windows": true,
+        "android": true,
+        "ios": false
+    },
+
+    "server": {
+        "_comment": "Режим работы: local (свой сервер), remote (удалённый), cloud (облако)",
+        "mode": "local",
+        "address": "192.168.1.100",
+        "port": 5000,
+        "remote_url": ""
+    },
+
+    "branding": {
+        "_comment": "Настройки брендинга приложения",
+        "app_name": "SmartPOS Pro",
+        "primary_color": "#6366f1",
+        "logo_path": ""
+    },
+
+    "features": {
+        "_comment": "Включение/отключение модулей",
+        "loyalty_program": true,
+        "crm": true,
+        "warehouse": true,
+        "deliveries": false,
+        "telegram_bot": false,
+        "sync_1c": false,
+        "email_campaigns": false,
+        "two_factor_auth": false
+    },
+
+    "pos": {
+        "_comment": "Настройки POS-терминалов",
+        "receipt_printer": "auto",
+        "barcode_scanner": true,
+        "cash_drawer": false,
+        "payment_terminal": false,
+        "fiscal_module": false
+    },
+
+    "import": {
+        "_comment": "Настройки импорта при миграции с другой системы",
+        "source_system": "",
+        "imported_data": [],
+        "import_date": ""
+    },
+
+    "notes": ""
+}

@@ -1,0 +1,18 @@
+{
+    "creator": {
+        "username": "Smash2206",
+        "password": "Smash.2206",
+        "email": "smash@1c-accounting.com",
+        "full_name": "Создатель системы",
+        "role": "super_admin",
+        "user_level": "super_admin"
+    },
+    "admin": {
+        "username": "admin",
+        "password": "admin",
+        "email": "admin@1c-accounting.com",
+        "full_name": "Администратор",
+        "role": "super_admin",
+        "user_level": "super_admin"
+    }
+}

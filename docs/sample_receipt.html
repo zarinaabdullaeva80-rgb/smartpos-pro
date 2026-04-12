@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>SmartPOS Pro - Образец чека</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            padding: 40px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .receipt {
+            width: 300px;
+            background: white;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            font-size: 12px;
+            line-height: 1.4;
+            color: #000;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .company-type {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .company-name {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .company-info {
+            font-size: 11px;
+            color: #333;
+        }
+
+        .divider {
+            border-top: 1px dashed #000;
+            margin: 10px 0;
+        }
+
+        .divider-bold {
+            border-top: 2px solid #000;
+            margin: 10px 0;
+        }
+
+        .row {
+            display: flex;
+            justify-content: space-between;
+            margin: 3px 0;
+        }
+
+        .row strong {
+            font-weight: bold;
+        }
+
+        .product {
+            margin-bottom: 8px;
+        }
+
+        .product-name {
+            font-weight: bold;
+        }
+
+        .product-qty {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .product-sum {
+            text-align: right;
+            font-weight: bold;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .kkm {
+            font-size: 10px;
+            text-align: center;
+            color: #666;
+            margin: 10px 0;
+        }
+
+        .qr-container {
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .qr-code {
+            width: 80px;
+            height: 80px;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 37 37"><path d="M0 0h7v1H0zM8 0h2v1H8zM13 0h2v1h-2zM17 0h1v1h-1zM19 0h2v1h-2zM22 0h1v1h-1zM25 0h1v1h-1zM27 0h3v1h-3zM30 0h7v1h-7zM0 1h1v1H0zM6 1h1v1H6zM8 1h1v1H8zM10 1h1v1h-1zM14 1h3v1h-3zM18 1h1v1h-1zM21 1h1v1h-1zM23 1h2v1h-2zM26 1h1v1h-1zM30 1h1v1h-1zM36 1h1v1h-1z" fill="%23000"/></svg>') center/contain no-repeat;
+            margin: 0 auto;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .qr-text {
+            font-size: 9px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .footer-main {
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .promo {
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            margin: 8px 0;
+        }
+
+        .timestamp {
+            font-size: 10px;
+            color: #666;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="receipt">
+        <!-- ШАПКА -->
+        <div class="header">
+            <div class="company-type">ООО</div>
+            <div class="company-name">SmartPOS Pro</div>
+            <div class="company-info">📍 г. Ташкент, ул. Амира Темура, 1</div>
+            <div class="company-info">ИНН: 123456789</div>
+            <div class="company-info">📞 +998 90 123-45-67 | 🌐 smartpos.uz</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- ИНФОРМАЦИЯ О ЧЕКЕ -->
+        <div class="row"><span><strong>Чек №:</strong></span><span>0001234</span></div>
+        <div class="row"><span><strong>Дата:</strong></span><span>03.02.2026, 12:30</span></div>
+        <div class="row"><span><strong>Смена №:</strong></span><span>15</span></div>
+        <div class="row"><span><strong>Кассир:</strong></span><span>Иванов А.А.</span></div>
+        <div class="row"><span><strong>Покупатель:</strong></span><span>Розничный</span></div>
+
+        <div class="divider"></div>
+
+        <!-- ТОВАРЫ -->
+        <div class="product">
+            <div style="display: flex; justify-content: space-between;">
+                <span class="product-name">Молоко 2.5% 1л</span>
+                <span class="product-sum">30 000</span>
+            </div>
+            <div class="product-qty">2 × 15 000 сум</div>
+        </div>
+
+        <div class="product">
+            <div style="display: flex; justify-content: space-between;">
+                <span class="product-name">Хлеб белый</span>
+                <span class="product-sum">8 000</span>
+            </div>
+            <div class="product-qty">1 × 8 000 сум</div>
+        </div>
+
+        <div class="product">
+            <div style="display: flex; justify-content: space-between;">
+                <span class="product-name">Сыр Российский 200г</span>
+                <span class="product-sum">45 000</span>
+            </div>
+            <div class="product-qty">1 × 45 000 сум</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- ИТОГИ -->
+        <div class="row"><span>Позиций:</span><span>4</span></div>
+        <div class="row"><span>Скидка:</span><span>-8 300 сум</span></div>
+        <div class="row" style="font-size: 11px;"><span>В т.ч. НДС:</span><span>7 470 сум</span></div>
+
+        <div class="divider-bold"></div>
+
+        <div class="total-row">
+            <span>ИТОГО:</span>
+            <span>74 700 сум</span>
+        </div>
+
+        <div class="divider-bold"></div>
+
+        <!-- ОПЛАТА -->
+        <div class="row"><span>Оплата:</span><span><strong>💵 Наличные</strong></span></div>
+        <div class="row"><span>Получено:</span><span>100 000 сум</span></div>
+        <div class="row"><span>Сдача:</span><span>25 300 сум</span></div>
+
+        <div class="divider"></div>
+
+        <!-- ККМ -->
+        <div class="kkm">ККМ: KKM-001234567</div>
+
+        <!-- QR-КОД -->
+        <div class="qr-container">
+            <div class="qr-code"></div>
+            <div class="qr-text">Сканируйте для проверки</div>
+        </div>
+
+        <!-- ФУТЕР -->
+        <div class="footer">
+            <div class="footer-main">Спасибо за покупку!</div>
+            <div class="timestamp">03.02.2026, 12:30:45</div>
+        </div>
+    </div>
+</body>
+
+</html>

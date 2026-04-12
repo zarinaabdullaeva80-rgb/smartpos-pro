@@ -1,0 +1,17 @@
+{
+    "name": "database-migrations",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "Database migration scripts for 1C Accounting",
+    "scripts": {
+        "migrate": "node apply-migrations.js",
+        "init": "node init-database.js",
+        "reset": "node reset-database.js",
+        "quick-init": "node quick-init.js"
+    },
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "dotenv": "^16.3.1",
+        "pg": "^8.11.3"
+    }
+}

@@ -1,0 +1,193 @@
+/* ═══════════════════════════════════════════
+   Settings — NEON
+   ═══════════════════════════════════════════ */
+
+.settings-page { padding: 2rem; }
+
+.settings-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.settings-content { max-width: 1000px; margin: 0 auto; }
+
+.settings-section {
+    background: rgba(20, 0, 40, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(123, 47, 247, 0.2);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.settings-section h2 {
+    margin: 0 0 1.5rem 0;
+    color: #f0e6ff;
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #ff0080, #7b2ff7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(123, 47, 247, 0.15);
+}
+
+.setting-item:last-child { border-bottom: none; }
+
+.setting-item label { color: #8a6aad; font-weight: 500; }
+
+.setting-value { color: #f0e6ff; font-weight: 600; }
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.badge-primary {
+    background: linear-gradient(135deg, rgba(255, 0, 128, 0.15), rgba(123, 47, 247, 0.15));
+    color: #ff3399;
+    border: 1px solid rgba(255, 0, 128, 0.3);
+}
+
+.badge-success {
+    background: rgba(0, 255, 136, 0.12);
+    color: #00ff88;
+    border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+/* Configuration */
+.current-config {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.config-info {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.config-icon-large {
+    font-size: 4rem;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ff0080, #7b2ff7);
+    border-radius: 16px;
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(255, 0, 128, 0.3);
+}
+
+.config-details { flex: 1; }
+
+.config-details h3 {
+    margin: 0 0 0.5rem 0;
+    color: #f0e6ff;
+    font-size: 1.25rem;
+}
+
+.config-category {
+    color: #ff3399;
+    font-weight: 600;
+    margin: 0 0 0.5rem 0;
+}
+
+.config-description { color: #8a6aad; margin: 0; line-height: 1.5; }
+
+.no-config { text-align: center; padding: 2rem; }
+.no-config p { color: #8a6aad; margin-bottom: 1rem; }
+
+.config-selector-modal {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(123, 47, 247, 0.2);
+}
+
+.config-selector-modal h3 { margin: 0 0 1rem 0; color: #f0e6ff; }
+
+.configs-list {
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.config-option {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(123, 47, 247, 0.2);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: rgba(20, 0, 40, 0.4);
+}
+
+.config-option:hover {
+    border-color: rgba(255, 0, 128, 0.4);
+    background: rgba(255, 0, 128, 0.05);
+    transform: translateX(5px);
+}
+
+.config-option.active {
+    border-color: #ff0080;
+    background: linear-gradient(135deg, rgba(255, 0, 128, 0.1), rgba(123, 47, 247, 0.1));
+    box-shadow: 0 0 15px rgba(255, 0, 128, 0.15);
+}
+
+.config-option-icon {
+    font-size: 2rem;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ff0080, #7b2ff7);
+    border-radius: 12px;
+    flex-shrink: 0;
+    box-shadow: 0 0 10px rgba(255, 0, 128, 0.2);
+}
+
+.config-option-info { flex: 1; }
+.config-option-info h4 { margin: 0 0 0.25rem 0; color: #f0e6ff; font-size: 1rem; }
+.config-option-info p { margin: 0; color: #8a6aad; font-size: 0.875rem; }
+
+/* Scrollbar — Neon */
+.configs-list::-webkit-scrollbar { width: 8px; }
+.configs-list::-webkit-scrollbar-track { background: rgba(10, 0, 20, 0.5); }
+.configs-list::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(255, 0, 128, 0.4), rgba(123, 47, 247, 0.4));
+    border-radius: 4px;
+}
+.configs-list::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(255, 0, 128, 0.6), rgba(123, 47, 247, 0.6));
+}
+
+@media (max-width: 768px) {
+    .settings-page { padding: 1rem; }
+    .settings-section { padding: 1.5rem; }
+    .config-info { flex-direction: column; text-align: center; }
+    .config-icon-large { margin: 0 auto; }
+    .setting-item { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+}

@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "SmartPOS Pro Mobile",
+    "slug": "1c-pos",
+    "version": "4.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "sdkVersion": "54.0.0",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.company.accountingpos",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Используется для быстрого входа и подтверждения продаж",
+        "NSCameraUsageDescription": "Используется для сканирования штрихкодов",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.company.accounting_pos",
+      "versionCode": 40,
+      "permissions": [
+        "CAMERA",
+        "INTERNET",
+        "VIBRATE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "ACCESS_NETWORK_STATE",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_SCAN",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "SmartPOS Pro Mobile",
+      "shortName": "SmartPOS",
+      "description": "Мобильная POS-система для бизнеса",
+      "backgroundColor": "#0f172a",
+      "themeColor": "#6366f1"
+    },
+    "plugins": [
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Используется для быстрого входа"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Используется для сканирования штрихкодов"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8e7f619e-c011-46da-b80c-e0f2be78c306"
+      }
+    }
+  }
+}
