@@ -4,7 +4,5 @@ buildCommand = "cd server && npm install --production"
 
 [deploy]
 startCommand = "cd server && node src/index.js"
-healthcheckPath = "/api/health"
-healthcheckTimeout = 30
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 5
+restartPolicyMaxRetries = 3
