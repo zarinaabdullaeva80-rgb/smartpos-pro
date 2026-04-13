@@ -137,64 +137,52 @@ function Products() {
         }
     };
 
-    // Validate imported product row
+    // Validate imported product row — только Наименование обязательно, Код авто-генерируется
     const validateProductRow = (row, index) => {
-        // Check required fields
-        if (!row['Код'] || !row['Наименование']) {
+        // Наименование обязательно (поддерживаем разные варианты названия колонки)
+        const name = row['Наименование'] || row['Название'] || row['Товар'] || row['name'] || row['Name'];
+        if (!name || !String(name).trim()) {
             return {
                 valid: false,
-                error: 'Обязательные поля: Код, Наименование'
+                error: 'Обязательное поле: Наименование'
             };
         }
-
-        // Validate numeric fields
-        const numericFields = ['Цена закупки', 'Цена продажи', 'Цена розница', 'Остатки'];
-        for (const field of numericFields) {
-            if (row[field] && isNaN(parseFloat(row[field]))) {
-                return {
-                    valid: false,
-                    error: `${field}: должно быть числом`
-                };
-            }
-        }
-
         return { valid: true };
     };
 
-    // Handle product import from Excel
+    // Handle product import from Excel — через серверный авто-маппинг
     const handleImportProducts = async (importedData) => {
         try {
-            let successCount = 0;
-            let errorCount = 0;
+            // Формируем файл для отправки через FormData
+            // Используем endpoint /api/import/products/auto который сам маппит колонки
+            const XLSX = await import('xlsx');
+            const ws = XLSX.utils.json_to_sheet(importedData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+            const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const file = new File([blob], 'import.xlsx', { type: blob.type });
 
-            for (const row of importedData) {
-                try {
-                    const productData = {
-                        code: row['Код'] || '',
-                        name: row['Наименование'] || '',
-                        unit: row['Ед. изм.'] || 'шт',
-                        pricePurchase: parseFloat(row['Цена закупки']) || 0,
-                        priceSale: parseFloat(row['Цена продажи']) || 0,
-                        priceRetail: parseFloat(row['Цена розница']) || 0,
-                        quantity: parseInt(row['Остатки']) || 0,
-                        barcode: row['Штрих код'] || '',
-                        vatRate: parseFloat(row['НДС %']) || 12,
-                        description: row['Описание'] || ''
-                    };
+            const formData = new FormData();
+            formData.append('file', file);
 
-                    await productsAPI.create(productData);
-                    successCount++;
-                } catch (error) {
-                    console.error(`Failed to import row:`, row, error);
-                    errorCount++;
-                }
-            }
+            const token = localStorage.getItem('token');
+            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+            const response = await fetch(`${API_BASE}/import/products/auto`, {
+                method: 'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body: formData,
+            });
 
-            handleSuccess(`Импортировано ${successCount} товаров${errorCount > 0 ? `, ошибок: ${errorCount}` : ''}`);
+            const result = await response.json();
+
+            if (!response.ok) throw new Error(result.error || 'Ошибка импорта');
+
+            handleSuccess(`Импортировано: ${result.imported} | Обновлено: ${result.updated}${result.errorsCount > 0 ? ` | Ошибок: ${result.errorsCount}` : ''}`);
             setRefreshTrigger(prev => prev + 1);
         } catch (error) {
             console.error('Import error:', error);
-            handleError('Ошибка импорта товаров');
+            handleError('Ошибка импорта: ' + error.message);
         }
     };
 
