@@ -32,7 +32,7 @@ function generateLicenseKey() {
 router.post('/register', async (req, res) => {
     const client = await pool.connect();
     try {
-        const { license_key, company_name, admin_username, admin_password, admin_full_name } = req.body;
+        const { license_key, company_name, admin_username, admin_password, admin_full_name, admin_email } = req.body;
 
         if (!license_key || !company_name || !admin_username || !admin_password) {
             return res.status(400).json({ 
@@ -81,13 +81,14 @@ router.post('/register', async (req, res) => {
             [company_name, org.id]
         );
 
-        // Create admin user
+        // Create admin user (auto-generate email if not provided)
+        const email = admin_email || `${admin_username}@${company_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'org'}.smartpos.local`;
         const hashedPassword = await bcrypt.hash(admin_password, 10);
         const userResult = await client.query(
-            `INSERT INTO users (username, password_hash, role, full_name, organization_id, is_active, created_at)
-             VALUES ($1, $2, $3, $4, $5, true, CURRENT_TIMESTAMP)
-             RETURNING id, username, role, full_name, organization_id`,
-            [admin_username, hashedPassword, ADMIN_ROLE, admin_full_name || admin_username, org.id]
+            `INSERT INTO users (username, email, password_hash, role, full_name, organization_id, is_active, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP)
+             RETURNING id, username, email, role, full_name, organization_id`,
+            [admin_username, email, hashedPassword, ADMIN_ROLE, admin_full_name || admin_username, org.id]
         );
 
         const user = userResult.rows[0];

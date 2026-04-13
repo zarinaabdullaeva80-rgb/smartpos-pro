@@ -6,6 +6,13 @@ import { updateStockBalance } from '../utils/stockBalance.js';
 const router = express.Router();
 
 /**
+ * Helper: get organization_id for multi-tenant filtering
+ */
+function getOrgId(req) {
+    return req.user?.organization_id || req.organizationId || null;
+}
+
+/**
  * @swagger
  * /api/sales:
  *   get:
@@ -84,7 +91,7 @@ router.get('/', authenticate, async (req, res) => {
     try {
         const { status, dateFrom, dateTo, counterpartyId } = req.query;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = getOrgId(req);
         let query = `
       SELECT s.*, u.full_name as user_name, w.name as warehouse_name
       FROM sales s
@@ -95,9 +102,9 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND s.license_id = $${paramCount}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND s.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -165,7 +172,7 @@ router.get('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = getOrgId(req);
         let saleQuery = `
              SELECT s.*, w.name as warehouse_name, u.full_name as user_name
              FROM sales s
@@ -175,9 +182,9 @@ router.get('/:id', authenticate, async (req, res) => {
         `;
         const queryParams = [id];
 
-        if (userLicenseId) {
-            saleQuery += ' AND s.license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            saleQuery += ' AND s.organization_id = $2';
+            queryParams.push(orgId);
         }
 
         const saleResult = await pool.query(saleQuery, queryParams);
@@ -218,13 +225,13 @@ router.patch('/:id/status', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Недопустимый статус' });
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = getOrgId(req);
         let query = 'UPDATE sales SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2';
         const params = [status, id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -267,6 +274,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         let totalAmount = 0;
         let vatAmount = 0;
 
+        const orgId = getOrgId(req);
         const userLicenseId = req.user?.license_id;
 
         // Получить цены из БД для товаров без цены
@@ -274,9 +282,9 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             if (!item.price || isNaN(item.price)) {
                 let pQuery = 'SELECT price FROM products WHERE id = $1';
                 const pParams = [item.productId];
-                if (userLicenseId) {
-                    pQuery += ' AND license_id = $2';
-                    pParams.push(userLicenseId);
+                if (orgId) {
+                    pQuery += ' AND organization_id = $2';
+                    pParams.push(orgId);
                 }
                 const productResult = await client.query(pQuery, pParams);
                 if (productResult.rows.length > 0) {
@@ -330,9 +338,9 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             try {
                 let whQuery = 'SELECT id FROM warehouses';
                 const whParams = [];
-                if (userLicenseId) {
-                    whQuery += ' WHERE license_id = $1';
-                    whParams.push(userLicenseId);
+                if (orgId) {
+                    whQuery += ' WHERE organization_id = $1';
+                    whParams.push(orgId);
                 }
                 whQuery += ' ORDER BY id LIMIT 1';
                 const whResult = await client.query(whQuery, whParams);
@@ -348,11 +356,11 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         // Создание документа продажи
         const saleResult = await client.query(
             `INSERT INTO sales (document_number, document_date, customer_id, warehouse_id, 
-        total_amount, discount_percent, discount_amount, final_amount, user_id, notes, status, payment_type, license_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        total_amount, discount_percent, discount_amount, final_amount, user_id, notes, status, payment_type, license_id, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
             [documentNumber, documentDate, counterpartyId || null, finalWarehouseId, totalAmount,
-                discountPercent || 0, discountAmount, finalAmount, req.user.id, notes, status, 'cash', userLicenseId]
+                discountPercent || 0, discountAmount, finalAmount, req.user.id, notes, status, 'cash', userLicenseId, orgId || 1]
         );
 
         const sale = saleResult.rows[0];
@@ -400,9 +408,9 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                     // quantity хранится ПОЛОЖИТЕЛЬНОЙ — GET products query использует CASE для 'sale' → -im.quantity
                     if (finalWarehouseId) {
                         await client.query(
-                            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id)
-                     VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7)`,
-                            [item.productId, finalWarehouseId, sale.id, item.quantity, item.price, req.user.id, userLicenseId]
+                            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id, organization_id)
+                     VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7, $8)`,
+                            [item.productId, finalWarehouseId, sale.id, item.quantity, item.price, req.user.id, userLicenseId, orgId || 1]
                         );
                         // Обновить stock_balances (продажа = списание)
                         await updateStockBalance(client, item.productId, finalWarehouseId, -item.quantity);
@@ -510,14 +518,15 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
 
         const saleId = req.params.id;
 
+        const orgId = getOrgId(req);
         const userLicenseId = req.user?.license_id;
 
         // Проверка статуса
         let checkQuery = 'SELECT status FROM sales WHERE id = $1';
         const checkParams = [saleId];
-        if (userLicenseId) {
-            checkQuery += ' AND license_id = $2';
-            checkParams.push(userLicenseId);
+        if (orgId) {
+            checkQuery += ' AND organization_id = $2';
+            checkParams.push(orgId);
         }
         const checkResult = await client.query(checkQuery, checkParams);
         if (checkResult.rows.length === 0) {
@@ -591,14 +600,15 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
 
         const saleId = req.params.id;
 
+        const orgId = getOrgId(req);
         const userLicenseId = req.user?.license_id;
 
         // Получение данных продажи
         let saleQuery = 'SELECT * FROM sales WHERE id = $1';
         const queryParams = [saleId];
-        if (userLicenseId) {
-            saleQuery += ' AND license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            saleQuery += ' AND organization_id = $2';
+            queryParams.push(orgId);
         }
         const saleResult = await client.query(saleQuery, queryParams);
         if (saleResult.rows.length === 0) {
@@ -611,9 +621,9 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
             throw new Error('Продажа уже проведена');
         }
 
-        // Ensure warehouse belongs to the same license if it exists
-        if (sale.warehouse_id && userLicenseId) {
-            const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [sale.warehouse_id, userLicenseId]);
+        // Ensure warehouse belongs to the same organization if it exists
+        if (sale.warehouse_id && orgId) {
+            const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [sale.warehouse_id, orgId]);
             if (whCheck.rows.length === 0) {
                 throw new Error('Склад не принадлежит вашей организации');
             }
@@ -626,9 +636,9 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
         for (const item of itemsResult.rows) {
             // quantity ПОЛОЖИТЕЛЬНАЯ — GET products query делает -im.quantity для 'sale'
             await client.query(
-                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id)
-         VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7)`,
-                [item.product_id, sale.warehouse_id, saleId, item.quantity, item.price, req.user.id, userLicenseId]
+                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id, organization_id)
+         VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7, $8)`,
+                [item.product_id, sale.warehouse_id, saleId, item.quantity, item.price, req.user.id, userLicenseId, orgId || 1]
             );
             // Обновить stock_balances (продажа = списание)
             await updateStockBalance(client, item.product_id, sale.warehouse_id, -item.quantity);
@@ -668,14 +678,14 @@ router.delete('/:id', authenticate, authorize('Администратор', 'П�
 
         const saleId = req.params.id;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = getOrgId(req);
 
         // Проверка статуса
         let saleQuery = 'SELECT status FROM sales WHERE id = $1';
         const queryParams = [saleId];
-        if (userLicenseId) {
-            saleQuery += ' AND license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            saleQuery += ' AND organization_id = $2';
+            queryParams.push(orgId);
         }
         const saleResult = await client.query(saleQuery, queryParams);
         if (saleResult.rows.length === 0) {

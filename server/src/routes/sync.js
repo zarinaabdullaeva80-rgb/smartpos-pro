@@ -273,6 +273,7 @@ router.post('/sync-statistics', async (req, res) => {
 router.get('/products/delta', authenticate, async (req, res) => {
     try {
         const { since } = req.query;
+        const orgId = req.user?.organization_id || 1;
         let query, params;
 
         const baseQuery = `
@@ -288,22 +289,22 @@ router.get('/products/delta', authenticate, async (req, res) => {
 
         if (since) {
             query = baseQuery + `
-                WHERE p.updated_at > $1
+                WHERE p.updated_at > $1 AND p.organization_id = $2
                 GROUP BY p.id, p.name, p.barcode, p.code, p.price_sale, p.price_purchase,
                          p.category_id, pc.name, p.unit, p.description, p.image_url,
                          p.is_active, p.min_stock, p.updated_at
                 ORDER BY p.updated_at DESC
             `;
-            params = [since];
+            params = [since, orgId];
         } else {
             query = baseQuery + `
-                WHERE p.is_active = true
+                WHERE p.is_active = true AND p.organization_id = $1
                 GROUP BY p.id, p.name, p.barcode, p.code, p.price_sale, p.price_purchase,
                          p.category_id, pc.name, p.unit, p.description, p.image_url,
                          p.is_active, p.min_stock, p.updated_at
                 ORDER BY p.updated_at DESC
             `;
-            params = [];
+            params = [orgId];
         }
 
         const result = await pool.query(query, params);
@@ -326,6 +327,7 @@ router.get('/products/delta', authenticate, async (req, res) => {
 router.get('/inventory/delta', authenticate, async (req, res) => {
     try {
         const { since } = req.query;
+        const orgId = req.user?.organization_id || 1;
         let query, params;
 
         const invBase = `
@@ -338,18 +340,18 @@ router.get('/inventory/delta', authenticate, async (req, res) => {
 
         if (since) {
             query = invBase + `
-                WHERE p.updated_at > $1
+                WHERE p.updated_at > $1 AND p.organization_id = $2
                 GROUP BY p.id, p.name, p.barcode, p.min_stock, p.updated_at
                 ORDER BY p.updated_at DESC
             `;
-            params = [since];
+            params = [since, orgId];
         } else {
             query = invBase + `
-                WHERE p.is_active = true
+                WHERE p.is_active = true AND p.organization_id = $1
                 GROUP BY p.id, p.name, p.barcode, p.min_stock, p.updated_at
                 ORDER BY p.name
             `;
-            params = [];
+            params = [orgId];
         }
 
         const result = await pool.query(query, params);

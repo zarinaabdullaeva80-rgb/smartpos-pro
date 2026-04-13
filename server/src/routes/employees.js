@@ -7,6 +7,13 @@ import { syncEmployeeCreate, syncEmployeeUpdate, syncEmployeeDelete } from '../s
 const router = express.Router();
 
 /**
+ * Helper: get organization_id for multi-tenant filtering
+ */
+function getOrgId(req) {
+    return req.user?.organization_id || req.organizationId || null;
+}
+
+/**
  * Middleware: Only client_admin can manage employees
  */
 const requireClientAdmin = async (req, res, next) => {
@@ -51,9 +58,10 @@ router.get('/', authenticate, requireClientAdmin, async (req, res) => {
             SELECT u.id, u.username, u.email, u.full_name, u.phone, u.is_active, 
                    u.last_login, u.created_at, u.role, u.user_type
             FROM users u
-            WHERE u.created_by_license_id = $1
+            WHERE u.organization_id = $1
         `;
-        const params = [req.user.license_id];
+        const orgId = getOrgId(req);
+        const params = [orgId || req.user.license_id];
         let paramCount = 1;
 
         if (search) {
@@ -131,11 +139,12 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         const passwordHash = await bcrypt.hash(password, 10);
 
         // Create employee
+        const orgId = getOrgId(req);
         const result = await pool.query(
-            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, license_id, created_by_license_id)
-             VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7)
+            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, license_id, created_by_license_id, organization_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7, $8)
              RETURNING id, username, email, full_name, phone, role, is_active, created_at`,
-            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.license_id]
+            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.license_id, orgId || 1]
         );
 
 
@@ -174,10 +183,11 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         const { id } = req.params;
         const { email, fullName, phone, role, isActive, newPassword } = req.body;
 
-        // Verify employee belongs to this license
+        // Verify employee belongs to this organization
+        const orgId = getOrgId(req);
         const check = await pool.query(
-            'SELECT id FROM users WHERE id = $1 AND created_by_license_id = $2',
-            [id, req.user.license_id]
+            'SELECT id FROM users WHERE id = $1 AND organization_id = $2',
+            [id, orgId || req.user.license_id]
         );
 
         if (check.rows.length === 0) {
@@ -197,8 +207,8 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         }
 
         paramCount++;
-        query += ` WHERE id = $${paramCount} AND created_by_license_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
-        params.push(id, req.user.license_id);
+        query += ` WHERE id = $${paramCount} AND organization_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
+        params.push(id, orgId || req.user.license_id);
 
         const result = await pool.query(query, params);
 
@@ -229,10 +239,11 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Verify employee belongs to this license
+        // Verify employee belongs to this organization
+        const orgId = getOrgId(req);
         const check = await pool.query(
-            'SELECT id, username FROM users WHERE id = $1 AND created_by_license_id = $2',
-            [id, req.user.license_id]
+            'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
+            [id, orgId || req.user.license_id]
         );
 
         if (check.rows.length === 0) {
@@ -264,10 +275,11 @@ router.post('/:id/reset-password', authenticate, requireClientAdmin, async (req,
     try {
         const { id } = req.params;
 
-        // Verify employee belongs to this license
+        // Verify employee belongs to this organization
+        const orgId = getOrgId(req);
         const check = await pool.query(
-            'SELECT id, username FROM users WHERE id = $1 AND created_by_license_id = $2',
-            [id, req.user.license_id]
+            'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
+            [id, orgId || req.user.license_id]
         );
 
         if (check.rows.length === 0) {

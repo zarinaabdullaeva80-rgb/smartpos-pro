@@ -34,6 +34,14 @@ const upload = multer({
 const router = express.Router();
 
 /**
+ * Helper: get organization_id for multi-tenant filtering
+ * Falls back to license_id for backward compatibility
+ */
+function getOrgId(req) {
+    return req.user?.organization_id || req.organizationId || null;
+}
+
+/**
  * @swagger
  * /api/products:
  *   get:
@@ -75,7 +83,7 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
     try {
         const { category, search, active } = req.query;
-        const userLicenseId = req.user.license_id; // From JWT token
+        const orgId = getOrgId(req);
 
         let query = `
       SELECT p.id, p.code, p.name, p.category_id, p.unit, 
@@ -96,25 +104,10 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        // Multi-tenant filtering: license holders only see their own products
-        if (userLicenseId) {
-            query = `
-              SELECT p.id, p.code, p.name, p.category_id, p.unit, 
-                     p.price_purchase, p.price_sale, p.price_retail, 
-                     p.vat_rate, p.description, p.barcode, p.image_url, 
-                     p.is_active, p.license_id, p.created_at, p.updated_at,
-                     pc.name as category_name,
-                     COALESCE((
-                       SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
-                                      WHEN im.document_type IN ('sale','write_off','transfer_out') THEN -im.quantity
-                                      ELSE im.quantity END)
-                       FROM inventory_movements im WHERE im.product_id = p.id
-                     ), 0) AS quantity
-              FROM products p
-              LEFT JOIN product_categories pc ON p.category_id = pc.id
-              WHERE p.is_active = true AND (p.license_id = $${paramCount} OR p.license_id IS NULL)
-            `;
-            params.push(userLicenseId);
+        // Multi-tenant filtering by organization_id
+        if (orgId) {
+            query += ` AND p.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -177,7 +170,7 @@ router.get('/', authenticate, async (req, res) => {
 // Получение всех товаров с остатками (MUST be before /:id to prevent Express /:id match)
 router.get('/stock/all', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         const { search, category } = req.query;
 
         let query = `
@@ -192,9 +185,9 @@ router.get('/stock/all', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND (p.license_id = $${paramCount} OR p.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND p.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -223,15 +216,15 @@ router.get('/stock/all', authenticate, async (req, res) => {
 // Получение товара по ID
 router.get('/:id', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = `SELECT p.*, pc.name as category_name
        FROM products p
        LEFT JOIN product_categories pc ON p.category_id = pc.id
        WHERE p.id = $1`;
         const params = [req.params.id];
-        if (userLicenseId) {
-            query += ' AND p.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND p.organization_id = $2';
+            params.push(orgId);
         }
         const result = await pool.query(query, params);
 
@@ -254,39 +247,45 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             vatRate, description, barcode, imageUrl, quantity
         } = req.body;
 
-        // Get license_id from authenticated user
+        const orgId = getOrgId(req);
         const licenseId = req.user.license_id || null;
 
-        // Check if product with this code already exists
-        const existingProduct = await pool.query(
-            'SELECT id FROM products WHERE code = $1',
-            [code]
-        );
+        // Check if product with this code already exists (within org scope)
+        let existQuery = 'SELECT id FROM products WHERE code = $1';
+        const existParams = [code];
+        if (orgId) {
+            existQuery += ' AND organization_id = $2';
+            existParams.push(orgId);
+        }
+        const existingProduct = await pool.query(existQuery, existParams);
 
         let result;
         let action;
 
         if (existingProduct.rows.length > 0) {
             // Update existing product
-            result = await pool.query(
-                `UPDATE products SET 
+            let updateQuery = `UPDATE products SET 
                     name = $1, category_id = $2, unit = $3, price_purchase = $4, 
                     price_sale = $5, price_retail = $6, vat_rate = $7, 
                     description = $8, barcode = $9, image_url = $10, 
                     license_id = COALESCE($11, license_id),
                     updated_at = CURRENT_TIMESTAMP
-                WHERE code = $12
-                RETURNING *`,
-                [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, code]
-            );
+                WHERE code = $12`;
+            const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, code];
+            if (orgId) {
+                updateQuery += ' AND organization_id = $13';
+                updateParams.push(orgId);
+            }
+            updateQuery += ' RETURNING *';
+            result = await pool.query(updateQuery, updateParams);
             action = 'UPDATE';
         } else {
             // Create new product
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, license_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, license_id, organization_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING *`,
-                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId]
+                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, orgId || 1]
             );
             action = 'CREATE';
         }
@@ -299,16 +298,16 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             let warehouseId = 1;
             try {
                 const wh = await pool.query(
-                    'SELECT id FROM warehouses WHERE is_active = true' + (licenseId ? ' AND license_id = $1' : '') + ' LIMIT 1',
-                    licenseId ? [licenseId] : []
+                    'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
+                    orgId ? [orgId] : []
                 );
                 if (wh.rows.length > 0) warehouseId = wh.rows[0].id;
             } catch (e) { /* use default */ }
 
             await pool.query(
-                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id)
-                 VALUES ($1, $2, 'receipt', $3, $4, $5)`,
-                [productId, warehouseId, initialQuantity, req.user.id, licenseId]
+                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, organization_id)
+                 VALUES ($1, $2, 'receipt', $3, $4, $5, $6)`,
+                [productId, warehouseId, initialQuantity, req.user.id, licenseId, orgId || 1]
             );
         }
 
@@ -339,7 +338,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
 
         const oldData = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let updateQuery = `UPDATE products SET
         code = $1, name = $2, category_id = $3, unit = $4, price_purchase = $5,
         price_sale = $6, price_retail = $7, vat_rate = $8, description = $9,
@@ -347,9 +346,9 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
        WHERE id = $13`;
         const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, isActive, id];
 
-        if (userLicenseId) {
-            updateQuery += ' AND license_id = $14';
-            updateParams.push(userLicenseId);
+        if (orgId) {
+            updateQuery += ' AND organization_id = $14';
+            updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
 
@@ -377,12 +376,12 @@ router.delete('/:id', authenticate, authorize('Администратор'), asy
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = 'UPDATE products SET is_active = false WHERE id = $1';
         const params = [id];
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
         query += ' RETURNING *';
         const result = await pool.query(query, params);
@@ -409,7 +408,7 @@ router.get('/:id/inventory', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = `SELECT 
         w.id as warehouse_id,
         w.name as warehouse_name,
@@ -418,9 +417,9 @@ router.get('/:id/inventory', authenticate, async (req, res) => {
        LEFT JOIN inventory_movements im ON w.id = im.warehouse_id AND im.product_id = $1
        WHERE w.is_active = true`;
         const params = [id];
-        if (userLicenseId) {
-            query += ' AND w.license_id = $2 AND im.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND w.organization_id = $2';
+            params.push(orgId);
         }
         query += ' GROUP BY w.id, w.name ORDER BY w.name';
 
@@ -475,12 +474,13 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
             return res.status(400).json({ error: 'Количество должно быть больше 0' });
         }
 
+        const orgId = getOrgId(req);
         const userLicenseId = req.user.license_id;
 
-        // Verify product belongs to user's license
+        // Verify product belongs to user's organization
         const product = await pool.query(
-            'SELECT id FROM products WHERE id = $1' + (userLicenseId ? ' AND license_id = $2' : ''),
-            userLicenseId ? [id, userLicenseId] : [id]
+            'SELECT id FROM products WHERE id = $1' + (orgId ? ' AND organization_id = $2' : ''),
+            orgId ? [id, orgId] : [id]
         );
 
         if (product.rows.length === 0) {
@@ -494,22 +494,22 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
         let whId = warehouse_id;
         if (!whId) {
             const wh = await pool.query(
-                'SELECT id FROM warehouses WHERE is_active = true' + (userLicenseId ? ' AND license_id = $1' : '') + ' LIMIT 1',
-                userLicenseId ? [userLicenseId] : []
+                'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
+                orgId ? [orgId] : []
             );
             whId = wh.rows[0]?.id || 1;
         }
 
         await pool.query(
-            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [id, whId, type || 'adjustment', actualQuantity, req.user.id, userLicenseId]
+            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, organization_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [id, whId, type || 'adjustment', actualQuantity, req.user.id, userLicenseId, orgId || 1]
         );
 
         // Get updated stock
         const stock = await pool.query(
-            'SELECT COALESCE(SUM(quantity), 0) as total_stock FROM inventory_movements WHERE product_id = $1' + (userLicenseId ? ' AND license_id = $2' : ''),
-            userLicenseId ? [id, userLicenseId] : [id]
+            'SELECT COALESCE(SUM(quantity), 0) as total_stock FROM inventory_movements WHERE product_id = $1' + (orgId ? ' AND organization_id = $2' : ''),
+            orgId ? [id, orgId] : [id]
         );
 
         await logAudit(req.user.id, 'STOCK_' + (type || 'adjustment').toUpperCase(), 'products', id, null, { quantity: actualQuantity, type, reason }, req.ip);

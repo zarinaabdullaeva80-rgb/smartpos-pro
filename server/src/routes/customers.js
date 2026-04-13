@@ -4,12 +4,19 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
+/**
+ * Helper: get organization_id for multi-tenant filtering
+ */
+function getOrgId(req) {
+    return req.user?.organization_id || req.organizationId || null;
+}
+
 // Получить всех клиентов
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const { search, limit = 100 } = req.query;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
 
         let query = `
             SELECT id, name, phone, email, discount, loyalty_points, notes, card_number, created_at
@@ -19,9 +26,9 @@ router.get('/', authenticateToken, async (req, res) => {
         const params = [];
         let paramIndex = 1;
 
-        if (userLicenseId) {
-            query += ` AND (license_id = $${paramIndex++} OR license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND organization_id = $${paramIndex++}`;
+            params.push(orgId);
         }
 
         if (search) {
@@ -49,13 +56,13 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = 'SELECT * FROM customers WHERE id = $1';
         const params = [id];
 
-        if (userLicenseId) {
-            query += ' AND (license_id = $2 OR license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);
@@ -96,7 +103,7 @@ router.post('/', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Имя обязательно' });
         }
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
 
         // Получить welcome_bonus из настроек лояльности
         let welcomeBonus = parseInt(loyalty_points) || 0;
@@ -108,10 +115,10 @@ router.post('/', authenticateToken, async (req, res) => {
         } catch (e) { /* таблица может не существовать */ }
 
         const result = await pool.query(
-            `INSERT INTO customers (name, phone, email, discount, loyalty_points, notes, license_id)
+            `INSERT INTO customers (name, phone, email, discount, loyalty_points, notes, organization_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *`,
-            [name, phone || null, email || null, parseFloat(discount) || 0, welcomeBonus, notes || null, userLicenseId]
+            [name, phone || null, email || null, parseFloat(discount) || 0, welcomeBonus, notes || null, orgId || 1]
         );
 
         const customer = result.rows[0];
@@ -151,7 +158,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         const { id } = req.params;
         const { name, phone, email, discount, notes } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
 
         let updateQuery = `UPDATE customers 
              SET name = COALESCE($1, name),
@@ -163,9 +170,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
              WHERE id = $6`;
         const updateParams = [name, phone, email, discount !== undefined ? parseFloat(discount) : null, notes, id];
 
-        if (userLicenseId) {
-            updateQuery += ' AND license_id = $7';
-            updateParams.push(userLicenseId);
+        if (orgId) {
+            updateQuery += ' AND organization_id = $7';
+            updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
 
@@ -191,13 +198,13 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let deleteQuery = 'DELETE FROM customers WHERE id = $1';
         const deleteParams = [id];
 
-        if (userLicenseId) {
-            deleteQuery += ' AND license_id = $2';
-            deleteParams.push(userLicenseId);
+        if (orgId) {
+            deleteQuery += ' AND organization_id = $2';
+            deleteParams.push(orgId);
         }
         deleteQuery += ' RETURNING id';
 
@@ -218,13 +225,13 @@ router.delete('/:id', authenticateToken, async (req, res) => {
 router.get('/:id/loyalty', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = 'SELECT loyalty_points FROM customers WHERE id = $1';
         const params = [id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);
@@ -249,15 +256,15 @@ router.post('/:id/loyalty/add', authenticateToken, async (req, res) => {
         const { id } = req.params;
         const { points } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = `UPDATE customers 
              SET loyalty_points = COALESCE(loyalty_points, 0) + $1
              WHERE id = $2`;
         const params = [parseInt(points) || 0, id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
         }
         query += ' RETURNING loyalty_points';
 

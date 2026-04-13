@@ -4,6 +4,13 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
+/**
+ * Helper: get organization_id for multi-tenant filtering
+ */
+function getOrgId(req) {
+    return req.user?.organization_id || req.organizationId || null;
+}
+
 // Получение всех категорий товаров с иерархией
 router.get('/', authenticate, async (req, res) => {
     try {
@@ -19,10 +26,10 @@ router.get('/', authenticate, async (req, res) => {
             LEFT JOIN products p ON p.category_id = c.id
         `;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
 
-        if (userLicenseId) {
-            query += ' WHERE c.license_id = $1';
+        if (orgId) {
+            query += ' WHERE c.organization_id = $1';
             if (!includeInactive) {
                 query += ' AND c.is_active = true';
             }
@@ -32,7 +39,7 @@ router.get('/', authenticate, async (req, res) => {
 
         query += ' GROUP BY c.id, parent.id ORDER BY c.sort_order, c.name';
 
-        const result = await pool.query(query, userLicenseId ? [userLicenseId] : []);
+        const result = await pool.query(query, orgId ? [orgId] : []);
         res.json({ categories: result.rows });
     } catch (error) {
         console.error('Ошибка получения категорий:', error);
@@ -48,12 +55,12 @@ router.post('/', authenticate, authorize('Администратор', 'Мене
         // Автогенерация кода если не предоставлен
         const code = req.body.code || `CAT-${Date.now().toString(36).toUpperCase()}`;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
 
         const result = await pool.query(
-            `INSERT INTO product_categories (name, description, parent_id, is_active, sort_order, code, license_id) 
+            `INSERT INTO product_categories (name, description, parent_id, is_active, sort_order, code, organization_id) 
              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [name, description, parent_id || null, is_active, sort_order, code, userLicenseId]
+            [name, description, parent_id || null, is_active, sort_order, code, orgId || 1]
         );
 
         res.status(201).json(result.rows[0]);
@@ -69,15 +76,15 @@ router.put('/:id', authenticate, authorize('Администратор', 'Мен
         const { id } = req.params;
         const { name, description, parent_id, is_active, sort_order } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = `UPDATE product_categories 
              SET name = $1, description = $2, parent_id = $3, is_active = $4, sort_order = $5, updated_at = CURRENT_TIMESTAMP 
              WHERE id = $6`;
         const params = [name, description, parent_id || null, is_active, sort_order, id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $7';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $7';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -98,12 +105,12 @@ router.put('/:id', authenticate, authorize('Администратор', 'Мен
 router.delete('/:id', authenticate, authorize('Администратор'), async (req, res) => {
     try {
         const { id } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = getOrgId(req);
         let query = 'DELETE FROM product_categories WHERE id = $1';
         const params = [id];
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
         await pool.query(query, params);
         res.json({ message: 'Категория удалена' });
