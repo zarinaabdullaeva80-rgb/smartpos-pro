@@ -80,8 +80,9 @@
                 }
             ],
             "icon": "build/icon.ico",
-            "signAndEditExecutable": false
+            "signAndEditExecutable": true
         },
+
         "extraResources": [
             {
                 "from": "build",
