@@ -94,6 +94,8 @@ import contractsRoutes from './routes/contracts.js';
 import emailCampaignsRoutes from './routes/emailCampaigns.js';
 import payrollRoutes from './routes/payroll.js';
 import inventoryRoutes from './routes/inventory.js';
+import currenciesRoutes from './routes/currencies.js';
+
 import { apiLogger } from './middleware/apiLogger.js';
 import { initRedis } from './services/redis.js';
 import { checkExpiredLicenses } from './middleware/license.js';
@@ -361,6 +363,8 @@ app.use('/api/email-campaigns', emailCampaignsRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/onboarding', onboardingRoutes);
+app.use('/api/currencies', currenciesRoutes);
+
 
 
 // Health check

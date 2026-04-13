@@ -1,10 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { DollarSign, RefreshCw, TrendingUp, TrendingDown, Globe, Settings, Plus, Clock, Check, X } from 'lucide-react';
-import { financeAPI } from '../services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, TrendingUp, TrendingDown, Plus, Clock } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
+import axios from 'axios';
 
-// Дефолтные валюты
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const CACHE_KEY = 'cbu_rates_cache';
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа
+
+// Символы валют
+const SYMBOLS = {
+    USD: '$', EUR: '€', RUB: '₽', GBP: '£', CNY: '¥',
+    KZT: '₸', JPY: '¥', UZS: "so'm", CHF: '₣', CAD: 'C$',
+    AUD: 'A$', TRY: '₺', KRW: '₩', SAR: '﷼', AED: 'د.إ'
+};
+
+// Дефолтные валюты (до загрузки с сервера)
 const DEFAULT_CURRENCIES = [
     { code: 'UZS', name: 'Узбекский сум', symbol: "so'm", is_base: true, rate: 1, enabled: true },
     { code: 'USD', name: 'Доллар США', symbol: '$', is_base: false, rate: 12650, enabled: true },
@@ -12,58 +23,121 @@ const DEFAULT_CURRENCIES = [
     { code: 'RUB', name: 'Российский рубль', symbol: '₽', is_base: false, rate: 142, enabled: true },
     { code: 'GBP', name: 'Британский фунт', symbol: '£', is_base: false, rate: 16050, enabled: false },
     { code: 'CNY', name: 'Китайский юань', symbol: '¥', is_base: false, rate: 1750, enabled: false },
-    { code: 'KZT', name: 'Казахстанский тенге', symbol: '₸', is_base: false, rate: 27.5, enabled: false }
+    { code: 'KZT', name: 'Казахстанский тенге', symbol: '₸', is_base: false, rate: 27.5, enabled: false },
 ];
 
 function Currencies() {
     const { t } = useI18n();
     const toast = useToast();
-    // Загрузка из localStorage
+
     const [currencies, setCurrencies] = useState(() => {
         const saved = localStorage.getItem('currencies');
         return saved ? JSON.parse(saved) : DEFAULT_CURRENCIES;
     });
     const [rates, setRates] = useState({});
-    const [baseCurrency, setBaseCurrency] = useState('UZS');
     const [loading, setLoading] = useState(false);
-    const [lastUpdate, setLastUpdate] = useState(new Date().toLocaleString('ru-RU'));
+    const [lastUpdate, setLastUpdate] = useState('');
+    const [cbuSource, setCbuSource] = useState('');
 
     // Калькулятор
     const [calcAmount, setCalcAmount] = useState(1000000);
     const [calcFrom, setCalcFrom] = useState('UZS');
     const [calcTo, setCalcTo] = useState('USD');
 
-    // Модал добавления валюты
+    // Модал добавления
     const [showAddCurrency, setShowAddCurrency] = useState(false);
     const [newCurrency, setNewCurrency] = useState({ code: '', name: '', symbol: '', rate: 1 });
 
-    // Сохранение в localStorage
+    // Сохраняем в localStorage при изменении
     useEffect(() => {
         localStorage.setItem('currencies', JSON.stringify(currencies));
     }, [currencies]);
 
-    useEffect(() => {
-        // Установить курсы для отображения
-        setRates({
-            USD: { current: currencies.find(c => c.code === 'USD')?.rate || 12650, prev: 12620, change: 0.24 },
-            EUR: { current: currencies.find(c => c.code === 'EUR')?.rate || 13780, prev: 13820, change: -0.29 },
-            RUB: { current: currencies.find(c => c.code === 'RUB')?.rate || 142, prev: 141, change: 0.71 }
+    // Загрузка курсов от ЦБУ через наш API
+    const fetchRates = useCallback(async (forceRefresh = false) => {
+        try {
+            setLoading(true);
+
+            // Проверяем кэш
+            if (!forceRefresh) {
+                const cached = localStorage.getItem(CACHE_KEY);
+                if (cached) {
+                    const { data, timestamp } = JSON.parse(cached);
+                    if (Date.now() - timestamp < CACHE_TTL) {
+                        applyRates(data, new Date(timestamp), 'cache');
+                        return;
+                    }
+                }
+            }
+
+            // Запрашиваем с сервера
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`${API_BASE}/currencies/rates${forceRefresh ? '?refresh=true' : ''}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                timeout: 15000
+            });
+
+            if (response.data.success) {
+                // Кэшируем
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: response.data.rates,
+                    timestamp: Date.now()
+                }));
+                applyRates(response.data.rates, new Date(), response.data.source);
+                if (forceRefresh) toast.success('Курсы обновлены от ЦБУ Узбекистана');
+            }
+        } catch (error) {
+            console.warn('[Currencies] Failed to fetch rates:', error.message);
+            if (forceRefresh) toast.error('Не удалось получить курсы: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [toast]);
+
+    // Применяем курсы из ЦБУ к нашим валютам
+    const applyRates = (cbuRates, date, source) => {
+        setLastUpdate(date.toLocaleString('ru-RU'));
+        setCbuSource(source === 'cbu' ? '🌐 ЦБУ' : source === 'cache' ? '💾 Кэш' : '📦 Кэш (резерв)');
+
+        // Обновляем курсы для display (USD, EUR, RUB)
+        const displayRates = {};
+        ['USD', 'EUR', 'RUB'].forEach(code => {
+            if (cbuRates[code]) {
+                const r = cbuRates[code];
+                displayRates[code] = {
+                    current: r.rate,
+                    prev: parseFloat((r.rate - r.diff).toFixed(2)),
+                    change: r.diff !== 0 ? parseFloat(((r.diff / (r.rate - r.diff)) * 100).toFixed(2)) : 0,
+                    name: r.name
+                };
+            }
         });
-    }, [currencies]);
+        setRates(displayRates);
 
-    // Конвертация
-    const convert = () => {
-        const fromCurrency = currencies.find(c => c.code === calcFrom);
-        const toCurrency = currencies.find(c => c.code === calcTo);
-        if (!fromCurrency || !toCurrency) return 0;
-
-        // Всё конвертируем через UZS
-        const inUZS = calcAmount * (fromCurrency.is_base ? 1 : fromCurrency.rate);
-        const result = inUZS / (toCurrency.is_base ? 1 : toCurrency.rate);
-        return result;
+        // Обновляем курсы в нашем списке валют (не трогаем enabled/базовые)
+        setCurrencies(prev => prev.map(c => {
+            if (c.is_base) return c;
+            const cbu = cbuRates[c.code];
+            if (cbu) {
+                return { ...c, rate: cbu.rate };
+            }
+            return c;
+        }));
     };
 
-    // Добавление валюты
+    // Загружаем при старте
+    useEffect(() => {
+        fetchRates(false);
+    }, []);
+
+    const formatRate = (rate) => new Intl.NumberFormat('ru-RU').format(rate);
+
+    const toggleCurrency = (code) => {
+        setCurrencies(currencies.map(c =>
+            c.code === code ? { ...c, enabled: !c.enabled } : c
+        ));
+    };
+
     const addCurrency = () => {
         if (!newCurrency.code || !newCurrency.name || !newCurrency.rate) {
             toast.info('Заполните все поля');
@@ -76,29 +150,22 @@ function Currencies() {
         setCurrencies([...currencies, {
             code: newCurrency.code.toUpperCase(),
             name: newCurrency.name,
-            symbol: newCurrency.symbol || newCurrency.code.toUpperCase(),
+            symbol: newCurrency.symbol || SYMBOLS[newCurrency.code.toUpperCase()] || newCurrency.code.toUpperCase(),
             is_base: false,
             rate: parseFloat(newCurrency.rate),
             enabled: true
         }]);
         setNewCurrency({ code: '', name: '', symbol: '', rate: 1 });
         setShowAddCurrency(false);
+        toast.success('Валюта добавлена');
     };
 
-    const formatRate = (rate) => new Intl.NumberFormat('ru-RU').format(rate);
-
-    const toggleCurrency = (code) => {
-        setCurrencies(currencies.map(c =>
-            c.code === code ? { ...c, enabled: !c.enabled } : c
-        ));
-    };
-
-    const updateRates = () => {
-        setLoading(true);
-        setTimeout(() => {
-            setLastUpdate(new Date().toLocaleString('ru-RU'));
-            setLoading(false);
-        }, 1500);
+    const convert = () => {
+        const fromCurrency = currencies.find(c => c.code === calcFrom);
+        const toCurrency = currencies.find(c => c.code === calcTo);
+        if (!fromCurrency || !toCurrency) return 0;
+        const inUZS = calcAmount * (fromCurrency.is_base ? 1 : fromCurrency.rate);
+        return inUZS / (toCurrency.is_base ? 1 : toCurrency.rate);
     };
 
     return (
@@ -109,8 +176,9 @@ function Currencies() {
                     <p className="text-muted">{t('currencies.kursy_valyut_i_nastroyki_konvertatsii', 'Курсы валют и настройки конвертации')}</p>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                    <button className="btn btn-secondary" onClick={updateRates} disabled={loading}>
-                        <RefreshCw size={18} className={loading ? 'spinning' : ''} /> Обновить курсы
+                    <button className="btn btn-secondary" onClick={() => fetchRates(true)} disabled={loading}>
+                        <RefreshCw size={18} className={loading ? 'spinning' : ''} />
+                        {loading ? 'Загрузка...' : 'Обновить курсы'}
                     </button>
                     <button className="btn btn-primary" onClick={() => setShowAddCurrency(true)}>
                         <Plus size={18} /> Добавить валюту
@@ -130,29 +198,19 @@ function Currencies() {
                                         width: '48px', height: '48px',
                                         borderRadius: '50%',
                                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: 'white',
-                                        fontWeight: 'bold',
-                                        fontSize: '14px'
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        color: 'white', fontWeight: 'bold', fontSize: '14px'
                                     }}>
                                         {code}
                                     </div>
                                     <div>
                                         <div style={{ fontWeight: 'bold', fontSize: '18px' }}>1 {code}</div>
                                         <div style={{ color: '#888', fontSize: '12px' }}>
-                                            {currencies.find(c => c.code === code)?.name}
+                                            {data.name || currencies.find(c => c.code === code)?.name}
                                         </div>
                                     </div>
                                 </div>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    color: isUp ? '#10b981' : '#ef4444',
-                                    fontSize: '13px'
-                                }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: isUp ? '#10b981' : '#ef4444', fontSize: '13px' }}>
                                     {isUp ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
                                     {isUp ? '+' : ''}{data.change}%
                                 </div>
@@ -175,17 +233,17 @@ function Currencies() {
                         <h3 style={{ margin: 0 }}>{t('currencies.valyuty', '💰 Валюты')}</h3>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#888', fontSize: '13px' }}>
                             <Clock size={14} />
-                            Обновлено: {lastUpdate}
+                            {lastUpdate ? `Обновлено: ${lastUpdate}` : 'Загрузка...'} {cbuSource && <span style={{ color: '#10b981' }}>{cbuSource}</span>}
                         </div>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                             <tr style={{ background: 'var(--bg-secondary)' }}>
-                                <th style={{ padding: '12px', textAlign: 'left' }}>{t('currencies.valyuta', 'Валюта')}</th>
-                                <th style={{ padding: '12px', textAlign: 'left' }}>{t('currencies.kod', 'Код')}</th>
-                                <th style={{ padding: '12px', textAlign: 'right' }}>{t('currencies.kurs_k', 'Курс к UZS')}</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>{t('currencies.status', 'Статус')}</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>{t('currencies.vkl', 'Вкл')}</th>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>Валюта</th>
+                                <th style={{ padding: '12px', textAlign: 'left' }}>Код</th>
+                                <th style={{ padding: '12px', textAlign: 'right' }}>Курс к UZS</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>Статус</th>
+                                <th style={{ padding: '12px', textAlign: 'center' }}>Вкл</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -231,11 +289,11 @@ function Currencies() {
                 {/* Калькулятор */}
                 <div className="card">
                     <div style={{ padding: '16px', borderBottom: '1px solid var(--border-color)' }}>
-                        <h3 style={{ margin: 0 }}>{t('currencies.kalkulyator', '🧮 Калькулятор')}</h3>
+                        <h3 style={{ margin: 0 }}>🧮 Калькулятор</h3>
                     </div>
                     <div style={{ padding: '16px' }}>
                         <div className="form-group">
-                            <label>{t('currencies.summa', 'Сумма')}</label>
+                            <label>Сумма</label>
                             <input
                                 type="number"
                                 value={calcAmount}
@@ -243,7 +301,7 @@ function Currencies() {
                             />
                         </div>
                         <div className="form-group">
-                            <label>{t('currencies.iz_valyuty', 'Из валюты')}</label>
+                            <label>Из валюты</label>
                             <select value={calcFrom} onChange={e => setCalcFrom(e.target.value)}>
                                 {currencies.filter(c => c.enabled).map(c => (
                                     <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
@@ -251,7 +309,7 @@ function Currencies() {
                             </select>
                         </div>
                         <div className="form-group">
-                            <label>{t('currencies.v_valyutu', 'В валюту')}</label>
+                            <label>В валюту</label>
                             <select value={calcTo} onChange={e => setCalcTo(e.target.value)}>
                                 {currencies.filter(c => c.enabled).map(c => (
                                     <option key={c.code} value={c.code}>{c.name} ({c.code})</option>
@@ -261,18 +319,18 @@ function Currencies() {
                         <div style={{
                             padding: '20px',
                             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            borderRadius: '12px',
-                            color: 'white',
-                            textAlign: 'center',
-                            marginTop: '16px'
+                            borderRadius: '12px', color: 'white', textAlign: 'center', marginTop: '16px'
                         }}>
-                            <div style={{ fontSize: '12px', opacity: 0.8 }}>{t('currencies.rezultat', 'Результат')}</div>
+                            <div style={{ fontSize: '12px', opacity: 0.8 }}>Результат</div>
                             <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
                                 {currencies.find(c => c.code === calcTo)?.symbol}{formatRate(convert().toFixed(2))}
                             </div>
                             <div style={{ fontSize: '11px', opacity: 0.7, marginTop: '4px' }}>
                                 {formatRate(calcAmount)} {calcFrom} = {formatRate(convert().toFixed(2))} {calcTo}
                             </div>
+                        </div>
+                        <div style={{ marginTop: '12px', padding: '8px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '11px', color: '#888', textAlign: 'center' }}>
+                            Курсы: ЦБУ Узбекистана • Обновляются каждые 24ч
                         </div>
                     </div>
                 </div>
@@ -283,50 +341,39 @@ function Currencies() {
                 <div className="modal-overlay" onClick={() => setShowAddCurrency(false)}>
                     <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
                         <div className="modal-header">
-                            <h2>{t('currencies.novaya_valyuta', '➕ Новая валюта')}</h2>
+                            <h2>➕ Новая валюта</h2>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label>{t('currencies.kod_valyuty_bukvy', 'Код валюты (3 буквы)')}</label>
-                                <input
-                                    type="text"
-                                    maxLength={3}
+                                <label>Код валюты (3 буквы)</label>
+                                <input type="text" maxLength={3}
                                     value={newCurrency.code}
                                     onChange={e => setNewCurrency({ ...newCurrency, code: e.target.value.toUpperCase() })}
-                                    placeholder="JPY"
-                                />
+                                    placeholder="JPY" />
                             </div>
                             <div className="form-group">
-                                <label>{t('currencies.nazvanie', 'Название')}</label>
-                                <input
-                                    type="text"
+                                <label>Название</label>
+                                <input type="text"
                                     value={newCurrency.name}
                                     onChange={e => setNewCurrency({ ...newCurrency, name: e.target.value })}
-                                    placeholder="Японская йена"
-                                />
+                                    placeholder="Японская йена" />
                             </div>
                             <div className="form-group">
-                                <label>{t('currencies.simvol', 'Символ')}</label>
-                                <input
-                                    type="text"
-                                    maxLength={3}
+                                <label>Символ</label>
+                                <input type="text" maxLength={3}
                                     value={newCurrency.symbol}
                                     onChange={e => setNewCurrency({ ...newCurrency, symbol: e.target.value })}
-                                    placeholder="¥"
-                                />
+                                    placeholder="¥" />
                             </div>
                             <div className="form-group">
-                                <label>{t('currencies.kurs_k', 'Курс к UZS')}</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
+                                <label>Курс к UZS (или 0 для авто)</label>
+                                <input type="number" step="0.01"
                                     value={newCurrency.rate}
-                                    onChange={e => setNewCurrency({ ...newCurrency, rate: e.target.value })}
-                                />
+                                    onChange={e => setNewCurrency({ ...newCurrency, rate: e.target.value })} />
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowAddCurrency(false)}>{t('currencies.otmena', 'Отмена')}</button>
+                            <button className="btn btn-secondary" onClick={() => setShowAddCurrency(false)}>Отмена</button>
                             <button className="btn btn-primary" onClick={addCurrency}>
                                 <Plus size={16} /> Добавить
                             </button>
