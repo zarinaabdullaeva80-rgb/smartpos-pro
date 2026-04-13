@@ -10,12 +10,12 @@ const router = express.Router();
  */
 router.get('/products/excel', authenticate, checkPermission('products.read'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const params = [];
         let licenseFilter = '';
-        if (userLicenseId) {
-            params.push(userLicenseId);
-            licenseFilter = `WHERE p.license_id = $${params.length}`;
+        if (orgId) {
+            params.push(orgId);
+            licenseFilter = `WHERE p.organization_id = $${params.length}`;
         }
 
         const result = await pool.query(`
@@ -85,7 +85,7 @@ router.get('/products/excel', authenticate, checkPermission('products.read'), as
 router.get('/sales/excel', authenticate, checkPermission('sales.read'), async (req, res) => {
     try {
         const { date_from, date_to } = req.query;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             SELECT 
@@ -105,9 +105,9 @@ router.get('/sales/excel', authenticate, checkPermission('sales.read'), async (r
         `;
 
         const params = [];
-        if (userLicenseId) {
-            params.push(userLicenseId);
-            query += ` AND s.license_id = $${params.length}`;
+        if (orgId) {
+            params.push(orgId);
+            query += ` AND s.organization_id = $${params.length}`;
         }
 
         if (date_from) {

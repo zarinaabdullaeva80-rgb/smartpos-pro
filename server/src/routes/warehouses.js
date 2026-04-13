@@ -15,13 +15,13 @@ router.use(authenticateToken);
 // Получить все склады
 router.get('/', async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM warehouses';
         const params = [];
 
-        if (userLicenseId) {
-            query += ' WHERE license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE organization_id = $1';
+            params.push(orgId);
         }
 
         query += ' ORDER BY name';
@@ -36,13 +36,13 @@ router.get('/', async (req, res) => {
 // Получить склад по ID
 router.get('/:id', async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM warehouses WHERE id = $1';
         const params = [req.params.id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);
@@ -63,12 +63,12 @@ router.post('/', async (req, res) => {
     const { code, name, address, responsible_person, latitude, longitude, phone, email, working_hours, capacity } = req.body;
 
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            `INSERT INTO warehouses (code, name, address, responsible_person, latitude, longitude, phone, email, working_hours, capacity, license_id) 
+            `INSERT INTO warehouses (code, name, address, responsible_person, latitude, longitude, phone, email, working_hours, capacity, organization_id) 
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
              RETURNING *`,
-            [code, name, address, responsible_person, latitude, longitude, phone, email, working_hours, capacity, userLicenseId]
+            [code, name, address, responsible_person, latitude, longitude, phone, email, working_hours, capacity, orgId]
         );
 
         await logAudit(req.user.id, 'CREATE', 'warehouses', result.rows[0].id, null, result.rows[0], req.ip);
@@ -90,7 +90,7 @@ router.put('/:id', async (req, res) => {
     try {
         const oldResult = await pool.query('SELECT * FROM warehouses WHERE id = $1', [req.params.id]);
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let updateQuery = `UPDATE warehouses 
              SET code = $1, name = $2, address = $3, responsible_person = $4, is_active = $5, 
                  latitude = $6, longitude = $7, phone = $8, email = $9, working_hours = $10, capacity = $11, 
@@ -98,9 +98,9 @@ router.put('/:id', async (req, res) => {
              WHERE id = $12`;
         const updateParams = [code, name, address, responsible_person, is_active, latitude, longitude, phone, email, working_hours, capacity, req.params.id];
 
-        if (userLicenseId) {
-            updateQuery += ' AND license_id = $13';
-            updateParams.push(userLicenseId);
+        if (orgId) {
+            updateQuery += ' AND organization_id = $13';
+            updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
 
@@ -134,12 +134,12 @@ router.delete('/:id', async (req, res) => {
             });
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let deleteQuery = 'DELETE FROM warehouses WHERE id = $1';
         const deleteParams = [req.params.id];
-        if (userLicenseId) {
-            deleteQuery += ' AND license_id = $2';
-            deleteParams.push(userLicenseId);
+        if (orgId) {
+            deleteQuery += ' AND organization_id = $2';
+            deleteParams.push(orgId);
         }
         await pool.query(deleteQuery, deleteParams);
         await logAudit(req.user.id, 'DELETE', 'warehouses', req.params.id, null, null, req.ip);
@@ -158,7 +158,7 @@ router.delete('/:id', async (req, res) => {
 // Получить текущие остатки по складу
 router.get('/:id/inventory', async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let invQuery = `SELECT 
                 p.id,
                 p.code,
@@ -171,9 +171,9 @@ router.get('/:id/inventory', async (req, res) => {
              WHERE p.is_active = true`;
         const invParams = [req.params.id];
 
-        if (userLicenseId) {
-            invQuery += ' AND p.license_id = $2';
-            invParams.push(userLicenseId);
+        if (orgId) {
+            invQuery += ' AND p.organization_id = $2';
+            invParams.push(orgId);
         }
 
         invQuery += ` GROUP BY p.id, p.code, p.name, p.unit, p.price_purchase
@@ -194,7 +194,7 @@ router.get('/stock/balance', async (req, res) => {
     const { category_id, search } = req.query;
 
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT 
                 p.id,
@@ -213,11 +213,11 @@ router.get('/stock/balance', async (req, res) => {
             WHERE p.is_active = true
         `;
 
-        if (userLicenseId) {
-            query += ` AND p.license_id = $1 AND w.license_id = $1`;
+        if (orgId) {
+            query += ` AND p.organization_id = $1 AND w.organization_id = $1`;
         }
 
-        const params = userLicenseId ? [userLicenseId] : [];
+        const params = orgId ? [orgId] : [];
         let paramCount = params.length + 1;
 
         if (category_id) {
@@ -287,7 +287,7 @@ router.get('/movements/all', async (req, res) => {
     const { dateFrom, dateTo, warehouse_id, product_id, document_type } = req.query;
 
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT 
                 im.*,
@@ -306,9 +306,9 @@ router.get('/movements/all', async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND im.license_id = $${paramCount}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND im.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -357,22 +357,22 @@ router.post('/movements', async (req, res) => {
     const { product_id, warehouse_id, quantity, cost_price, reason } = req.body;
 
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify product and warehouse belong to license
-        if (userLicenseId) {
-            const pCheck = await pool.query('SELECT 1 FROM products WHERE id = $1 AND license_id = $2', [product_id, userLicenseId]);
+        if (orgId) {
+            const pCheck = await pool.query('SELECT 1 FROM products WHERE id = $1 AND organization_id = $2', [product_id, orgId]);
             if (pCheck.rows.length === 0) throw new Error('Товар не найден в вашей организации');
-            const wCheck = await pool.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [warehouse_id, userLicenseId]);
+            const wCheck = await pool.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [warehouse_id, orgId]);
             if (wCheck.rows.length === 0) throw new Error('Склад не найден в вашей организации');
         }
 
         const result = await pool.query(
             `INSERT INTO inventory_movements 
-             (product_id, warehouse_id, document_type, quantity, cost_price, user_id, license_id) 
+             (product_id, warehouse_id, document_type, quantity, cost_price, user_id, organization_id) 
              VALUES ($1, $2, 'adjustment', $3, $4, $5, $6) 
              RETURNING *`,
-            [product_id, warehouse_id, quantity, cost_price, req.user.id, userLicenseId]
+            [product_id, warehouse_id, quantity, cost_price, req.user.id, orgId]
         );
 
         // Обновить stock_balances
@@ -398,7 +398,7 @@ router.post('/movements', async (req, res) => {
 // Получить историю движений для конкретного товара
 router.get('/movements/product/:productId', async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `SELECT 
                 im.*,
                 w.name as warehouse_name,
@@ -409,9 +409,9 @@ router.get('/movements/product/:productId', async (req, res) => {
              WHERE im.product_id = $1`;
         const params = [req.params.productId];
 
-        if (userLicenseId) {
-            query += ' AND im.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND im.organization_id = $2';
+            params.push(orgId);
         }
 
         query += ` ORDER BY im.movement_date DESC, im.id DESC LIMIT 100`;
@@ -434,7 +434,7 @@ router.get('/transfers', async (req, res) => {
     const { dateFrom, dateTo, status } = req.query;
 
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT 
                 im.id,
@@ -458,9 +458,9 @@ router.get('/transfers', async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND im.license_id = $${paramCount}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND im.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -530,15 +530,15 @@ router.post('/transfer', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify product and warehouses belong to license
-        if (userLicenseId) {
-            const pCheck = await client.query('SELECT 1 FROM products WHERE id = $1 AND license_id = $2', [product_id, userLicenseId]);
+        if (orgId) {
+            const pCheck = await client.query('SELECT 1 FROM products WHERE id = $1 AND organization_id = $2', [product_id, orgId]);
             if (pCheck.rows.length === 0) throw new Error('Товар не найден в вашей организации');
-            const w1Check = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [from_warehouse_id, userLicenseId]);
+            const w1Check = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [from_warehouse_id, orgId]);
             if (w1Check.rows.length === 0) throw new Error('Склад отправления не найден в вашей организации');
-            const w2Check = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [to_warehouse_id, userLicenseId]);
+            const w2Check = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [to_warehouse_id, orgId]);
             if (w2Check.rows.length === 0) throw new Error('Склад назначения не найден в вашей организации');
         }
 
@@ -562,17 +562,17 @@ router.post('/transfer', async (req, res) => {
         // Списание со склада отправления
         await client.query(
             `INSERT INTO inventory_movements 
-             (product_id, warehouse_id, document_type, quantity, user_id, license_id) 
+             (product_id, warehouse_id, document_type, quantity, user_id, organization_id) 
              VALUES ($1, $2, 'transfer', $3, $4, $5)`,
-            [product_id, from_warehouse_id, -quantity, req.user.id, userLicenseId]
+            [product_id, from_warehouse_id, -quantity, req.user.id, orgId]
         );
 
         // Приход на склад назначения
         await client.query(
             `INSERT INTO inventory_movements 
-             (product_id, warehouse_id, document_type, quantity, user_id, license_id) 
+             (product_id, warehouse_id, document_type, quantity, user_id, organization_id) 
              VALUES ($1, $2, 'transfer', $3, $4, $5)`,
-            [product_id, to_warehouse_id, quantity, req.user.id, userLicenseId]
+            [product_id, to_warehouse_id, quantity, req.user.id, orgId]
         );
 
         // Обновить stock_balances для обоих складов

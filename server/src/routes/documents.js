@@ -169,10 +169,10 @@ router.get('/generated', authenticate, async (req, res) => {
             LIMIT $1
         `, [limit]);
 
-        // Filter by license_id if available
-        const userLicenseId = req.user?.license_id;
-        const filteredRows = userLicenseId
-            ? result.rows.filter(r => r.license_id === userLicenseId || !r.license_id)
+        // Filter by organization_id if available
+        const orgId = req.user?.organization_id;
+        const filteredRows = orgId
+            ? result.rows.filter(r => r.organization_id === orgId || !r.organization_id)
             : result.rows;
 
         res.json(filteredRows);
@@ -187,12 +187,12 @@ router.get('/generated', authenticate, async (req, res) => {
  */
 router.get('/organization', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM organization_details';
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE organization_id = $1';
+            params.push(orgId);
         }
         query += ' LIMIT 1';
         const result = await pool.query(query, params);

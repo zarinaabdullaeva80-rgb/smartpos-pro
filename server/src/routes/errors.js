@@ -16,7 +16,7 @@ const initTable = async () => {
                 message TEXT NOT NULL,
                 stack_trace TEXT,
                 user_id INTEGER,
-                license_id INTEGER,
+                organization_id INTEGER,
                 url VARCHAR(500),
                 component VARCHAR(200),
                 metadata JSONB,
@@ -73,9 +73,9 @@ router.get('/', authenticate, authorize('admin', 'superadmin'), async (req, res)
         let paramIndex = 1;
 
         // Multi-tenant: admins see only their organization's errors, superadmins see all
-        if (req.user.role !== 'superadmin' && req.user.license_id) {
-            query += ` AND e.license_id = $${paramIndex++}`;
-            params.push(req.user.license_id);
+        if (req.user.role !== 'superadmin' && req.user?.organization_id) {
+            query += ` AND e.organization_id = $${paramIndex++}`;
+            params.push(req.user?.organization_id);
         }
 
         if (type) {
@@ -133,8 +133,8 @@ router.get('/stats', authenticate, authorize('admin', 'superadmin'), async (req,
         const { days = 7 } = req.query;
 
         // Build license filter for non-superadmins
-        const licenseFilter = req.user.role !== 'superadmin' && req.user.license_id
-            ? `AND license_id = ${parseInt(req.user.license_id)}`
+        const licenseFilter = req.user.role !== 'superadmin' && req.user?.organization_id
+            ? `AND organization_id = ${parseInt(req.user?.organization_id)}`
             : '';
 
         const stats = await pool.query(`
@@ -207,9 +207,9 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Message is required' });
         }
 
-        // Получаем user_id и license_id из токена если есть
+        // Получаем user_id и organization_id из токена если есть
         let user_id = null;
-        let license_id = null;
+        let organization_id = null;
         const authHeader = req.headers.authorization;
         if (authHeader) {
             try {
@@ -217,7 +217,7 @@ router.post('/', async (req, res) => {
                 const jwt = await import('jsonwebtoken');
                 const decoded = jwt.default.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production');
                 user_id = decoded.userId;
-                license_id = decoded.license_id;
+                organization_id = decoded.organization_id;
             } catch { }
         }
 
@@ -225,10 +225,10 @@ router.post('/', async (req, res) => {
         const user_agent = req.headers['user-agent'];
 
         const result = await pool.query(`
-            INSERT INTO error_logs (type, severity, message, stack_trace, user_id, license_id, url, component, metadata, ip_address, user_agent)
+            INSERT INTO error_logs (type, severity, message, stack_trace, user_id, organization_id, url, component, metadata, ip_address, user_agent)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
-        `, [type, severity, message, stack_trace, user_id, license_id, url, component, metadata ? JSON.stringify(metadata) : null, ip_address, user_agent]);
+        `, [type, severity, message, stack_trace, user_id, organization_id, url, component, metadata ? JSON.stringify(metadata) : null, ip_address, user_agent]);
 
         // Отправляем алерт для критических ошибок
         if (severity === 'critical' || severity === 'error') {
@@ -251,8 +251,8 @@ router.put('/:id/resolve', authenticate, authorize('admin', 'superadmin'), async
         const user_id = req.user.id;
 
         // Check ownership for non-superadmins
-        if (req.user.role !== 'superadmin' && req.user.license_id) {
-            const check = await pool.query('SELECT 1 FROM error_logs WHERE id = $1 AND license_id = $2', [id, req.user.license_id]);
+        if (req.user.role !== 'superadmin' && req.user?.organization_id) {
+            const check = await pool.query('SELECT 1 FROM error_logs WHERE id = $1 AND organization_id = $2', [id, req.user?.organization_id]);
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Доступ запрещён' });
             }

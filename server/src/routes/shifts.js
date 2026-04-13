@@ -8,7 +8,7 @@ const router = express.Router();
 router.post('/open', authenticate, async (req, res) => {
     try {
         const { opening_cash = 0 } = req.body;
-        const userLicenseId = req.user.license_id || null;
+        const orgId = req.user?.organization_id || null;
 
         // Проверить есть ли открытая смена
         const existingShift = await pool.query(
@@ -23,16 +23,16 @@ router.post('/open', authenticate, async (req, res) => {
         // Генерация номера смены
         const shiftNumber = `SH-${Date.now()}`;
 
-        // Проверяем есть ли колонка license_id в таблице shifts
+        // Проверяем есть ли колонка organization_id в таблице shifts
         let result;
         try {
             result = await pool.query(
-                `INSERT INTO shifts (shift_number, user_id, initial_cash, status, started_at, license_id) 
+                `INSERT INTO shifts (shift_number, user_id, initial_cash, status, started_at, organization_id) 
                  VALUES ($1, $2, $3, 'open', CURRENT_TIMESTAMP, $4) RETURNING *`,
-                [shiftNumber, req.user.id, opening_cash, userLicenseId]
+                [shiftNumber, req.user.id, opening_cash, orgId]
             );
         } catch (colErr) {
-            // Если колонки license_id нет — открываем без неё
+            // Если колонки organization_id нет — открываем без неё
             result = await pool.query(
                 `INSERT INTO shifts (shift_number, user_id, initial_cash, status, started_at) 
                  VALUES ($1, $2, $3, 'open', CURRENT_TIMESTAMP) RETURNING *`,

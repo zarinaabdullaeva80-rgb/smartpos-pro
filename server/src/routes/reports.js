@@ -4,10 +4,10 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Helper function to add license filter only if license_id exists
-const getLicenseFilter = (userLicenseId, paramNum, columnPrefix = '') => {
-    if (userLicenseId) {
-        return { filter: ` AND ${columnPrefix}license_id = $${paramNum}`, params: [userLicenseId], nextParam: paramNum + 1 };
+// Helper function to add license filter only if organization_id exists
+const getLicenseFilter = (orgId, paramNum, columnPrefix = '') => {
+    if (orgId) {
+        return { filter: ` AND ${columnPrefix}organization_id = $${paramNum}`, params: [orgId], nextParam: paramNum + 1 };
     }
     return { filter: '', params: [], nextParam: paramNum };
 };
@@ -38,10 +38,10 @@ router.get('/sales-analytics', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        // Add license filter if user has license_id
-        if (req.user.license_id) {
-            query += ` AND s.license_id = $${paramCount}`;
-            params.push(req.user.license_id);
+        // Add license filter if user has organization_id
+        if (req.user?.organization_id) {
+            query += ` AND s.organization_id = $${paramCount}`;
+            params.push(req.user?.organization_id);
             paramCount++;
         }
 
@@ -89,9 +89,9 @@ router.get('/top-products', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (req.user.license_id) {
-            query += ` AND s.license_id = $${paramCount}`;
-            params.push(req.user.license_id);
+        if (req.user?.organization_id) {
+            query += ` AND s.organization_id = $${paramCount}`;
+            params.push(req.user?.organization_id);
             paramCount++;
         }
 
@@ -144,9 +144,9 @@ router.get('/inventory-balances', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (req.user.license_id) {
-            query += ` AND (p.license_id = $${paramCount} OR p.license_id IS NULL)`;
-            params.push(req.user.license_id);
+        if (req.user?.organization_id) {
+            query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NOT NULL)`;
+            params.push(req.user?.organization_id);
             paramCount++;
         }
 
@@ -178,7 +178,7 @@ router.get('/inventory-balances', authenticate, async (req, res) => {
 router.get('/financial-summary', authenticate, async (req, res) => {
     try {
         const { dateFrom, dateTo } = req.query;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id || null;
 
         let salesParams = [];
         let purchasesParams = [];
@@ -192,16 +192,16 @@ router.get('/financial-summary', authenticate, async (req, res) => {
         let purchasesLicenseFilter = '';
         let balanceLicenseFilter = '';
 
-        if (userLicenseId) {
-            salesLicenseFilter = ` AND license_id = $${salesParamCount}`;
-            salesParams.push(userLicenseId);
+        if (orgId) {
+            salesLicenseFilter = ` AND organization_id = $${salesParamCount}`;
+            salesParams.push(orgId);
             salesParamCount++;
 
-            purchasesLicenseFilter = ` AND license_id = $${purchasesParamCount}`;
-            purchasesParams.push(userLicenseId);
+            purchasesLicenseFilter = ` AND organization_id = $${purchasesParamCount}`;
+            purchasesParams.push(orgId);
             purchasesParamCount++;
 
-            balanceLicenseFilter = ` AND license_id = $1`;
+            balanceLicenseFilter = ` AND organization_id = $1`;
         }
 
         if (dateFrom) {
@@ -252,7 +252,7 @@ router.get('/financial-summary', authenticate, async (req, res) => {
         const [salesResult, purchasesResult, balanceResult] = await Promise.all([
             pool.query(salesQuery, salesParams),
             pool.query(purchasesQuery, purchasesParams),
-            pool.query(balanceQuery, userLicenseId ? [userLicenseId] : [])
+            pool.query(balanceQuery, orgId ? [orgId] : [])
         ]);
 
         const totalSales = parseFloat(salesResult.rows[0]?.total_sales || 0);
@@ -302,9 +302,9 @@ router.get('/counterparty-report', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (req.user.license_id) {
-            query += ` AND (c.license_id = $${paramCount} OR c.license_id IS NULL)`;
-            params.push(req.user.license_id);
+        if (req.user?.organization_id) {
+            query += ` AND (c.organization_id = $${paramCount} OR c.organization_id IS NOT NULL)`;
+            params.push(req.user?.organization_id);
             paramCount++;
         }
 
@@ -341,13 +341,13 @@ router.get('/dashboard', authenticate, async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id || null;
 
         // Продажи за сегодня
         let todaySalesData = { amount: 0, count: 0 };
         try {
-            const licenseFilter = userLicenseId ? ' AND license_id = $2' : '';
-            const params = userLicenseId ? [today, userLicenseId] : [today];
+            const licenseFilter = orgId ? ' AND organization_id = $2' : '';
+            const params = orgId ? [today, orgId] : [today];
             const todaySales = await pool.query(
                 `SELECT COALESCE(SUM(final_amount), 0) as amount, COUNT(*) as count
                  FROM sales WHERE DATE(document_date) = $1${licenseFilter}`,
@@ -364,8 +364,8 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Продажи за месяц
         let monthSalesData = { amount: 0, count: 0 };
         try {
-            const licenseFilter = userLicenseId ? ' AND license_id = $2' : '';
-            const params = userLicenseId ? [monthStart, userLicenseId] : [monthStart];
+            const licenseFilter = orgId ? ' AND organization_id = $2' : '';
+            const params = orgId ? [monthStart, orgId] : [monthStart];
             const monthSales = await pool.query(
                 `SELECT COALESCE(SUM(final_amount), 0) as amount, COUNT(*) as count
                  FROM sales WHERE document_date >= $1${licenseFilter}`,
@@ -382,8 +382,8 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Количество товаров
         let productsCount = 0;
         try {
-            const licenseFilter = userLicenseId ? ' AND license_id = $1' : '';
-            const params = userLicenseId ? [userLicenseId] : [];
+            const licenseFilter = orgId ? ' AND organization_id = $1' : '';
+            const params = orgId ? [orgId] : [];
             const products = await pool.query(
                 `SELECT COUNT(*) as count FROM products WHERE is_active = true${licenseFilter}`,
                 params
@@ -396,8 +396,8 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Количество активных пользователей
         let activeUsersCount = 0;
         try {
-            const licenseFilter = userLicenseId ? ' AND license_id = $1' : '';
-            const params = userLicenseId ? [userLicenseId] : [];
+            const licenseFilter = orgId ? ' AND organization_id = $1' : '';
+            const params = orgId ? [orgId] : [];
             const activeUsers = await pool.query(
                 `SELECT COUNT(*) as count FROM users WHERE is_active = true${licenseFilter}`,
                 params
@@ -410,8 +410,8 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Товары с низким остатком (РЕАЛЬНЫЙ запрос)
         let lowStockProducts = [];
         try {
-            const licenseFilter = userLicenseId ? ' AND p.license_id = $1' : '';
-            const params = userLicenseId ? [userLicenseId] : [];
+            const licenseFilter = orgId ? ' AND p.organization_id = $1' : '';
+            const params = orgId ? [orgId] : [];
             const lowStock = await pool.query(
                 `SELECT 
                     p.id, p.name, p.min_stock,

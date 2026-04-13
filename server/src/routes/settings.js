@@ -7,12 +7,12 @@ const router = express.Router();
 // Получение всех системных настроек
 router.get('/', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM system_settings';
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE organization_id = $1';
+            params.push(orgId);
         }
         query += ' ORDER BY setting_key';
         const result = await pool.query(query, params);
@@ -39,12 +39,12 @@ router.get('/:key', authenticate, async (req, res) => {
     try {
         const { key } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM system_settings WHERE setting_key = $1';
         const params = [key];
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
         const result = await pool.query(query, params);
 
@@ -65,14 +65,14 @@ router.put('/:key', authenticate, authorize('Администратор'), async
         const { key } = req.params;
         const { value, description } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `UPDATE system_settings 
              SET setting_value = $1, description = $2, updated_by = $3, updated_at = CURRENT_TIMESTAMP 
              WHERE setting_key = $4`;
         const params = [value, description, req.user.id, key];
-        if (userLicenseId) {
-            query += ' AND license_id = $5';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $5';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -94,11 +94,11 @@ router.post('/', authenticate, authorize('Администратор'), async (r
     try {
         const { key, value, description } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            `INSERT INTO system_settings (setting_key, setting_value, description, updated_by, license_id) 
+            `INSERT INTO system_settings (setting_key, setting_value, description, updated_by, organization_id) 
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [key, value, description, req.user.id, userLicenseId]
+            [key, value, description, req.user.id, orgId]
         );
 
         res.status(201).json(result.rows[0]);
@@ -116,10 +116,10 @@ router.post('/', authenticate, authorize('Администратор'), async (r
 // Налоги и НДС
 router.get('/taxes/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['taxes', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['taxes', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -139,12 +139,12 @@ router.put('/taxes/config', authenticate, authorize('Администратор'
 
         const newValue = { vat_rates, default_vat, tax_period };
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
             `UPDATE system_settings 
              SET setting_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP 
-             WHERE setting_key = 'taxes' AND license_id = $3 RETURNING *`,
-            [newValue, req.user.id, userLicenseId]
+             WHERE setting_key = 'taxes' AND organization_id = $3 RETURNING *`,
+            [newValue, req.user.id, orgId]
         );
 
         res.json(result.rows[0]);
@@ -157,10 +157,10 @@ router.put('/taxes/config', authenticate, authorize('Администратор'
 // Синхронизация
 router.get('/sync/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['sync', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['sync', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -180,12 +180,12 @@ router.put('/sync/config', authenticate, authorize('Администратор')
 
         const newValue = { auto_sync, sync_interval, conflict_resolution };
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
             `UPDATE system_settings 
              SET setting_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP 
-             WHERE setting_key = 'sync' AND license_id = $3 RETURNING *`,
-            [newValue, req.user.id, userLicenseId]
+             WHERE setting_key = 'sync' AND organization_id = $3 RETURNING *`,
+            [newValue, req.user.id, orgId]
         );
 
         res.json(result.rows[0]);
@@ -198,10 +198,10 @@ router.put('/sync/config', authenticate, authorize('Администратор')
 // Email уведомления
 router.get('/notifications/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['notifications', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['notifications', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -235,12 +235,12 @@ router.put('/notifications/config', authenticate, authorize('Администр�
             smtp_secure: smtp_secure !== undefined ? smtp_secure : true
         };
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
             `UPDATE system_settings 
              SET setting_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP 
-             WHERE setting_key = 'notifications' AND license_id = $3 RETURNING *`,
-            [newValue, req.user.id, userLicenseId]
+             WHERE setting_key = 'notifications' AND organization_id = $3 RETURNING *`,
+            [newValue, req.user.id, orgId]
         );
 
         // Скрыть пароль в ответе
@@ -259,10 +259,10 @@ router.put('/notifications/config', authenticate, authorize('Администр�
 // Системные настройки (компания, валюта, часовой пояс)
 router.get('/system/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['system', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['system', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -282,12 +282,12 @@ router.put('/system/config', authenticate, authorize('Администратор
 
         const newValue = { company_name, currency, timezone, logo_url };
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
             `UPDATE system_settings 
              SET setting_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP 
-             WHERE setting_key = 'system' AND license_id = $3 RETURNING *`,
-            [newValue, req.user.id, userLicenseId]
+             WHERE setting_key = 'system' AND organization_id = $3 RETURNING *`,
+            [newValue, req.user.id, orgId]
         );
 
         res.json(result.rows[0]);
@@ -304,10 +304,10 @@ router.put('/system/config', authenticate, authorize('Администратор
 // Get Telegram settings for organization
 router.get('/telegram/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['telegram', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['telegram', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -342,7 +342,7 @@ router.get('/telegram/config', authenticate, async (req, res) => {
 router.put('/telegram/config', authenticate, authorize('Администратор'), async (req, res) => {
     try {
         const { enabled, bot_token, chat_id, notifications } = req.body;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         const newValue = {
             enabled: enabled || false,
@@ -359,12 +359,12 @@ router.put('/telegram/config', authenticate, authorize('Администрато
 
         // Upsert - insert or update
         const result = await pool.query(`
-            INSERT INTO system_settings (setting_key, setting_value, license_id, updated_by)
+            INSERT INTO system_settings (setting_key, setting_value, organization_id, updated_by)
             VALUES ('telegram', $1, $2, $3)
-            ON CONFLICT (setting_key, license_id) 
+            ON CONFLICT (setting_key, organization_id) 
             DO UPDATE SET setting_value = $1, updated_by = $3, updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        `, [newValue, userLicenseId, req.user.id]);
+        `, [newValue, orgId, req.user.id]);
 
         res.json({
             success: true,
@@ -380,10 +380,10 @@ router.put('/telegram/config', authenticate, authorize('Администрато
 // Test Telegram connection
 router.post('/telegram/test', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['telegram', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['telegram', orgId]
         );
 
         if (result.rows.length === 0 || !result.rows[0].setting_value.bot_token) {
@@ -399,7 +399,7 @@ router.post('/telegram/test', authenticate, authorize('Администрато�
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: config.chat_id,
-                text: `✅ Тест подключения из 1С Бухгалтерия\n\n🏢 Организация: ${req.user.license_id}\n📅 ${new Date().toLocaleString('ru-RU')}`,
+                text: `✅ Тест подключения из 1С Бухгалтерия\n\n🏢 Организация: ${req.user?.organization_id}\n📅 ${new Date().toLocaleString('ru-RU')}`,
                 parse_mode: 'HTML'
             })
         });
@@ -424,10 +424,10 @@ router.post('/telegram/test', authenticate, authorize('Администрато�
 // Get 1C sync settings
 router.get('/1c/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['1c_sync', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['1c_sync', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -464,7 +464,7 @@ router.put('/1c/config', authenticate, authorize('Администратор'), 
             enabled, api_url, username, password, sync_interval,
             sync_products, sync_sales, sync_purchases, sync_counterparties
         } = req.body;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         const newValue = {
             enabled: enabled || false,
@@ -480,12 +480,12 @@ router.put('/1c/config', authenticate, authorize('Администратор'), 
         };
 
         const result = await pool.query(`
-            INSERT INTO system_settings (setting_key, setting_value, license_id, updated_by)
+            INSERT INTO system_settings (setting_key, setting_value, organization_id, updated_by)
             VALUES ('1c_sync', $1, $2, $3)
-            ON CONFLICT (setting_key, license_id) 
+            ON CONFLICT (setting_key, organization_id) 
             DO UPDATE SET setting_value = $1, updated_by = $3, updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        `, [newValue, userLicenseId, req.user.id]);
+        `, [newValue, orgId, req.user.id]);
 
         res.json({
             success: true,
@@ -501,10 +501,10 @@ router.put('/1c/config', authenticate, authorize('Администратор'), 
 // Test 1C connection
 router.post('/1c/test', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['1c_sync', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['1c_sync', orgId]
         );
 
         if (result.rows.length === 0 || !result.rows[0].setting_value.api_url) {
@@ -542,10 +542,10 @@ router.post('/1c/test', authenticate, authorize('Администратор'), a
 // Get receipt settings
 router.get('/receipt/config', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['receipt', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['receipt', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -590,17 +590,17 @@ router.get('/receipt/config', authenticate, async (req, res) => {
 // Update receipt settings
 router.put('/receipt/config', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const settings = req.body;
         settings.updated_at = new Date().toISOString();
 
         const result = await pool.query(`
-            INSERT INTO system_settings (setting_key, setting_value, license_id, updated_by)
+            INSERT INTO system_settings (setting_key, setting_value, organization_id, updated_by)
             VALUES ('receipt', $1, $2, $3)
-            ON CONFLICT (setting_key, license_id) 
+            ON CONFLICT (setting_key, organization_id) 
             DO UPDATE SET setting_value = $1, updated_by = $3, updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        `, [settings, userLicenseId, req.user.id]);
+        `, [settings, orgId, req.user.id]);
 
         res.json({
             success: true,
@@ -620,10 +620,10 @@ router.put('/receipt/config', authenticate, authorize('Администрато�
 // Get all store locations
 router.get('/stores', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['stores', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['stores', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -640,7 +640,7 @@ router.get('/stores', authenticate, async (req, res) => {
 // Save store locations
 router.put('/stores', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const { stores } = req.body;
 
         // Validate stores array
@@ -665,12 +665,12 @@ router.put('/stores', authenticate, authorize('Администратор'), asy
         };
 
         const result = await pool.query(`
-            INSERT INTO system_settings (setting_key, setting_value, license_id, updated_by)
+            INSERT INTO system_settings (setting_key, setting_value, organization_id, updated_by)
             VALUES ('stores', $1, $2, $3)
-            ON CONFLICT (setting_key, license_id) 
+            ON CONFLICT (setting_key, organization_id) 
             DO UPDATE SET setting_value = $1, updated_by = $3, updated_at = CURRENT_TIMESTAMP
             RETURNING *
-        `, [data, userLicenseId, req.user.id]);
+        `, [data, orgId, req.user.id]);
 
         res.json({
             success: true,
@@ -687,11 +687,11 @@ router.put('/stores', authenticate, authorize('Администратор'), asy
 router.get('/stores/:storeId', authenticate, async (req, res) => {
     try {
         const { storeId } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         const result = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['stores', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['stores', orgId]
         );
 
         if (result.rows.length === 0) {
@@ -716,18 +716,18 @@ router.get('/stores/:storeId', authenticate, async (req, res) => {
 router.get('/stores/:storeId/receipt', authenticate, async (req, res) => {
     try {
         const { storeId } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Get base receipt settings
         const receiptResult = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['receipt', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['receipt', orgId]
         );
 
         // Get store info
         const storesResult = await pool.query(
-            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND license_id = $2',
-            ['stores', userLicenseId]
+            'SELECT setting_value FROM system_settings WHERE setting_key = $1 AND organization_id = $2',
+            ['stores', orgId]
         );
 
         const baseSettings = receiptResult.rows[0]?.setting_value || {};

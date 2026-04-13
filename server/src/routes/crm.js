@@ -14,12 +14,12 @@ const router = express.Router();
  */
 router.get('/stages', authenticate, checkPermission('crm.read'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM deal_stages WHERE is_active = true';
         const params = [];
-        if (userLicenseId) {
-            query += ' AND license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $1';
+            params.push(orgId);
         }
         query += ' ORDER BY position';
         const result = await pool.query(query, params);
@@ -37,7 +37,7 @@ router.get('/deals', authenticate, checkPermission('crm.read'), async (req, res)
     try {
         const { status, assigned_to, stage_id } = req.query;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT d.*,
                 c.name as customer_name,
@@ -55,9 +55,9 @@ router.get('/deals', authenticate, checkPermission('crm.read'), async (req, res)
         const params = [];
         let paramIndex = 1;
 
-        if (userLicenseId) {
-            query += ` AND d.license_id = $${paramIndex++}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND d.organization_id = $${paramIndex++}`;
+            params.push(orgId);
         }
 
         if (status) {
@@ -95,16 +95,16 @@ router.post('/deals', authenticate, checkPermission('crm.manage'), auditLog('dea
             expected_close_date, source, notes
         } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify customer and stage belong to license
-        if (userLicenseId) {
+        if (orgId) {
             if (customer_id) {
-                const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [customer_id, userLicenseId]);
+                const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [customer_id, orgId]);
                 if (cCheck.rows.length === 0) throw new Error('Клиент не найден в вашей организации');
             }
             if (stage_id) {
-                const sCheck = await pool.query('SELECT 1 FROM deal_stages WHERE id = $1 AND license_id = $2', [stage_id, userLicenseId]);
+                const sCheck = await pool.query('SELECT 1 FROM deal_stages WHERE id = $1 AND organization_id = $2', [stage_id, orgId]);
                 if (sCheck.rows.length === 0) throw new Error('Этап не найден в вашей организации');
             }
         }
@@ -113,13 +113,13 @@ router.post('/deals', authenticate, checkPermission('crm.manage'), auditLog('dea
             INSERT INTO deals (
                 title, customer_id, stage_id, amount,
                 expected_close_date, source, notes,
-                assigned_to, created_by, license_id
+                assigned_to, created_by, organization_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
         `, [
             title, customer_id, stage_id, amount,
             expected_close_date, source, notes,
-            req.user.userId, req.user.userId, userLicenseId
+            req.user.userId, req.user.userId, orgId
         ]);
 
         res.json(result.rows[0]);
@@ -155,7 +155,7 @@ router.put('/deals/:id', authenticate, checkPermission('crm.manage'), async (req
             return res.status(400).json({ error: 'No fields to update' });
         }
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         values.push(id);
         const idIndex = paramIndex;
 
@@ -165,9 +165,9 @@ router.put('/deals/:id', authenticate, checkPermission('crm.manage'), async (req
             WHERE id = $${idIndex}
         `;
 
-        if (userLicenseId) {
-            query += ` AND license_id = $${idIndex + 1}`;
-            values.push(userLicenseId);
+        if (orgId) {
+            query += ` AND organization_id = $${idIndex + 1}`;
+            values.push(orgId);
         }
 
         query += ' RETURNING *';
@@ -188,7 +188,7 @@ router.put('/deals/:id/stage', authenticate, checkPermission('crm.manage'), asyn
         const { id } = req.params;
         const { stage_id } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             UPDATE deals
             SET stage_id = $1, updated_at = NOW()
@@ -196,9 +196,9 @@ router.put('/deals/:id/stage', authenticate, checkPermission('crm.manage'), asyn
         `;
         const params = [stage_id, id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -218,7 +218,7 @@ router.get('/deals/:id/activities', authenticate, checkPermission('crm.read'), a
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT da.*,
                 u.full_name as assigned_name,
@@ -230,9 +230,9 @@ router.get('/deals/:id/activities', authenticate, checkPermission('crm.read'), a
             WHERE da.deal_id = $1
         `;
         const params = [id];
-        if (userLicenseId) {
-            query += ' AND d.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND d.organization_id = $2';
+            params.push(orgId);
         }
         query += ' ORDER BY da.created_at DESC';
 
@@ -253,21 +253,21 @@ router.post('/deals/:id/activities', authenticate, checkPermission('crm.manage')
         const { id } = req.params;
         const { activity_type, subject, description, scheduled_at, assigned_to } = req.body;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify deal belongs to license
-        if (userLicenseId) {
-            const dCheck = await pool.query('SELECT 1 FROM deals WHERE id = $1 AND license_id = $2', [id, userLicenseId]);
+        if (orgId) {
+            const dCheck = await pool.query('SELECT 1 FROM deals WHERE id = $1 AND organization_id = $2', [id, orgId]);
             if (dCheck.rows.length === 0) throw new Error('Сделка не найдена в вашей организации');
         }
 
         const result = await pool.query(`
             INSERT INTO deal_activities (
                 deal_id, activity_type, subject, description,
-                scheduled_at, assigned_to, created_by, license_id
+                scheduled_at, assigned_to, created_by, organization_id
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
-        `, [id, activity_type, subject, description, scheduled_at, assigned_to, req.user.userId, userLicenseId]);
+        `, [id, activity_type, subject, description, scheduled_at, assigned_to, req.user.userId, orgId]);
 
         res.json(result.rows[0]);
     } catch (error) {
@@ -298,7 +298,7 @@ router.get('/pipeline/analytics', authenticate, checkPermission('crm.read'), asy
  */
 router.get('/loyalty/customers', authenticate, checkPermission('crm.read'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT cl.*,
                 c.name as customer_name,
@@ -310,9 +310,9 @@ router.get('/loyalty/customers', authenticate, checkPermission('crm.read'), asyn
             LEFT JOIN loyalty_tiers lt ON cl.tier_id = lt.id
         `;
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE cl.license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE cl.organization_id = $1';
+            params.push(orgId);
         }
         query += ' ORDER BY cl.total_points DESC';
 
@@ -398,7 +398,7 @@ router.get('/loyalty/transactions/:customerId', authenticate, checkPermission('c
     try {
         const { customerId } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT lt.*,
                 s.document_number as sale_number
@@ -407,9 +407,9 @@ router.get('/loyalty/transactions/:customerId', authenticate, checkPermission('c
             WHERE lt.customer_id = $1
         `;
         const params = [customerId];
-        if (userLicenseId) {
-            query += ' AND lt.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND lt.organization_id = $2';
+            params.push(orgId);
         }
         query += ' ORDER BY lt.created_at DESC LIMIT 100';
 
@@ -527,7 +527,7 @@ router.get('/rfm/segment-stats', authenticate, checkPermission('crm.read'), asyn
  */
 router.get('/email/campaigns', authenticate, checkPermission('crm.read'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT ec.*,
                 cs.name as segment_name,
@@ -537,9 +537,9 @@ router.get('/email/campaigns', authenticate, checkPermission('crm.read'), async 
             LEFT JOIN users u ON ec.created_by = u.id
         `;
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE ec.license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE ec.organization_id = $1';
+            params.push(orgId);
         }
         query += ' ORDER BY ec.created_at DESC';
 

@@ -236,7 +236,7 @@ router.post('/send', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Укажите заголовок и текст уведомления' });
         }
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const notifications = [];
 
         // Отправить всем продавцам/кассирам
@@ -244,9 +244,9 @@ router.post('/send', authenticate, async (req, res) => {
             let usersQuery = `SELECT id FROM users WHERE is_active = true`;
             const queryParams = [];
 
-            if (userLicenseId) {
-                usersQuery += ` AND license_id = $1`;
-                queryParams.push(userLicenseId);
+            if (orgId) {
+                usersQuery += ` AND organization_id = $1`;
+                queryParams.push(orgId);
             }
 
             const usersResult = await pool.query(usersQuery, queryParams);

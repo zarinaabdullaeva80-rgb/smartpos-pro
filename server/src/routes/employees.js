@@ -19,7 +19,7 @@ function getOrgId(req) {
 const requireClientAdmin = async (req, res, next) => {
     try {
         const result = await pool.query(
-            'SELECT user_type, license_id, role FROM users WHERE id = $1',
+            'SELECT user_type, organization_id, role FROM users WHERE id = $1',
             [req.user.id]
         );
 
@@ -27,7 +27,7 @@ const requireClientAdmin = async (req, res, next) => {
             return res.status(401).json({ error: 'Пользователь не найден' });
         }
 
-        const { user_type, license_id, role } = result.rows[0];
+        const { user_type, organization_id, role } = result.rows[0];
 
         // Allow: client_admin, super_admin, owner, or role 'Администратор'/'admin'
         const allowedTypes = ['client_admin', 'super_admin', 'owner'];
@@ -38,7 +38,7 @@ const requireClientAdmin = async (req, res, next) => {
         }
 
         req.user.user_type = user_type;
-        req.user.license_id = license_id;
+        req.user.organization_id = organization_id;
         next();
     } catch (error) {
         console.error('requireClientAdmin error:', error);
@@ -61,7 +61,7 @@ router.get('/', authenticate, requireClientAdmin, async (req, res) => {
             WHERE u.organization_id = $1
         `;
         const orgId = getOrgId(req);
-        const params = [orgId || req.user.license_id];
+        const params = [orgId || req.user.organization_id];
         let paramCount = 1;
 
         if (search) {
@@ -113,15 +113,15 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         }
 
         // ✅ Проверить лимит сотрудников по лицензии
-        if (req.user.license_id) {
+        if (req.user.organization_id) {
             const limitCheck = await pool.query(`
                 SELECT l.max_users,
                        COUNT(u.id) AS current_count
                 FROM licenses l
-                LEFT JOIN users u ON u.created_by_license_id = l.id AND u.is_active = true
+                LEFT JOIN users u ON u.created_by_organization_id = l.id AND u.is_active = true
                 WHERE l.id = $1
                 GROUP BY l.max_users
-            `, [req.user.license_id]);
+            `, [req.user.organization_id]);
 
             if (limitCheck.rows.length > 0) {
                 const { max_users, current_count } = limitCheck.rows[0];
@@ -141,10 +141,10 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         // Create employee
         const orgId = getOrgId(req);
         const result = await pool.query(
-            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, license_id, created_by_license_id, organization_id)
+            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, created_by_organization_id, organization_id)
              VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7, $8)
              RETURNING id, username, email, full_name, phone, role, is_active, created_at`,
-            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.license_id, orgId || 1]
+            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.organization_id, orgId || 1]
         );
 
 
@@ -152,7 +152,7 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
 
         // Sync to cloud if license is cloud type
         let syncResult = { synced: false };
-        if (req.user.license_id) {
+        if (req.user.organization_id) {
             syncResult = await syncEmployeeCreate({
                 username,
                 email: email || `${username}@employee.local`,
@@ -160,7 +160,7 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
                 fullName,
                 phone,
                 role: role || 'Кассир'
-            }, req.user.license_id);
+            }, req.user.organization_id);
         }
 
         res.status(201).json({
@@ -187,7 +187,7 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         const orgId = getOrgId(req);
         const check = await pool.query(
             'SELECT id FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.license_id]
+            [id, orgId || req.user.organization_id]
         );
 
         if (check.rows.length === 0) {
@@ -208,17 +208,17 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
 
         paramCount++;
         query += ` WHERE id = $${paramCount} AND organization_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
-        params.push(id, orgId || req.user.license_id);
+        params.push(id, orgId || req.user.organization_id);
 
         const result = await pool.query(query, params);
 
         const employee = result.rows[0];
 
         // Sync update to cloud
-        if (req.user.license_id) {
+        if (req.user.organization_id) {
             await syncEmployeeUpdate(id, {
                 email, fullName, phone, role, isActive, newPassword
-            }, req.user.license_id);
+            }, req.user.organization_id);
         }
 
         res.json({
@@ -243,7 +243,7 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
         const orgId = getOrgId(req);
         const check = await pool.query(
             'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.license_id]
+            [id, orgId || req.user.organization_id]
         );
 
         if (check.rows.length === 0) {
@@ -254,8 +254,8 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
         await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
         // Sync delete to cloud
-        if (req.user.license_id) {
-            await syncEmployeeDelete(username, req.user.license_id);
+        if (req.user.organization_id) {
+            await syncEmployeeDelete(username, req.user.organization_id);
         }
 
         res.json({
@@ -279,7 +279,7 @@ router.post('/:id/reset-password', authenticate, requireClientAdmin, async (req,
         const orgId = getOrgId(req);
         const check = await pool.query(
             'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.license_id]
+            [id, orgId || req.user.organization_id]
         );
 
         if (check.rows.length === 0) {
@@ -339,18 +339,18 @@ router.post('/sync', async (req, res) => {
             const passwordHash = await bcrypt.hash(employee.password, 10);
 
             if (existing.rows.length > 0) {
-                // Update existing user (try with license_id, fallback without)
+                // Update existing user (try with organization_id, fallback without)
                 try {
                     const result = await pool.query(
                         `UPDATE users SET password_hash = $1, email = $2, full_name = $3, phone = $4, role = $5, 
-                         license_id = $6, created_by_license_id = $6, user_type = 'employee', is_active = true, updated_at = NOW()
+                         organization_id = $6, created_by_organization_id = $6, user_type = 'employee', is_active = true, updated_at = NOW()
                          WHERE username = $7
                          RETURNING id, username, email, full_name, role, is_active`,
                         [passwordHash, employee.email, employee.fullName, employee.phone, employee.role, licenseId, employee.username]
                     );
                     return res.json({ message: 'Employee updated via sync', employee: result.rows[0] });
                 } catch (fkErr) {
-                    // FK error - update without license_id
+                    // FK error - update without organization_id
                     const result = await pool.query(
                         `UPDATE users SET password_hash = $1, email = $2, full_name = $3, phone = $4, role = $5,
                          user_type = 'employee', is_active = true, updated_at = NOW()
@@ -362,17 +362,17 @@ router.post('/sync', async (req, res) => {
                 }
             }
 
-            // Create new employee (try with license_id, fallback without)
+            // Create new employee (try with organization_id, fallback without)
             try {
                 const result = await pool.query(
-                    `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, license_id, created_by_license_id)
+                    `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, created_by_organization_id)
                      VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7)
                      RETURNING id, username, email, full_name, role, is_active`,
                     [employee.username, employee.email, passwordHash, employee.fullName, employee.phone, employee.role || 'Кассир', licenseId]
                 );
                 return res.status(201).json({ message: 'Employee created via sync', employee: result.rows[0] });
             } catch (fkErr) {
-                console.log('[EmployeeSync] FK error, creating without license_id:', fkErr.message);
+                console.log('[EmployeeSync] FK error, creating without organization_id:', fkErr.message);
                 const result = await pool.query(
                     `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type)
                      VALUES ($1, $2, $3, $4, $5, $6, 'employee')
@@ -408,7 +408,7 @@ router.post('/sync', async (req, res) => {
             return res.json({ message: 'Employee updated via sync', employee: result.rows[0] });
 
         } else if (action === 'delete' && deleteUsername) {
-            await pool.query('DELETE FROM users WHERE username = $1 AND created_by_license_id = $2', [deleteUsername, licenseId]);
+            await pool.query('DELETE FROM users WHERE username = $1 AND created_by_organization_id = $2', [deleteUsername, licenseId]);
             return res.json({ message: `Employee ${deleteUsername} deleted via sync` });
         }
 

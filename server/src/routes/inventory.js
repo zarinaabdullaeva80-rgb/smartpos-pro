@@ -10,7 +10,7 @@ const router = express.Router();
  */
 router.get('/', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const { search, warehouse_id } = req.query;
 
         let query = `
@@ -29,9 +29,9 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND (p.license_id = $${paramCount} OR p.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NULL)`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -66,7 +66,7 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
     try {
         const { product_id, quantity, document_type, warehouse_id, notes } = req.body;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         if (!product_id || quantity === undefined) {
             return res.status(400).json({ error: 'product_id и quantity обязательны' });
@@ -76,17 +76,17 @@ router.post('/', authenticate, async (req, res) => {
         let whId = warehouse_id;
         if (!whId) {
             const wh = await pool.query(
-                'SELECT id FROM warehouses WHERE is_active = true' + (userLicenseId ? ' AND license_id = $1' : '') + ' LIMIT 1',
-                userLicenseId ? [userLicenseId] : []
+                'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
+                orgId ? [orgId] : []
             );
             whId = wh.rows[0]?.id || 1;
         }
 
         const result = await pool.query(
-            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, notes, created_at)
+            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, notes, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
              RETURNING *`,
-            [product_id, whId, document_type || 'adjustment', quantity, req.user.id, userLicenseId, notes || null]
+            [product_id, whId, document_type || 'adjustment', quantity, req.user.id, orgId, notes || null]
         );
 
         // Получить обновлённый остаток
@@ -113,7 +113,7 @@ router.post('/', authenticate, async (req, res) => {
 router.post('/save', authenticate, async (req, res) => {
     try {
         const { items, date, total_counted, discrepancies } = req.body;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'items array is required' });
@@ -126,8 +126,8 @@ router.post('/save', authenticate, async (req, res) => {
         let warehouseId = 1;
         try {
             const wh = await pool.query(
-                'SELECT id FROM warehouses WHERE is_active = true' + (userLicenseId ? ' AND license_id = $1' : '') + ' LIMIT 1',
-                userLicenseId ? [userLicenseId] : []
+                'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
+                orgId ? [orgId] : []
             );
             if (wh.rows.length > 0) warehouseId = wh.rows[0].id;
         } catch (e) { /* use default */ }
@@ -139,14 +139,14 @@ router.post('/save', authenticate, async (req, res) => {
                 if (diff !== 0) {
                     // Создать корректировку в inventory_movements
                     await pool.query(`
-                        INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, notes, created_at)
+                        INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, notes, created_at)
                         VALUES ($1, $2, 'inventory', $3, $4, $5, $6, NOW())
                     `, [
                         item.product_id,
                         warehouseId,
                         diff,
                         req.user.id,
-                        userLicenseId,
+                        orgId,
                         `Инвентаризация: ожидалось ${item.expected_quantity}, факт ${item.actual_quantity}`
                     ]);
 
@@ -229,7 +229,7 @@ router.get('/movements/:productId', authenticate, async (req, res) => {
 router.get('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Информация о товаре
         const productResult = await pool.query(
@@ -252,9 +252,9 @@ router.get('/:id', authenticate, async (req, res) => {
             WHERE w.is_active = true
         `;
         const params = [id];
-        if (userLicenseId) {
-            stockQuery += ' AND (w.license_id = $2 OR w.license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            stockQuery += ' AND (w.organization_id = $2 OR w.organization_id IS NULL)';
+            params.push(orgId);
         }
         stockQuery += ' GROUP BY w.id, w.name ORDER BY w.name';
 

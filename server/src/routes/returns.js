@@ -49,10 +49,10 @@ router.get('/', authenticate, async (req, res) => {
             paramIndex++;
         }
 
-        const userLicenseId = req.user.license_id;
-        if (userLicenseId) {
-            query += ` AND r.license_id = $${paramIndex++}`;
-            params.push(userLicenseId);
+        const orgId = req.user?.organization_id;
+        if (orgId) {
+            query += ` AND r.organization_id = $${paramIndex++}`;
+            params.push(orgId);
         }
 
         query += ` ORDER BY r.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
@@ -71,16 +71,16 @@ router.get('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `SELECT r.*, s.document_number as sale_number, u.username
               FROM returns r
               LEFT JOIN sales s ON r.sale_id = s.id
               LEFT JOIN users u ON r.user_id = u.id
               WHERE r.id = $1`;
         const params = [id];
-        if (userLicenseId) {
-            query += ' AND r.license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND r.organization_id = $2';
+            params.push(orgId);
         }
 
         const returnResult = await pool.query(query, params);
@@ -94,8 +94,8 @@ router.get('/:id', authenticate, async (req, res) => {
             `SELECT ri.*, p.name as product_name, p.code as product_code
              FROM return_items ri
              JOIN products p ON ri.product_id = p.id
-             WHERE ri.return_id = $1 AND (p.license_id = $2 OR p.license_id IS NULL) OR $2 IS NULL`,
-            [id, userLicenseId]
+             WHERE ri.return_id = $1 AND (p.organization_id = $2 OR p.organization_id IS NULL) OR $2 IS NULL`,
+            [id, orgId]
         );
 
         res.json({
@@ -114,12 +114,12 @@ router.get('/check-sale/:saleId', authenticate, async (req, res) => {
         const { saleId } = req.params;
 
         // Получить продажу
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let saleQuery = 'SELECT * FROM sales WHERE id = $1';
         const saleParams = [saleId];
-        if (userLicenseId) {
-            saleQuery += ' AND license_id = $2';
-            saleParams.push(userLicenseId);
+        if (orgId) {
+            saleQuery += ' AND organization_id = $2';
+            saleParams.push(orgId);
         }
         const saleResult = await pool.query(saleQuery, saleParams);
 
@@ -134,8 +134,8 @@ router.get('/check-sale/:saleId', authenticate, async (req, res) => {
             `SELECT si.*, p.name, p.code
              FROM sale_items si
              JOIN products p ON si.product_id = p.id
-             WHERE si.sale_id = $1 AND (p.license_id = $2 OR p.license_id IS NULL) OR $2 IS NULL`,
-            [saleId, userLicenseId]
+             WHERE si.sale_id = $1 AND (p.organization_id = $2 OR p.organization_id IS NULL) OR $2 IS NULL`,
+            [saleId, orgId]
         );
 
         // Получить уже возвращенное количество для каждой позиции
@@ -202,13 +202,13 @@ router.post('/', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать продажу и позиции для возврата' });
         }
 
-        const userLicenseId = req.user.license_id || null;
+        const orgId = req.user?.organization_id || null;
 
-        // Проверить наличие открытой смены (license_id опционально)
+        // Проверить наличие открытой смены (organization_id опционально)
         let shiftQuery, shiftParams;
-        if (userLicenseId) {
-            shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' AND license_id = $2 ORDER BY started_at DESC LIMIT 1`;
-            shiftParams = [req.user.id, userLicenseId];
+        if (orgId) {
+            shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' AND organization_id = $2 ORDER BY started_at DESC LIMIT 1`;
+            shiftParams = [req.user.id, orgId];
         } else {
             shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY started_at DESC LIMIT 1`;
             shiftParams = [req.user.id];
@@ -222,12 +222,12 @@ router.post('/', authenticate, async (req, res) => {
 
         const currentShiftId = shiftResult.rows[0].id;
 
-        // Проверить существование продажи (license_id опционально)
+        // Проверить существование продажи (organization_id опционально)
         let saleResult;
-        if (userLicenseId) {
+        if (orgId) {
             saleResult = await client.query(
-                'SELECT * FROM sales WHERE id = $1 AND (license_id = $2 OR license_id IS NULL)',
-                [sale_id, userLicenseId]
+                'SELECT * FROM sales WHERE id = $1 AND (organization_id = $2 OR organization_id IS NULL)',
+                [sale_id, orgId]
             );
         } else {
             saleResult = await client.query(
@@ -300,10 +300,10 @@ router.post('/', authenticate, async (req, res) => {
         const returnResult = await client.query(
             `INSERT INTO returns (
                 document_number, sale_id, reason, total_amount, vat_amount, final_amount, 
-                status, user_id, notes, license_id
+                status, user_id, notes, organization_id
             ) VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', $7, $8, $9)
             RETURNING *`,
-            [documentNumber, sale_id, reason, totalAmount, vatAmount, finalAmount, req.user.id, notes, userLicenseId]
+            [documentNumber, sale_id, reason, totalAmount, vatAmount, finalAmount, req.user.id, notes, orgId]
         );
 
         const returnDoc = returnResult.rows[0];
@@ -322,7 +322,7 @@ router.post('/', authenticate, async (req, res) => {
             await client.query(
                 `INSERT INTO return_items (
                     return_id, sale_item_id, product_id, quantity, 
-                    price, vat_rate, vat_amount, total_amount, total_price, license_id
+                    price, vat_rate, vat_amount, total_amount, total_price, organization_id
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
                 [
                     returnDoc.id,
@@ -334,7 +334,7 @@ router.post('/', authenticate, async (req, res) => {
                     itemVat || 0,
                     itemTotal || 0,
                     itemTotal || 0,
-                    userLicenseId
+                    orgId
                 ]
             );
         }
@@ -369,13 +369,13 @@ router.post('/standalone', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать позиции для возврата' });
         }
 
-        const userLicenseId = req.user.license_id || null;
+        const orgId = req.user?.organization_id || null;
 
         // Проверить наличие открытой смены
         let shiftQuery, shiftParams;
-        if (userLicenseId) {
-            shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' AND license_id = $2 ORDER BY started_at DESC LIMIT 1`;
-            shiftParams = [req.user.id, userLicenseId];
+        if (orgId) {
+            shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' AND organization_id = $2 ORDER BY started_at DESC LIMIT 1`;
+            shiftParams = [req.user.id, orgId];
         } else {
             shiftQuery = `SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY started_at DESC LIMIT 1`;
             shiftParams = [req.user.id];
@@ -409,10 +409,10 @@ router.post('/standalone', authenticate, async (req, res) => {
         const returnResult = await client.query(
             `INSERT INTO returns (
                 document_number, sale_id, reason, total_amount, vat_amount, final_amount, 
-                status, user_id, notes, license_id
+                status, user_id, notes, organization_id
             ) VALUES ($1, NULL, $2, $3, $4, $5, 'confirmed', $6, $7, $8)
             RETURNING *`,
-            [documentNumber, reason || 'Отдельный возврат', totalAmount, vatAmount, totalAmount, req.user.id, notes, userLicenseId]
+            [documentNumber, reason || 'Отдельный возврат', totalAmount, vatAmount, totalAmount, req.user.id, notes, orgId]
         );
 
         const returnDoc = returnResult.rows[0];
@@ -425,7 +425,7 @@ router.post('/standalone', authenticate, async (req, res) => {
             await client.query(
                 `INSERT INTO return_items (
                     return_id, sale_item_id, product_id, quantity, 
-                    price, vat_rate, vat_amount, total_amount, total_price, license_id
+                    price, vat_rate, vat_amount, total_amount, total_price, organization_id
                 ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9)`,
                 [
                     returnDoc.id,
@@ -436,7 +436,7 @@ router.post('/standalone', authenticate, async (req, res) => {
                     itemVat || 0,
                     itemTotal || 0,
                     itemTotal || 0,
-                    userLicenseId
+                    orgId
                 ]
             );
 

@@ -275,7 +275,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         let vatAmount = 0;
 
         const orgId = getOrgId(req);
-        const userLicenseId = req.user?.license_id;
+        const userLicenseId = req.user?.organization_id;
 
         // Получить цены из БД для товаров без цены
         for (const item of items) {
@@ -356,7 +356,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         // Создание документа продажи
         const saleResult = await client.query(
             `INSERT INTO sales (document_number, document_date, customer_id, warehouse_id, 
-        total_amount, discount_percent, discount_amount, final_amount, user_id, notes, status, payment_type, license_id, organization_id)
+        total_amount, discount_percent, discount_amount, final_amount, user_id, notes, status, payment_type, organization_id, organization_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
             [documentNumber, documentDate, counterpartyId || null, finalWarehouseId, totalAmount,
@@ -408,7 +408,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                     // quantity хранится ПОЛОЖИТЕЛЬНОЙ — GET products query использует CASE для 'sale' → -im.quantity
                     if (finalWarehouseId) {
                         await client.query(
-                            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id, organization_id)
+                            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, organization_id, organization_id)
                      VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7, $8)`,
                             [item.productId, finalWarehouseId, sale.id, item.quantity, item.price, req.user.id, userLicenseId, orgId || 1]
                         );
@@ -519,7 +519,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         const saleId = req.params.id;
 
         const orgId = getOrgId(req);
-        const userLicenseId = req.user?.license_id;
+        const userLicenseId = req.user?.organization_id;
 
         // Проверка статуса
         let checkQuery = 'SELECT status FROM sales WHERE id = $1';
@@ -601,7 +601,7 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
         const saleId = req.params.id;
 
         const orgId = getOrgId(req);
-        const userLicenseId = req.user?.license_id;
+        const userLicenseId = req.user?.organization_id;
 
         // Получение данных продажи
         let saleQuery = 'SELECT * FROM sales WHERE id = $1';
@@ -636,7 +636,7 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
         for (const item of itemsResult.rows) {
             // quantity ПОЛОЖИТЕЛЬНАЯ — GET products query делает -im.quantity для 'sale'
             await client.query(
-                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, license_id, organization_id)
+                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, cost_price, user_id, organization_id, organization_id)
          VALUES ($1, $2, 'sale', $3, $4, $5, $6, $7, $8)`,
                 [item.product_id, sale.warehouse_id, saleId, item.quantity, item.price, req.user.id, userLicenseId, orgId || 1]
             );

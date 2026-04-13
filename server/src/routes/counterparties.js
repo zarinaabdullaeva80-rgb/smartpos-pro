@@ -9,7 +9,7 @@ router.get('/', authenticate, async (req, res) => {
     try {
         const { type, search, isActive } = req.query;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
       SELECT * FROM counterparties
       WHERE 1=1
@@ -17,9 +17,9 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND license_id = $${paramCount}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -54,13 +54,13 @@ router.get('/', authenticate, async (req, res) => {
 // Получение контрагента по ID
 router.get('/:id', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM counterparties WHERE id = $1';
         const params = [req.params.id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);
@@ -82,20 +82,20 @@ router.get('/:id/history', authenticate, async (req, res) => {
         const counterpartyId = req.params.id;
         const { dateFrom, dateTo, limit = 50 } = req.query;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify counterparty belongs to license
-        if (userLicenseId) {
-            const cpCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [counterpartyId, userLicenseId]);
+        if (orgId) {
+            const cpCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterpartyId, orgId]);
             if (cpCheck.rows.length === 0) return res.status(404).json({ error: 'Контрагент не найден' });
         }
 
         let baseParamCount = 1;
         const queryParams = [counterpartyId];
 
-        if (userLicenseId) {
+        if (orgId) {
             baseParamCount++;
-            queryParams.push(userLicenseId);
+            queryParams.push(orgId);
         }
 
         // Продажи
@@ -111,7 +111,7 @@ router.get('/:id/history', authenticate, async (req, res) => {
       FROM sales s
       WHERE s.counterparty_id = $1
     `;
-        if (userLicenseId) salesQuery += ` AND s.license_id = $${baseParamCount}`;
+        if (orgId) salesQuery += ` AND s.organization_id = $${baseParamCount}`;
 
         // Закупки
         let purchasesQuery = `
@@ -126,7 +126,7 @@ router.get('/:id/history', authenticate, async (req, res) => {
       FROM purchases p
       WHERE p.counterparty_id = $1
     `;
-        if (userLicenseId) purchasesQuery += ` AND p.license_id = $${baseParamCount}`;
+        if (orgId) purchasesQuery += ` AND p.organization_id = $${baseParamCount}`;
 
         // Платежи
         let paymentsQuery = `
@@ -144,7 +144,7 @@ router.get('/:id/history', authenticate, async (req, res) => {
       FROM payments pm
       WHERE pm.counterparty_id = $1
     `;
-        if (userLicenseId) paymentsQuery += ` AND pm.license_id = $${baseParamCount}`;
+        if (orgId) paymentsQuery += ` AND pm.organization_id = $${baseParamCount}`;
 
         let currentParamIndex = baseParamCount + 1;
 
@@ -188,11 +188,11 @@ router.get('/:id/history', authenticate, async (req, res) => {
 router.get('/:id/balance', authenticate, async (req, res) => {
     try {
         const counterpartyId = req.params.id;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Verify counterparty belongs to license
-        if (userLicenseId) {
-            const cpCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [counterpartyId, userLicenseId]);
+        if (orgId) {
+            const cpCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterpartyId, orgId]);
             if (cpCheck.rows.length === 0) return res.status(404).json({ error: 'Контрагент не найден' });
         }
 
@@ -203,9 +203,9 @@ router.get('/:id/balance', authenticate, async (req, res) => {
       FROM sales
       WHERE counterparty_id = $1 AND status != 'draft'`;
         const sParams = [counterpartyId];
-        if (userLicenseId) {
-            sQuery += ' AND license_id = $2';
-            sParams.push(userLicenseId);
+        if (orgId) {
+            sQuery += ' AND organization_id = $2';
+            sParams.push(orgId);
         }
         const salesResult = await pool.query(sQuery, sParams);
 
@@ -216,9 +216,9 @@ router.get('/:id/balance', authenticate, async (req, res) => {
       FROM purchases
       WHERE counterparty_id = $1 AND status != 'draft'`;
         const prParams = [counterpartyId];
-        if (userLicenseId) {
-            prQuery += ' AND license_id = $2';
-            prParams.push(userLicenseId);
+        if (orgId) {
+            prQuery += ' AND organization_id = $2';
+            prParams.push(orgId);
         }
         const purchasesResult = await pool.query(prQuery, prParams);
 
@@ -228,7 +228,7 @@ router.get('/:id/balance', authenticate, async (req, res) => {
         COALESCE(SUM(CASE WHEN payment_type = 'outgoing' THEN amount ELSE 0 END), 0) as outgoing_payments
       FROM payments
       WHERE counterparty_id = $1 AND status = 'confirmed'`;
-        // if (userLicenseId) pyQuery += ' AND license_id = $2';
+        // if (orgId) pyQuery += ' AND organization_id = $2';
         const paymentsResult = await pool.query(pyQuery, [counterpartyId]);
 
         const sales = salesResult.rows[0];
@@ -267,13 +267,13 @@ router.post('/', authenticate, authorize('Администратор', 'Бухг
             contactPerson, paymentTerms, creditLimit
         } = req.body;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         const result = await pool.query(
-            `INSERT INTO counterparties (code, name, type, inn, kpp, address, phone, email, contact_person, payment_terms, credit_limit, license_id)
+            `INSERT INTO counterparties (code, name, type, inn, kpp, address, phone, email, contact_person, payment_terms, credit_limit, organization_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
-            [code, name, type, inn, kpp, address, phone, email, contactPerson, paymentTerms || 0, creditLimit || 0, userLicenseId]
+            [code, name, type, inn, kpp, address, phone, email, contactPerson, paymentTerms || 0, creditLimit || 0, orgId]
         );
 
         await logAudit(req.user.id, 'CREATE', 'counterparties', result.rows[0].id, null, result.rows[0], req.ip);
@@ -296,7 +296,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
             contactPerson, paymentTerms, creditLimit, isActive
         } = req.body;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `UPDATE counterparties 
        SET code = $1, name = $2, type = $3, inn = $4, kpp = $5, address = $6,
            phone = $7, email = $8, contact_person = $9, payment_terms = $10,
@@ -305,9 +305,9 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
         const params = [code, name, type, inn, kpp, address, phone, email, contactPerson,
             paymentTerms, creditLimit, isActive, req.params.id];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $14';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $14';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -349,12 +349,12 @@ router.delete('/:id', authenticate, authorize('Администратор'), asy
             });
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'DELETE FROM counterparties WHERE id = $1';
         const params = [req.params.id];
-        if (userLicenseId) {
-            query += ' AND license_id = $2';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $2';
+            params.push(orgId);
         }
         await pool.query(query, params);
         await logAudit(req.user.id, 'DELETE', 'counterparties', req.params.id, null, null, req.ip);

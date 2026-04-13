@@ -35,7 +35,7 @@ const router = express.Router();
 
 /**
  * Helper: get organization_id for multi-tenant filtering
- * Falls back to license_id for backward compatibility
+ * Falls back to organization_id for backward compatibility
  */
 function getOrgId(req) {
     return req.user?.organization_id || req.organizationId || null;
@@ -89,7 +89,7 @@ router.get('/', authenticate, async (req, res) => {
       SELECT p.id, p.code, p.name, p.category_id, p.unit, 
              p.price_purchase, p.price_sale, p.price_retail, 
              p.vat_rate, p.description, p.barcode, p.image_url, 
-             p.is_active, p.license_id, p.created_at, p.updated_at,
+             p.is_active, p.organization_id, p.created_at, p.updated_at,
              pc.name as category_name,
              COALESCE((
                SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
@@ -248,7 +248,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         } = req.body;
 
         const orgId = getOrgId(req);
-        const licenseId = req.user.license_id || null;
+        const licenseId = req.user.organization_id || null;
 
         // Check if product with this code already exists (within org scope)
         let existQuery = 'SELECT id FROM products WHERE code = $1';
@@ -268,7 +268,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                     name = $1, category_id = $2, unit = $3, price_purchase = $4, 
                     price_sale = $5, price_retail = $6, vat_rate = $7, 
                     description = $8, barcode = $9, image_url = $10, 
-                    license_id = COALESCE($11, license_id),
+                    organization_id = COALESCE($11, organization_id),
                     updated_at = CURRENT_TIMESTAMP
                 WHERE code = $12`;
             const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, code];
@@ -282,7 +282,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         } else {
             // Create new product
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, license_id, organization_id)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, organization_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING *`,
                 [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, orgId || 1]
@@ -305,7 +305,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             } catch (e) { /* use default */ }
 
             await pool.query(
-                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, organization_id)
+                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, organization_id)
                  VALUES ($1, $2, 'receipt', $3, $4, $5, $6)`,
                 [productId, warehouseId, initialQuantity, req.user.id, licenseId, orgId || 1]
             );
@@ -475,7 +475,7 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
         }
 
         const orgId = getOrgId(req);
-        const userLicenseId = req.user.license_id;
+        const userLicenseId = req.user.organization_id;
 
         // Verify product belongs to user's organization
         const product = await pool.query(
@@ -501,7 +501,7 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
         }
 
         await pool.query(
-            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, license_id, organization_id)
+            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, organization_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [id, whId, type || 'adjustment', actualQuantity, req.user.id, userLicenseId, orgId || 1]
         );

@@ -10,7 +10,7 @@ router.get('/', authenticate, async (req, res) => {
     try {
         const { status, dateFrom, dateTo, counterpartyId } = req.query;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
       SELECT p.*, c.name as counterparty_name, w.name as warehouse_name, u.full_name as user_name
       FROM purchases p
@@ -22,9 +22,9 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND p.license_id = $${paramCount}`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND p.organization_id = $${paramCount}`;
+            params.push(orgId);
             paramCount++;
         }
 
@@ -65,7 +65,7 @@ router.get('/', authenticate, async (req, res) => {
 // Получение закупки по ID с позициями
 router.get('/:id', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
         let purchaseQuery = `
              SELECT p.*, c.name as counterparty_name, w.name as warehouse_name, u.full_name as user_name
              FROM purchases p
@@ -76,9 +76,9 @@ router.get('/:id', authenticate, async (req, res) => {
         `;
         const queryParams = [req.params.id];
 
-        if (userLicenseId) {
-            purchaseQuery += ' AND p.license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            purchaseQuery += ' AND p.organization_id = $2';
+            queryParams.push(orgId);
         }
 
         const purchaseResult = await pool.query(purchaseQuery, queryParams);
@@ -126,16 +126,16 @@ router.post('/', authenticate, authorize('Администратор', 'Бухг
             vatAmount += itemVat;
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Валидация контрагента и склада (должны принадлежать той же лицензии)
-        if (userLicenseId) {
+        if (orgId) {
             if (counterpartyId) {
-                const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [counterpartyId, userLicenseId]);
+                const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterpartyId, orgId]);
                 if (cpCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
             }
             if (warehouseId) {
-                const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [warehouseId, userLicenseId]);
+                const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [warehouseId, orgId]);
                 if (whCheck.rows.length === 0) throw new Error('Склад не найден в вашей организации');
             }
         }
@@ -145,11 +145,11 @@ router.post('/', authenticate, authorize('Администратор', 'Бухг
         // Создание документа закупки
         const purchaseResult = await client.query(
             `INSERT INTO purchases (document_number, document_date, counterparty_id, warehouse_id, 
-        total_amount, vat_amount, final_amount, user_id, notes, license_id)
+        total_amount, vat_amount, final_amount, user_id, notes, organization_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
             [documentNumber, documentDate, counterpartyId, warehouseId, totalAmount, vatAmount,
-                finalAmount, req.user.id, notes, userLicenseId]
+                finalAmount, req.user.id, notes, orgId]
         );
 
         const purchase = purchaseResult.rows[0];
@@ -190,14 +190,14 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
         const { documentNumber, documentDate, counterpartyId, warehouseId, items, notes } = req.body;
 
         // Проверка статуса
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Проверка статуса
         let checkQuery = 'SELECT status FROM purchases WHERE id = $1';
         const checkParams = [purchaseId];
-        if (userLicenseId) {
-            checkQuery += ' AND license_id = $2';
-            checkParams.push(userLicenseId);
+        if (orgId) {
+            checkQuery += ' AND organization_id = $2';
+            checkParams.push(orgId);
         }
         const statusCheck = await client.query(checkQuery, checkParams);
         if (statusCheck.rows.length === 0) {
@@ -209,13 +209,13 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
         }
 
         // Валидация контрагента и склада (должны принадлежать той же лицензии)
-        if (userLicenseId) {
+        if (orgId) {
             if (counterpartyId) {
-                const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [counterpartyId, userLicenseId]);
+                const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterpartyId, orgId]);
                 if (cpCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
             }
             if (warehouseId) {
-                const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND license_id = $2', [warehouseId, userLicenseId]);
+                const whCheck = await client.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [warehouseId, orgId]);
                 if (whCheck.rows.length === 0) throw new Error('Склад не найден в вашей организации');
             }
         }
@@ -278,14 +278,14 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
 
         const purchaseId = req.params.id;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Получение данных закупки
         let purchaseQuery = 'SELECT * FROM purchases WHERE id = $1';
         const queryParams = [purchaseId];
-        if (userLicenseId) {
-            purchaseQuery += ' AND license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            purchaseQuery += ' AND organization_id = $2';
+            queryParams.push(orgId);
         }
         const purchaseResult = await client.query(purchaseQuery, queryParams);
         if (purchaseResult.rows.length === 0) {
@@ -315,9 +315,9 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
             // Обновление цены закупки товара (только если товар принадлежит той же лицензии)
             let productUpdateQuery = 'UPDATE products SET price_purchase = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2';
             const productUpdateParams = [item.price, item.product_id];
-            if (userLicenseId) {
-                productUpdateQuery += ' AND license_id = $3';
-                productUpdateParams.push(userLicenseId);
+            if (orgId) {
+                productUpdateQuery += ' AND organization_id = $3';
+                productUpdateParams.push(orgId);
             }
             await client.query(productUpdateQuery, productUpdateParams);
         }
@@ -355,14 +355,14 @@ router.post('/:id/cancel', authenticate, authorize('Администратор',
 
         const purchaseId = req.params.id;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Получение данных закупки
         let purchaseQuery = 'SELECT * FROM purchases WHERE id = $1';
         const queryParams = [purchaseId];
-        if (userLicenseId) {
-            purchaseQuery += ' AND license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            purchaseQuery += ' AND organization_id = $2';
+            queryParams.push(orgId);
         }
         const purchaseResult = await client.query(purchaseQuery, queryParams);
         if (purchaseResult.rows.length === 0) {
@@ -425,14 +425,14 @@ router.delete('/:id', authenticate, authorize('Администратор', 'Б�
 
         const purchaseId = req.params.id;
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Проверка статуса
         let purchaseQuery = 'SELECT status FROM purchases WHERE id = $1';
         const queryParams = [purchaseId];
-        if (userLicenseId) {
-            purchaseQuery += ' AND license_id = $2';
-            queryParams.push(userLicenseId);
+        if (orgId) {
+            purchaseQuery += ' AND organization_id = $2';
+            queryParams.push(orgId);
         }
         const purchaseResult = await client.query(purchaseQuery, queryParams);
         if (purchaseResult.rows.length === 0) {

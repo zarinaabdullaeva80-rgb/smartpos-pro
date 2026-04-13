@@ -17,14 +17,14 @@ router.get('/', authenticate, checkPermission('audit.view'), async (req, res) =>
             limit = 50
         } = req.query;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let whereConditions = [];
         let params = [];
         let paramIndex = 1;
 
-        if (userLicenseId) {
-            whereConditions.push(`al.license_id = $${paramIndex++}`);
-            params.push(userLicenseId);
+        if (orgId) {
+            whereConditions.push(`al.organization_id = $${paramIndex++}`);
+            params.push(orgId);
         }
 
         if (userId) {
@@ -98,7 +98,7 @@ router.get('/entity/:entityType/:entityId', authenticate, checkPermission('audit
     try {
         const { entityType, entityId } = req.params;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT 
                 al.*,
@@ -109,9 +109,9 @@ router.get('/entity/:entityType/:entityId', authenticate, checkPermission('audit
         `;
         const params = [entityType, entityId];
 
-        if (userLicenseId) {
-            query += ' AND al.license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND al.organization_id = $3';
+            params.push(orgId);
         }
 
         query += ' ORDER BY al.created_at DESC';
@@ -146,7 +146,7 @@ router.get('/user/:userId', authenticate, async (req, res) => {
             }
         }
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT *
             FROM audit_log
@@ -154,9 +154,9 @@ router.get('/user/:userId', authenticate, async (req, res) => {
         `;
         const params = [userId, limit];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
         }
 
         query += ' ORDER BY created_at DESC LIMIT $2';
@@ -178,17 +178,17 @@ router.get('/stats', authenticate, checkPermission('audit.view'), async (req, re
         const sd = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
         const ed = endDate || new Date().toISOString();
 
-        const userLicenseId = req.user.license_id;
-        // Note: get_audit_stats might need to be updated to support license_id
+        const orgId = req.user?.organization_id;
+        // Note: get_audit_stats might need to be updated to support organization_id
         // For now, we filter if license exists, assuming the function returns all
         let query = 'SELECT * FROM get_audit_stats($1::TIMESTAMP, $2::TIMESTAMP)';
         const params = [sd, ed];
 
-        if (userLicenseId) {
-            // This is a hack if the function doesn't support license_id. 
+        if (orgId) {
+            // This is a hack if the function doesn't support organization_id. 
             // Better to update the function eventually.
-            query = 'SELECT * FROM audit_log WHERE created_at BETWEEN $1 AND $2 AND license_id = $3';
-            params.push(userLicenseId);
+            query = 'SELECT * FROM audit_log WHERE created_at BETWEEN $1 AND $2 AND organization_id = $3';
+            params.push(orgId);
             // If it's just raw logs, it's not "stats" but for now let's keep it safe.
         }
 

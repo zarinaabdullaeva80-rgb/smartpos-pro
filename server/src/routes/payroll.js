@@ -21,7 +21,7 @@ async function ensurePayrollTable() {
             notes TEXT,
             paid_at TIMESTAMP,
             paid_by INTEGER,
-            license_id INTEGER,
+            organization_id INTEGER,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW(),
             UNIQUE(employee_id, period_year, period_month)
@@ -34,7 +34,7 @@ router.get('/', authenticate, async (req, res) => {
     try {
         await ensurePayrollTable();
         const { year, month, status } = req.query;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             SELECT pr.*, 
@@ -48,9 +48,9 @@ router.get('/', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (userLicenseId) {
-            query += ` AND (pr.license_id = $${paramCount} OR pr.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND (pr.organization_id = $${paramCount} OR pr.organization_id IS NULL)`;
+            params.push(orgId);
             paramCount++;
         }
         if (year) {
@@ -82,10 +82,10 @@ router.get('/', authenticate, async (req, res) => {
                 SUM(deductions) as total_deductions,
                 SUM(net_amount) as total_net
             FROM payroll_records pr
-            WHERE ($1::int IS NULL OR pr.license_id = $1)
+            WHERE ($1::int IS NULL OR pr.organization_id = $1)
               AND ($2::int IS NULL OR pr.period_year = $2)
               AND ($3::int IS NULL OR pr.period_month = $3)
-        `, [userLicenseId || null, year ? parseInt(year) : null, month ? parseInt(month) : null]);
+        `, [orgId || null, year ? parseInt(year) : null, month ? parseInt(month) : null]);
 
         res.json({
             payroll: result.rows,
@@ -102,7 +102,7 @@ router.get('/:id', authenticate, async (req, res) => {
     try {
         await ensurePayrollTable();
         const { id } = req.params;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             SELECT pr.*, u.full_name as employee_name, u.username as employee_username
@@ -112,9 +112,9 @@ router.get('/:id', authenticate, async (req, res) => {
         `;
         const params = [id];
 
-        if (userLicenseId) {
-            query += ' AND (pr.license_id = $2 OR pr.license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND (pr.organization_id = $2 OR pr.organization_id IS NULL)';
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);
@@ -143,11 +143,11 @@ router.post('/', authenticate, authorize('Администратор', 'Бухг
             return res.status(400).json({ error: 'Обязательные поля: employeeId, periodYear, periodMonth' });
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         const result = await pool.query(`
             INSERT INTO payroll_records 
-                (employee_id, period_year, period_month, base_salary, bonuses, deductions, notes, license_id)
+                (employee_id, period_year, period_month, base_salary, bonuses, deductions, notes, organization_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (employee_id, period_year, period_month)
             DO UPDATE SET
@@ -157,7 +157,7 @@ router.post('/', authenticate, authorize('Администратор', 'Бухг
         `, [
             employeeId, periodYear, periodMonth,
             baseSalary || 0, bonuses || 0, deductions || 0,
-            notes || null, userLicenseId
+            notes || null, orgId
         ]);
 
         await logAudit(req.user.id, 'CREATE', 'payroll_records', result.rows[0].id, null, result.rows[0], req.ip);
@@ -178,7 +178,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
         await ensurePayrollTable();
         const { id } = req.params;
         const { baseSalary, bonuses, deductions, notes, status } = req.body;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Нельзя изменить оплаченное
         const check = await pool.query('SELECT status FROM payroll_records WHERE id = $1', [id]);
@@ -196,9 +196,9 @@ router.put('/:id', authenticate, authorize('Администратор', 'Бух
         `;
         const params = [baseSalary, bonuses, deductions, notes, id];
 
-        if (userLicenseId) {
-            updateQuery += ' AND (license_id = $6 OR license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            updateQuery += ' AND (organization_id = $6 OR organization_id IS NULL)';
+            params.push(orgId);
         }
         updateQuery += ' RETURNING *';
 
@@ -217,7 +217,7 @@ router.post('/:id/pay', authenticate, authorize('Администратор', '�
     try {
         await ensurePayrollTable();
         const { id } = req.params;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             UPDATE payroll_records 
@@ -226,9 +226,9 @@ router.post('/:id/pay', authenticate, authorize('Администратор', '�
         `;
         const params = [req.user.id, id];
 
-        if (userLicenseId) {
-            query += ' AND (license_id = $3 OR license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND (organization_id = $3 OR organization_id IS NULL)';
+            params.push(orgId);
         }
         query += ' RETURNING *';
 
@@ -257,15 +257,15 @@ router.post('/mass-calculate', authenticate, authorize('Администрато
             return res.status(400).json({ error: 'Обязательные поля: year, month' });
         }
 
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         // Получить всех активных сотрудников
         let empQuery = 'SELECT id FROM users WHERE is_active = true AND role != $1';
         const empParams = ['Суперадмин'];
 
-        if (userLicenseId) {
-            empQuery += ' AND (license_id = $2 OR license_id IS NULL)';
-            empParams.push(userLicenseId);
+        if (orgId) {
+            empQuery += ' AND (organization_id = $2 OR organization_id IS NULL)';
+            empParams.push(orgId);
         }
 
         const employees = await pool.query(empQuery, empParams);
@@ -273,10 +273,10 @@ router.post('/mass-calculate', authenticate, authorize('Администрато
         let created = 0;
         for (const emp of employees.rows) {
             await pool.query(`
-                INSERT INTO payroll_records (employee_id, period_year, period_month, base_salary, license_id)
+                INSERT INTO payroll_records (employee_id, period_year, period_month, base_salary, organization_id)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (employee_id, period_year, period_month) DO NOTHING
-            `, [emp.id, year, month, baseSalary, userLicenseId]);
+            `, [emp.id, year, month, baseSalary, orgId]);
             created++;
         }
 
@@ -296,14 +296,14 @@ router.delete('/:id', authenticate, authorize('Администратор'), asy
     try {
         await ensurePayrollTable();
         const { id } = req.params;
-        const userLicenseId = req.user?.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = 'DELETE FROM payroll_records WHERE id = $1 AND status = $2';
         const params = [id, 'draft'];
 
-        if (userLicenseId) {
-            query += ' AND (license_id = $3 OR license_id IS NULL)';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND (organization_id = $3 OR organization_id IS NULL)';
+            params.push(orgId);
         }
         query += ' RETURNING id';
 

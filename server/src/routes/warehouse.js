@@ -4,6 +4,10 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
+function getOrgId(req) {
+    return req.user?.organization_id || null;
+}
+
 // Все маршруты требуют аутентификации
 router.use(authenticate);
 
@@ -274,6 +278,13 @@ router.get('/stock-balance', async (req, res) => {
         const params = [];
         let paramIndex = 1;
 
+        const orgId = getOrgId(req);
+        if (orgId) {
+            query += ` AND p.organization_id = $${paramIndex}`;
+            params.push(orgId);
+            paramIndex++;
+        }
+
         if (warehouseId) {
             query += ` AND sb.warehouse_id = $${paramIndex}`;
             params.push(warehouseId);
@@ -329,6 +340,13 @@ router.get('/movements', async (req, res) => {
 
         const params = [];
         let paramIndex = 1;
+
+        const orgId = getOrgId(req);
+        if (orgId) {
+            query += ` AND p.organization_id = $${paramIndex}`;
+            params.push(orgId);
+            paramIndex++;
+        }
 
         if (productId) {
             query += ` AND sm.product_id = $${paramIndex}`;
@@ -399,6 +417,13 @@ router.get('/documents', async (req, res) => {
 
         const params = [];
         let paramIndex = 1;
+
+        const orgId = getOrgId(req);
+        if (orgId) {
+            query += ` AND u.organization_id = $${paramIndex}`;
+            params.push(orgId);
+            paramIndex++;
+        }
 
         if (type) {
             query += ` AND wd.document_type = $${paramIndex}`;

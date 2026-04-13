@@ -241,7 +241,7 @@ router.post('/preview', authenticate, upload.single('file'), async (req, res) =>
 router.post('/execute', authenticate, upload.single('file'), async (req, res) => {
     const client = await pool.connect();
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         const { type, mapping: mappingStr, filePath: existingFilePath } = req.body;
         const mapping = typeof mappingStr === 'string' ? JSON.parse(mappingStr) : mappingStr;
 
@@ -326,9 +326,9 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                     if (mapped.barcode) {
                         const dupParams = [String(mapped.barcode)];
                         let dupQuery = 'SELECT id FROM products WHERE barcode = $1';
-                        if (userLicenseId) {
-                            dupParams.push(userLicenseId);
-                            dupQuery += ` AND license_id = $${dupParams.length}`;
+                        if (orgId) {
+                            dupParams.push(orgId);
+                            dupQuery += ` AND organization_id = $${dupParams.length}`;
                         }
                         const dup = await client.query(dupQuery, dupParams);
                         if (dup.rows.length > 0) existingProduct = dup.rows[0];
@@ -363,7 +363,7 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                     } else {
                         // Вставить новый товар
                         await client.query(`
-                            INSERT INTO products (name, barcode, code, category_id, unit, price_sale, price_purchase, description, min_stock, is_active, license_id, created_at)
+                            INSERT INTO products (name, barcode, code, category_id, unit, price_sale, price_purchase, description, min_stock, is_active, organization_id, created_at)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10, NOW())
                         `, [
                             mapped.name,
@@ -375,7 +375,7 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                             mapped.price_purchase ? parseFloat(mapped.price_purchase) : 0,
                             mapped.description || '',
                             mapped.min_stock ? parseInt(mapped.min_stock) : 0,
-                            userLicenseId || null,
+                            orgId || null,
                         ]);
                         imported++;
                     }
@@ -446,9 +446,9 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                         updated++;
                     } else {
                         await client.query(`
-                            INSERT INTO counterparties (name, phone, email, address, inn, notes, type, license_id, created_at)
+                            INSERT INTO counterparties (name, phone, email, address, inn, notes, type, organization_id, created_at)
                             VALUES ($1, $2, $3, $4, $5, $6, 'customer', $7, NOW())
-                        `, [mapped.name, mapped.phone || null, mapped.email || null, mapped.address || null, mapped.inn || null, mapped.notes || '', userLicenseId || null]);
+                        `, [mapped.name, mapped.phone || null, mapped.email || null, mapped.address || null, mapped.inn || null, mapped.notes || '', orgId || null]);
                         imported++;
                     }
                 } catch (rowErr) {
@@ -576,12 +576,12 @@ router.get('/export/:type', authenticate, async (req, res) => {
         let rows, headers, sheetName;
 
         if (type === 'products') {
-            const userLicenseId = req.user.license_id;
+            const orgId = req.user?.organization_id;
             const prodParams = [];
             let prodFilter = 'WHERE p.is_active = true';
-            if (userLicenseId) {
-                prodParams.push(userLicenseId);
-                prodFilter += ` AND p.license_id = $${prodParams.length}`;
+            if (orgId) {
+                prodParams.push(orgId);
+                prodFilter += ` AND p.organization_id = $${prodParams.length}`;
             }
             const result = await pool.query(`
                 SELECT p.name, p.barcode, p.code, 

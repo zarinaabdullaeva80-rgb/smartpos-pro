@@ -528,7 +528,7 @@ router.get('/program', authenticateToken, async (req, res) => {
 router.get('/check/:phone', authenticateToken, async (req, res) => {
     try {
         const { phone } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             SELECT c.*, 
@@ -539,9 +539,9 @@ router.get('/check/:phone', authenticateToken, async (req, res) => {
         `;
         const params = [`%${phone}%`, `%${phone.replace(/[^\d]/g, '')}%`, `%${phone}%`];
 
-        if (userLicenseId) {
-            query += ` AND (c.license_id = $4 OR c.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND (c.organization_id = $4 OR c.organization_id IS NULL)`;
+            params.push(orgId);
         }
         query += ` LIMIT 1`;
 
@@ -584,7 +584,7 @@ router.post('/add-points', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Укажите клиента и количество баллов' });
         }
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Добавить баллы напрямую в customers
         let query = `UPDATE customers 
@@ -592,9 +592,9 @@ router.post('/add-points', authenticateToken, async (req, res) => {
              WHERE id = $2`;
         const params = [parseInt(points), customerId];
 
-        if (userLicenseId) {
-            query += ' AND license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
         }
         query += ' RETURNING loyalty_points';
 
@@ -633,7 +633,7 @@ router.post('/add-points', authenticateToken, async (req, res) => {
 router.get('/customers/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         let query = `
             SELECT c.*, 
@@ -644,9 +644,9 @@ router.get('/customers/:id', authenticateToken, async (req, res) => {
         `;
         const params = [id];
 
-        if (userLicenseId) {
-            query += ` AND (c.license_id = $2 OR c.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND (c.organization_id = $2 OR c.organization_id IS NULL)`;
+            params.push(orgId);
         }
 
         const result = await pool.query(query, params);

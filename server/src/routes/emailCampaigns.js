@@ -34,7 +34,7 @@ const ensureTables = async () => {
             clicked_count INTEGER DEFAULT 0,
             scheduled_at TIMESTAMP,
             sent_at TIMESTAMP,
-            license_id INTEGER,
+            organization_id INTEGER,
             created_by INTEGER,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -77,7 +77,7 @@ router.use(async (req, res, next) => {
  */
 router.get('/', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `
             SELECT ec.*, u.full_name as creator_name
             FROM email_campaigns ec
@@ -85,9 +85,9 @@ router.get('/', authenticate, async (req, res) => {
             WHERE 1=1
         `;
         const params = [];
-        if (userLicenseId) {
-            query += ` AND (ec.license_id = $1 OR ec.license_id IS NULL)`;
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ` AND (ec.organization_id = $1 OR ec.organization_id IS NULL)`;
+            params.push(orgId);
         }
         query += ` ORDER BY ec.created_at DESC`;
 
@@ -101,14 +101,14 @@ router.get('/', authenticate, async (req, res) => {
                 COALESCE(AVG(CASE WHEN sent_count > 0 THEN (opened_count::float / sent_count * 100) ELSE 0 END), 0) as avg_open_rate,
                 COALESCE(AVG(CASE WHEN opened_count > 0 THEN (clicked_count::float / opened_count * 100) ELSE 0 END), 0) as avg_click_rate
             FROM email_campaigns
-            ${userLicenseId ? 'WHERE license_id = $1 OR license_id IS NULL' : ''}
-        `, userLicenseId ? [userLicenseId] : []);
+            ${orgId ? 'WHERE organization_id = $1 OR organization_id IS NULL' : ''}
+        `, orgId ? [orgId] : []);
 
         // Количество подписчиков (клиенты с email)
         const subscribersResult = await pool.query(`
             SELECT COUNT(*) as count FROM customers WHERE email IS NOT NULL AND email != ''
-            ${userLicenseId ? 'AND (license_id = $1 OR license_id IS NULL)' : ''}
-        `, userLicenseId ? [userLicenseId] : []);
+            ${orgId ? 'AND (organization_id = $1 OR organization_id IS NULL)' : ''}
+        `, orgId ? [orgId] : []);
 
         res.json({
             campaigns: result.rows,
@@ -132,21 +132,21 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
     try {
         const { name, subject, body, scheduledAt, recipientEmails } = req.body;
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         if (!name || !subject || !body) {
             return res.status(400).json({ error: 'Укажите название, тему и текст кампании' });
         }
 
         const result = await pool.query(`
-            INSERT INTO email_campaigns (name, subject, body, status, scheduled_at, license_id, created_by, recipients_count)
+            INSERT INTO email_campaigns (name, subject, body, status, scheduled_at, organization_id, created_by, recipients_count)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
         `, [
             name, subject, body,
             scheduledAt ? 'scheduled' : 'draft',
             scheduledAt || null,
-            userLicenseId,
+            orgId,
             req.user.id,
             recipientEmails?.length || 0
         ]);
@@ -181,7 +181,7 @@ router.post('/', authenticate, async (req, res) => {
  */
 router.post('/:id/send', authenticate, async (req, res) => {
     const { id } = req.params;
-    const userLicenseId = req.user.license_id;
+    const orgId = req.user?.organization_id;
     const io = req.app.get('io');
 
     try {
@@ -216,9 +216,9 @@ router.post('/:id/send', authenticate, async (req, res) => {
             const customersResult = await pool.query(`
                 SELECT email, name FROM customers 
                 WHERE email IS NOT NULL AND email != ''
-                ${userLicenseId ? 'AND (license_id = $1 OR license_id IS NULL)' : ''}
+                ${orgId ? 'AND (organization_id = $1 OR organization_id IS NULL)' : ''}
                 LIMIT 500
-            `, userLicenseId ? [userLicenseId] : []);
+            `, orgId ? [orgId] : []);
             recipients = customersResult.rows;
         }
 

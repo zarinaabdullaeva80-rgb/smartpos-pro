@@ -26,10 +26,10 @@ router.get('/', authenticate, checkPermission('warehouse.inventory'), async (req
             LEFT JOIN warehouses w ON i.warehouse_id = w.id
             LEFT JOIN users u ON i.responsible_user_id = u.id
             LEFT JOIN inventory_items ii ON i.id = ii.inventory_id
-            WHERE 1=1 AND i.license_id = $1
+            WHERE 1=1 AND i.organization_id = $1
         `;
 
-        const params = [req.user.license_id];
+        const params = [req.user?.organization_id];
         let paramIndex = 2;
 
         if (status) {
@@ -73,10 +73,10 @@ router.post('/', authenticate, checkPermission('warehouse.inventory'), auditLog(
         const { warehouse_id, responsible_user_id, notes } = req.body;
 
         const result = await pool.query(`
-            INSERT INTO inventories (warehouse_id, responsible_user_id, notes, created_by, license_id)
+            INSERT INTO inventories (warehouse_id, responsible_user_id, notes, created_by, organization_id)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        `, [warehouse_id, responsible_user_id, notes, req.user.userId, req.user.license_id]);
+        `, [warehouse_id, responsible_user_id, notes, req.user.userId, req.user?.organization_id]);
 
         res.json(result.rows[0]);
     } catch (error) {
@@ -99,8 +99,8 @@ router.get('/:id', authenticate, checkPermission('warehouse.inventory'), async (
             FROM inventories i
             LEFT JOIN warehouses w ON i.warehouse_id = w.id
             LEFT JOIN users u ON i.responsible_user_id = u.id
-            WHERE i.id = $1 AND i.license_id = $2
-        `, [id, req.user.license_id]);
+            WHERE i.id = $1 AND i.organization_id = $2
+        `, [id, req.user?.organization_id]);
 
         if (inventory.rows.length === 0) {
             return res.status(404).json({ error: 'Инвентаризация не найдена' });
@@ -230,8 +230,8 @@ router.get('/batches', authenticate, checkPermission('warehouse.batches'), async
             return res.json(result.rows);
         }
 
-        let query = 'SELECT * FROM batch_inventory WHERE license_id = $1';
-        const params = [req.user.license_id];
+        let query = 'SELECT * FROM batch_inventory WHERE organization_id = $1';
+        const params = [req.user?.organization_id];
         let paramIndex = 2;
 
         if (product_id) {
@@ -315,8 +315,8 @@ router.get('/warehouses/:warehouseId/locations', authenticate, checkPermission('
         const { warehouseId } = req.params;
         const { zone, occupied } = req.query;
 
-        let query = 'SELECT * FROM warehouse_map WHERE warehouse_id = $1 AND license_id = $2';
-        const params = [warehouseId, req.user.license_id];
+        let query = 'SELECT * FROM warehouse_map WHERE warehouse_id = $1 AND organization_id = $2';
+        const params = [warehouseId, req.user?.organization_id];
         let paramIndex = 3;
 
         if (zone) {

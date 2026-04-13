@@ -41,10 +41,10 @@ router.get('/abc-analysis', authenticate, checkPermission('reports.analytics'), 
                 LEFT JOIN product_categories pc ON p.category_id = pc.id
                 WHERE s.status = 'confirmed'
                     AND s.document_date BETWEEN $1 AND $2
-                    AND s.license_id = $3
+                    AND s.organization_id = $3
         `;
 
-        const params = [sd, ed, req.user.license_id];
+        const params = [sd, ed, req.user?.organization_id];
 
         if (warehouseId) {
             query += ` AND s.warehouse_id = $${params.length + 1}`;
@@ -130,8 +130,8 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             FROM sales 
             WHERE status = 'confirmed' 
             AND document_date BETWEEN $1 AND $2
-            AND license_id = $3
-        `, [sd, ed, req.user.license_id]);
+            AND organization_id = $3
+        `, [sd, ed, req.user?.organization_id]);
 
         // Себестоимость проданных товаров
         const cogsResult = await pool.query(`
@@ -141,8 +141,8 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             JOIN products p ON si.product_id = p.id
             WHERE s.status = 'confirmed'
             AND s.document_date BETWEEN $1 AND $2
-            AND s.license_id = $3
-        `, [sd, ed, req.user.license_id]);
+            AND s.organization_id = $3
+        `, [sd, ed, req.user?.organization_id]);
 
         // Расходы
         const expensesResult = await pool.query(`
@@ -152,8 +152,8 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             FROM finance_transactions
             WHERE type = 'expense'
             AND transaction_date BETWEEN $1 AND $2
-            AND license_id = $3
-        `, [sd, ed, req.user.license_id]);
+            AND organization_id = $3
+        `, [sd, ed, req.user?.organization_id]);
 
         // Возвраты
         const returnsResult = await pool.query(`
@@ -161,8 +161,8 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             FROM returns
             WHERE status = 'confirmed'
             AND return_date BETWEEN $1 AND $2
-            AND license_id = $3
-        `, [sd, ed, req.user.license_id]);
+            AND organization_id = $3
+        `, [sd, ed, req.user?.organization_id]);
 
         const revenue = parseFloat(salesResult.rows[0].revenue);
         const returns = parseFloat(returnsResult.rows[0].returns_amount);
@@ -211,15 +211,15 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
                 END
             ), 0) as cash
             FROM finance_transactions
-            WHERE transaction_date <= $1 AND license_id = $2
-        `, [balanceDate, req.user.license_id]);
+            WHERE transaction_date <= $1 AND organization_id = $2
+        `, [balanceDate, req.user?.organization_id]);
 
         const inventoryResult = await pool.query(`
             SELECT COALESCE(SUM(im.quantity * COALESCE(p.price_purchase, p.price_sale, 0)), 0) as inventory_value
             FROM inventory_movements im
             JOIN products p ON im.product_id = p.id
-            WHERE p.license_id = $1
-        `, [req.user.license_id]);
+            WHERE p.organization_id = $1
+        `, [req.user?.organization_id]);
 
         const receivablesResult = await pool.query(`
             SELECT COALESCE(SUM(total_amount), 0) as receivables
@@ -227,8 +227,8 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
             WHERE status = 'confirmed'
             AND payment_status NOT IN ('paid')
             AND document_date <= $1
-            AND license_id = $2
-        `, [balanceDate, req.user.license_id]);
+            AND organization_id = $2
+        `, [balanceDate, req.user?.organization_id]);
 
         // ОБЯЗАТЕЛЬСТВА
         const payablesResult = await pool.query(`
@@ -237,8 +237,8 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
             WHERE status = 'confirmed'
             AND payment_status NOT IN ('paid')
             AND document_date <= $1
-            AND license_id = $2
-        `, [balanceDate, req.user.license_id]);
+            AND organization_id = $2
+        `, [balanceDate, req.user?.organization_id]);
 
         const cash = parseFloat(cashResult.rows[0].cash);
         const inventory = parseFloat(inventoryResult.rows[0].inventory_value);
@@ -301,10 +301,10 @@ router.get('/demand-forecast', authenticate, checkPermission('reports.analytics'
             WHERE si.product_id = $1
             AND s.status = 'confirmed'
             AND s.document_date >= NOW() - INTERVAL '${parseInt(days)} days'
-            AND s.license_id = $2
+            AND s.organization_id = $2
             GROUP BY DATE(s.document_date)
             ORDER BY sale_date
-        `, [productId, req.user.license_id]);
+        `, [productId, req.user?.organization_id]);
 
         if (historyResult.rows.length === 0) {
             return res.json({
@@ -320,7 +320,7 @@ router.get('/demand-forecast', authenticate, checkPermission('reports.analytics'
         const avgDailySales = recentSales.reduce((sum, row) => sum + parseFloat(row.quantity_sold), 0) / window;
 
         // Прогноз на следующие 7, 14, 30 дней
-        const productResult = await pool.query('SELECT name FROM products WHERE id = $1 AND license_id = $2', [productId, req.user.license_id]);
+        const productResult = await pool.query('SELECT name FROM products WHERE id = $1 AND organization_id = $2', [productId, req.user?.organization_id]);
         const stockResult = await pool.query('SELECT COALESCE(SUM(quantity), 0) as stock FROM inventory_movements WHERE product_id = $1', [productId]);
         const product = productResult.rows[0];
         const currentStock = parseFloat(stockResult.rows[0]?.stock || 0);
@@ -372,10 +372,10 @@ router.get('/category-analysis', authenticate, checkPermission('reports.analytic
             LEFT JOIN product_categories c ON p.category_id = c.id
             WHERE s.status = 'confirmed'
             AND s.document_date BETWEEN $1 AND $2
-            AND s.license_id = $3
+            AND s.organization_id = $3
             GROUP BY c.name
             ORDER BY total_revenue DESC
-        `, [sd, ed, req.user.license_id]);
+        `, [sd, ed, req.user?.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed },
@@ -423,10 +423,10 @@ router.get('/sales-chart', authenticate, async (req, res) => {
             FROM sales
             WHERE status = 'confirmed'
             AND document_date BETWEEN $1 AND $2
-            AND license_id = $3
+            AND organization_id = $3
             GROUP BY ${dateFormat}
             ORDER BY period
-        `, [sd, ed, req.user.license_id]);
+        `, [sd, ed, req.user?.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed, groupBy },
@@ -478,11 +478,11 @@ router.get('/top-products', authenticate, async (req, res) => {
             LEFT JOIN product_categories pc ON p.category_id = pc.id
             WHERE s.status = 'confirmed'
             AND s.document_date BETWEEN $1 AND $2
-            AND s.license_id = $4
+            AND s.organization_id = $4
             GROUP BY p.id, p.code, p.name, p.barcode, pc.name
             ORDER BY ${orderByClause}
             LIMIT $3
-        `, [sd, ed, limit, req.user.license_id]);
+        `, [sd, ed, limit, req.user?.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed },
@@ -527,10 +527,10 @@ router.get('/cashier-performance', authenticate, async (req, res) => {
             JOIN users u ON s.user_id = u.id
             WHERE s.status = 'confirmed'
             AND s.document_date BETWEEN $1 AND $2
-            AND s.license_id = $3
+            AND s.organization_id = $3
             GROUP BY u.id, u.full_name, u.username
             ORDER BY total_revenue DESC
-        `, [sd, ed, req.user.license_id]);
+        `, [sd, ed, req.user?.organization_id]);
 
         const cashiers = result.rows.map(row => ({
             ...row,
@@ -579,10 +579,10 @@ router.get('/warehouse-report', authenticate, async (req, res) => {
             LEFT JOIN sales s ON w.id = s.warehouse_id AND s.status = 'confirmed' 
                 AND s.document_date BETWEEN $1 AND $2
             LEFT JOIN sale_items si ON s.id = si.sale_id
-            WHERE w.is_active = true AND w.license_id = $3
+            WHERE w.is_active = true AND w.organization_id = $3
         `;
 
-        const params = [sd, ed, req.user.license_id];
+        const params = [sd, ed, req.user?.organization_id];
 
         if (warehouseId) {
             query += ` AND w.id = $${params.length + 1}`;
@@ -605,14 +605,14 @@ router.get('/warehouse-report', authenticate, async (req, res) => {
                 SUM(COALESCE(im.quantity * im.cost_price, 0)) as inventory_value
             FROM warehouses w
             LEFT JOIN inventory_movements im ON w.id = im.warehouse_id
-            WHERE w.is_active = true AND w.license_id = $1
+            WHERE w.is_active = true AND w.organization_id = $1
             ${warehouseId ? 'AND w.id = $2' : ''}
             GROUP BY w.id
         `;
 
         const inventoryResult = await pool.query(
             inventoryQuery,
-            warehouseId ? [req.user.license_id, warehouseId] : [req.user.license_id]
+            warehouseId ? [req.user?.organization_id, warehouseId] : [req.user?.organization_id]
         );
 
         // Объединить данные
@@ -658,7 +658,7 @@ router.get('/rfm-analysis', authenticate, async (req, res) => {
                     EXTRACT(DAY FROM NOW() - MAX(s.document_date)) as days_since_last
                 FROM customers c
                 LEFT JOIN sales s ON c.id = s.customer_id AND s.status = 'confirmed'
-                WHERE c.license_id = $1
+                WHERE c.organization_id = $1
                 GROUP BY c.id, c.name, c.phone
                 HAVING COUNT(s.id) > 0
             ),
@@ -680,7 +680,7 @@ router.get('/rfm-analysis', authenticate, async (req, res) => {
                 END as segment
             FROM rfm_scores
             ORDER BY total_spent DESC
-        `, [req.user.license_id]);
+        `, [req.user?.organization_id]);
 
         // Собрать статистику по сегментам
         const segments = {};

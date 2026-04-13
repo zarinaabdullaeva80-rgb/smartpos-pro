@@ -52,10 +52,10 @@ router.get('/roles', authenticate, async (req, res) => {
             ORDER BY r.created_at
         `);
 
-        // Filter by license_id for non-system roles
-        const userLicenseId = req.user?.license_id;
+        // Filter by organization_id for non-system roles
+        const userLicenseId = req.user?.organization_id;
         const filteredRows = result.rows.filter(r =>
-            r.is_system || !r.license_id || r.license_id === userLicenseId
+            r.is_system || !r.organization_id || r.organization_id === userLicenseId
         );
 
         res.json(filteredRows);
@@ -205,10 +205,10 @@ router.post('/roles', authenticate, async (req, res) => {
 
             // Создать роль
             const roleResult = await client.query(`
-                INSERT INTO roles (code, name, description, is_system, license_id)
+                INSERT INTO roles (code, name, description, is_system, organization_id)
                 VALUES ($1, $2, $3, false, $4)
                 RETURNING *
-            `, [code, name, description, req.user.license_id]);
+            `, [code, name, description, req.user.organization_id]);
 
             const role = roleResult.rows[0];
 

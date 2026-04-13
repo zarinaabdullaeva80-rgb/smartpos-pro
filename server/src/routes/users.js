@@ -7,16 +7,16 @@ const router = express.Router();
 // Получение пользователей
 router.get('/', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `SELECT u.id, u.username, u.email, u.full_name, u.is_active, u.last_login, 
                u.created_at, string_agg(r.name, ', ') as role_names
         FROM users u
         LEFT JOIN user_roles ur ON u.id = ur.user_id
         LEFT JOIN roles r ON ur.role_id = r.id`;
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE u.license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE u.organization_id = $1';
+            params.push(orgId);
         }
         query += ` GROUP BY u.id, u.username, u.email, u.full_name, u.is_active, u.last_login, u.created_at
         ORDER BY u.created_at DESC`;
@@ -40,14 +40,14 @@ router.post('/', authenticate, authorize('Администратор'), async (r
         const passwordHash = await bcrypt.hash(generatedPassword, 10);
 
         // Создать пользователя БЕЗ role_id
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Создать пользователя
         const result = await pool.query(
-            `INSERT INTO users (username, email, password_hash, full_name, license_id)
+            `INSERT INTO users (username, email, password_hash, full_name, organization_id)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, username, email, full_name`,
-            [username, email, passwordHash, fullName, userLicenseId]
+            [username, email, passwordHash, fullName, orgId]
         );
 
         const newUser = result.rows[0];
@@ -83,15 +83,15 @@ router.put('/:id', authenticate, authorize('Администратор'), async 
         const oldData = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
 
         // Обновить пользователя БЕЗ role_id
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
 
         // Обновить пользователя
         let query = `UPDATE users SET email = $1, full_name = $2, is_active = $3, updated_at = CURRENT_TIMESTAMP
         WHERE id = $4`;
         const params = [email, fullName, isActive, id];
-        if (userLicenseId) {
-            query += ' AND license_id = $5';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' AND organization_id = $5';
+            params.push(orgId);
         }
         query += ' RETURNING id, username, email, full_name, is_active';
 
@@ -157,12 +157,12 @@ router.post('/:id/reset-password', authenticate, authorize('Администра
 // Получение ролей
 router.get('/roles', authenticate, async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = 'SELECT * FROM roles';
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE license_id = $1 OR license_id IS NULL';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE organization_id = $1 OR organization_id IS NULL';
+            params.push(orgId);
         }
         query += ' ORDER BY name';
         const result = await pool.query(query, params);
@@ -178,14 +178,14 @@ router.get('/audit-log', authenticate, authorize('Администратор'), 
     try {
         const { limit = 100, offset = 0 } = req.query;
 
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `SELECT al.*, u.username, u.full_name
         FROM audit_log al
         LEFT JOIN users u ON al.user_id = u.id`;
         const params = [limit, offset];
-        if (userLicenseId) {
-            query += ' WHERE al.license_id = $3';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE al.organization_id = $3';
+            params.push(orgId);
         }
         query += ` ORDER BY al.created_at DESC LIMIT $1 OFFSET $2`;
         const result = await pool.query(query, params);

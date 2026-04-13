@@ -8,15 +8,15 @@ router.use(authenticateToken);
 // Получить все счета-фактуры
 router.get('/', async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let query = `SELECT i.*, c.name as counterparty_name, u.full_name as user_name
              FROM invoices i
              LEFT JOIN counterparties c ON i.counterparty_id = c.id
              LEFT JOIN users u ON i.user_id = u.id`;
         const params = [];
-        if (userLicenseId) {
-            query += ' WHERE i.license_id = $1';
-            params.push(userLicenseId);
+        if (orgId) {
+            query += ' WHERE i.organization_id = $1';
+            params.push(orgId);
         }
         query += ' ORDER BY i.invoice_date DESC, i.id DESC';
         const result = await pool.query(query, params);
@@ -30,15 +30,15 @@ router.get('/', async (req, res) => {
 // Получить счет по ID с позициями
 router.get('/:id', async (req, res) => {
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         let invQuery = `SELECT i.*, c.name as counterparty_name
              FROM invoices i
              LEFT JOIN counterparties c ON i.counterparty_id = c.id
              WHERE i.id = $1`;
         const invParams = [req.params.id];
-        if (userLicenseId) {
-            invQuery += ' AND i.license_id = $2';
-            invParams.push(userLicenseId);
+        if (orgId) {
+            invQuery += ' AND i.organization_id = $2';
+            invParams.push(orgId);
         }
 
         const invoice = await pool.query(invQuery, invParams);
@@ -51,8 +51,8 @@ router.get('/:id', async (req, res) => {
             `SELECT ii.*, p.name as product_name, p.code as product_code
              FROM invoice_items ii
              LEFT JOIN products p ON ii.product_id = p.id
-             WHERE ii.invoice_id = $1 AND (p.license_id = $2 OR p.id IS NULL)`,
-            [req.params.id, userLicenseId]
+             WHERE ii.invoice_id = $1 AND (p.organization_id = $2 OR p.id IS NULL)`,
+            [req.params.id, orgId]
         );
 
         res.json({ ...invoice.rows[0], items: items.rows });
@@ -68,26 +68,26 @@ router.post('/', async (req, res) => {
 
     const client = await pool.connect();
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         await client.query('BEGIN');
 
         // Verify counterparty
-        if (userLicenseId) {
-            const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND license_id = $2', [counterparty_id, userLicenseId]);
+        if (orgId) {
+            const cpCheck = await client.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterparty_id, orgId]);
             if (cpCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
         }
 
         const invoice = await client.query(
-            `INSERT INTO invoices (invoice_number, invoice_date, counterparty_id, total_amount, vat_amount, final_amount, user_id, license_id)
+            `INSERT INTO invoices (invoice_number, invoice_date, counterparty_id, total_amount, vat_amount, final_amount, user_id, organization_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-            [invoice_number, invoice_date, counterparty_id, total_amount, vat_amount, final_amount, req.user.id, userLicenseId]
+            [invoice_number, invoice_date, counterparty_id, total_amount, vat_amount, final_amount, req.user.id, orgId]
         );
 
         for (const item of items || []) {
             await client.query(
-                `INSERT INTO invoice_items (invoice_id, product_id, quantity, price, vat_rate, vat_amount, total_amount, license_id)
+                `INSERT INTO invoice_items (invoice_id, product_id, quantity, price, vat_rate, vat_amount, total_amount, organization_id)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [invoice.rows[0].id, item.product_id, item.quantity, item.price, item.vat_rate || 20, item.vat_amount, item.total_amount, userLicenseId]
+                [invoice.rows[0].id, item.product_id, item.quantity, item.price, item.vat_rate || 20, item.vat_amount, item.total_amount, orgId]
             );
         }
 
@@ -108,28 +108,28 @@ router.post('/', async (req, res) => {
 router.post('/from-sale/:saleId', async (req, res) => {
     const client = await pool.connect();
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         await client.query('BEGIN');
 
-        const sale = await client.query('SELECT * FROM sales WHERE id = $1 AND license_id = $2', [req.params.saleId, userLicenseId]);
+        const sale = await client.query('SELECT * FROM sales WHERE id = $1 AND organization_id = $2', [req.params.saleId, orgId]);
         if (sale.rows.length === 0) {
             return res.status(404).json({ error: 'Продажа не найдена или не принадлежит вашей организации' });
         }
 
         const invoiceNum = `СФ-${String(Math.floor(Math.random() * 9999)).padStart(5, '0')}`;
         const invoice = await client.query(
-            `INSERT INTO invoices (invoice_number, invoice_date, counterparty_id, related_document_type, related_document_id, total_amount, vat_amount, final_amount, user_id, license_id)
+            `INSERT INTO invoices (invoice_number, invoice_date, counterparty_id, related_document_type, related_document_id, total_amount, vat_amount, final_amount, user_id, organization_id)
              VALUES ($1, CURRENT_DATE, $2, 'sale', $3, $4, $5, $6, $7, $8) RETURNING *`,
-            [invoiceNum, sale.rows[0].counterparty_id, sale.rows[0].id, sale.rows[0].total_amount, sale.rows[0].vat_amount, sale.rows[0].final_amount, req.user.id, userLicenseId]
+            [invoiceNum, sale.rows[0].counterparty_id, sale.rows[0].id, sale.rows[0].total_amount, sale.rows[0].vat_amount, sale.rows[0].final_amount, req.user.id, orgId]
         );
 
-        const items = await client.query('SELECT * FROM sale_items WHERE sale_id = $1 AND license_id = $2', [req.params.saleId, userLicenseId]);
+        const items = await client.query('SELECT * FROM sale_items WHERE sale_id = $1 AND organization_id = $2', [req.params.saleId, orgId]);
 
         for (const item of items.rows) {
             await client.query(
-                `INSERT INTO invoice_items (invoice_id, product_id, quantity, price, vat_rate, vat_amount, total_amount, license_id)
+                `INSERT INTO invoice_items (invoice_id, product_id, quantity, price, vat_rate, vat_amount, total_amount, organization_id)
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [invoice.rows[0].id, item.product_id, item.quantity, item.price, item.vat_rate, item.vat_amount, item.total_amount, userLicenseId]
+                [invoice.rows[0].id, item.product_id, item.quantity, item.price, item.vat_rate, item.vat_amount, item.total_amount, orgId]
             );
         }
 
@@ -150,14 +150,14 @@ router.post('/from-sale/:saleId', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     const client = await pool.connect();
     try {
-        const userLicenseId = req.user.license_id;
+        const orgId = req.user?.organization_id;
         await client.query('BEGIN');
 
-        const invCheck = await client.query('SELECT 1 FROM invoices WHERE id = $1 AND license_id = $2', [req.params.id, userLicenseId]);
+        const invCheck = await client.query('SELECT 1 FROM invoices WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
         if (invCheck.rows.length === 0) throw new Error('Счет не найден или не принадлежит вашей организации');
 
-        await client.query('DELETE FROM invoice_items WHERE invoice_id = $1 AND license_id = $2', [req.params.id, userLicenseId]);
-        await client.query('DELETE FROM invoices WHERE id = $1 AND license_id = $2', [req.params.id, userLicenseId]);
+        await client.query('DELETE FROM invoice_items WHERE invoice_id = $1 AND organization_id = $2', [req.params.id, orgId]);
+        await client.query('DELETE FROM invoices WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
         await logAudit(req.user.id, 'DELETE', 'invoices', req.params.id, null, null, req.ip);
         await client.query('COMMIT');
         res.status(204).send();
