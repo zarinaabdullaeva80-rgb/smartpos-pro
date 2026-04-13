@@ -98,8 +98,8 @@ const COLUMN_MAPPINGS = {
         'мнн': 'description',  // МНН (международное непатентованное наименование) → описание
         'мин. остаток': 'min_stock', 'минимальный остаток': 'min_stock', 'min stock': 'min_stock', 'мин остаток': 'min_stock',
         'минимальное остаток': 'min_stock',
-        // ИКПУ и прочие специфичные поля — сохраняем в code
-        'икпу': 'code', 'код икпу': 'code',
+        // ИКПУ — специфичное поле Узбекистана, сохраняем отдельно (не маппим в code чтобы не нарушать NOT NULL)
+        // 'икпу': 'code', — отключено, т.к. ИКПУ бывает пустым
     },
     categories: {
         'название': 'name', 'наименование': 'name', 'категория': 'name', 'name': 'name',
@@ -658,7 +658,10 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                 const quantity = mapped.quantity ? parseFloat(String(mapped.quantity).replace(',', '.')) : 0;
                 const minStock = mapped.min_stock ? parseInt(mapped.min_stock) : 0;
                 const unit = mapped.unit ? String(mapped.unit).trim() : 'шт';
-                const code = mapped.code ? String(mapped.code).trim() : null;
+                // code — fallback: ИКПУ → штрихкод → сгенерированный
+                const code = mapped.code
+                    ? String(mapped.code).trim()
+                    : (barcode || `IMP-${i + 1}`);
 
                 if (existingId) {
                     await client.query(`
