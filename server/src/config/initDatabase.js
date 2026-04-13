@@ -811,6 +811,33 @@ async function addMissingColumns(pool) {
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS max_discount_percent INTEGER DEFAULT 30',
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS points_to_currency NUMERIC(5,2) DEFAULT 1',
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE',
+
+        // ============================================
+        // MULTI-TENANT: organization_id columns
+        // ============================================
+        'ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id INTEGER',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE product_categories ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE employees ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE purchases ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE payments ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE transactions ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE invoices ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE returns ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE shifts ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        'ALTER TABLE configurations ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
+        // Indexes for organization_id
+        'CREATE INDEX IF NOT EXISTS idx_products_org ON products(organization_id)',
+        'CREATE INDEX IF NOT EXISTS idx_sales_org ON sales(organization_id)',
+        'CREATE INDEX IF NOT EXISTS idx_customers_org ON customers(organization_id)',
+        'CREATE INDEX IF NOT EXISTS idx_employees_org ON employees(organization_id)',
+        'CREATE INDEX IF NOT EXISTS idx_categories_org ON product_categories(organization_id)',
     ];
 
     for (const q of alterQueries) {
