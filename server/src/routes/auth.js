@@ -324,7 +324,7 @@ router.post('/login', async (req, res) => {
         const token = jwt.sign(
             { userId: user.id, username: user.username, role: primaryRole, licenseId: userLicenseId, organization_id: user.organization_id || 1 },
             process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
         );
 
         console.log('Login successful for:', username);
@@ -535,7 +535,7 @@ router.post('/refresh', async (req, res) => {
         const newToken = jwt.sign(
             { userId: user.id, username: user.username, role: user.role, licenseId: decoded.licenseId },
             secret,
-            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
         );
 
         console.log('Token refreshed for:', user.username);
