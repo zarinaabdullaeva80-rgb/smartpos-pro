@@ -10,6 +10,10 @@ const isDev = !app.isPackaged;
 const PORT = process.env.PORT || 3000;
 const SERVER_PORT = 5000;
 
+// URL облачного сервера (Railway)
+const CLOUD_URL = 'https://smartpos-pro-production-f885.up.railway.app';
+
+
 let mainWindow = null;
 let serverProcess = null;
 let autoUpdater = null;
@@ -66,7 +70,24 @@ function readServerMode() {
     } catch (e) {
         console.log('[Config] Error reading server mode:', e.message);
     }
-    return 'server'; // по умолчанию — свой сервер
+    return 'cloud'; // по умолчанию — облако (Railway)
+}
+
+// Определяем URL API из встроенной конфигурации
+function getApiUrl() {
+    // VITE_API_URL встроен в bundle при сборке — ищем в resources
+    try {
+        const builtEnvPath = isDev
+            ? path.join(__dirname, '../.env')
+            : path.join(process.resourcesPath, 'app.asar', '.env');
+        // Fallback: проверяем переменную из bundled config файла
+        const configPath = path.join(app.getPath('userData'), 'cloud-config.json');
+        if (fs.existsSync(configPath)) {
+            const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            if (cfg.api_url) return cfg.api_url;
+        }
+    } catch (e) { /* ignore */ }
+    return null;
 }
 
 function writeServerMode(mode) {
@@ -407,11 +428,24 @@ function createWindow() {
         frame: true
     });
 
-    // Всегда загружаем через HTTP сервер (localStorage работает только на одном origin)
-    // Встроенный сервер всегда запускается первым и обслуживает dist
-    const serverUrl = `http://localhost:${SERVER_PORT}`;
-    console.log('[Electron] Loading from server:', serverUrl);
+    // Определяем URL: cloud-config.json → CLOUD_URL → localhost
+    const cloudApiUrl = getApiUrl();
+    let serverUrl;
+
+    const mode = readServerMode();
+    if (mode === 'cloud' || (cloudApiUrl && !cloudApiUrl.includes('localhost'))) {
+        // Cloud режим: загружаем Railway
+        const baseUrl = cloudApiUrl ? cloudApiUrl.replace('/api', '') : CLOUD_URL;
+        serverUrl = baseUrl;
+        console.log('[Electron] Cloud mode: loading from Railway:', serverUrl);
+    } else {
+        // Локальный режим: embedded server
+        serverUrl = `http://localhost:${SERVER_PORT}`;
+        console.log('[Electron] Local mode: loading from server:', serverUrl);
+    }
+
     mainWindow.loadURL(serverUrl);
+    console.log('[Electron] Loading URL:', serverUrl);
 
     if (isDev) {
         // Open DevTools in development
@@ -611,7 +645,7 @@ app.whenReady().then(async () => {
     // Initialize export folders
     initializeExportFolders();
 
-    // Запускаем встроенный сервер в режимах 'server' и 'hybrid'
+    // Запускаем встроенный сервер ТОЛЬКО в локальных режимах
     const mode = readServerMode();
     if (mode === 'server' || mode === 'hybrid') {
         console.log('[App] Mode:', mode, '— starting embedded server...');
@@ -619,7 +653,7 @@ app.whenReady().then(async () => {
         // Ждём пока сервер реально ответит на /api/health
         await waitForServer();
     } else {
-        console.log('[App] Mode:', mode, '— skipping embedded server (external)');
+        console.log('[App] Mode:', mode, '— cloud mode, connecting to Railway:', CLOUD_URL);
         serverStatus = 'external';
     }
 

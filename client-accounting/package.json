@@ -84,16 +84,12 @@
         },
         "extraResources": [
             {
-                "from": "../server",
-                "to": "server",
-                "filter": [
-                    "**/*",
-                    "!node_modules/.cache/**",
-                    "!*.log",
-                    "!.env"
-                ]
+                "from": "build",
+                "to": "build",
+                "filter": ["icon.ico"]
             }
         ],
+
         "publish": [
             {
                 "provider": "github",
@@ -102,7 +98,8 @@
             }
         ],
         "nsis": {
-            "oneClick": true,
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
             "perMachine": false,
             "createDesktopShortcut": "always",
             "createStartMenuShortcut": true,
@@ -111,7 +108,8 @@
             "installerIcon": "build/icon.ico",
             "uninstallerIcon": "build/icon.ico",
             "installerHeaderIcon": "build/icon.ico",
-            "deleteAppDataOnUninstall": false
+            "deleteAppDataOnUninstall": false,
+            "license": null
         }
     }
 }
