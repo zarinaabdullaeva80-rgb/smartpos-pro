@@ -282,10 +282,10 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         } else {
             // Create new product
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, organization_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING *`,
-                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, orgId || 1]
+                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null]
             );
             action = 'CREATE';
         }
@@ -305,9 +305,9 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             } catch (e) { /* use default */ }
 
             await pool.query(
-                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, organization_id)
-                 VALUES ($1, $2, 'receipt', $3, $4, $5, $6)`,
-                [productId, warehouseId, initialQuantity, req.user.id, licenseId, orgId || 1]
+                `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id)
+                 VALUES ($1, $2, 'receipt', $3, $4, $5)`,
+                [productId, warehouseId, initialQuantity, req.user.id, orgId || licenseId || null]
             );
         }
 
