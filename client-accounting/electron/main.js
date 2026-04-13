@@ -230,8 +230,19 @@ function startServer() {
         ? path.join(__dirname, '../../server')
         : path.join(process.resourcesPath, 'server');
 
+    // Если папка сервера отсутствует — это cloud-only сборка, пропускаем
+    if (!isDev && !fs.existsSync(serverPath)) {
+        console.log('[Server] Server folder not found — cloud-only build, skipping local server');
+        serverStatus = 'external';
+        return;
+    }
+
     // Auto-setup: create .env and database if needed
-    ensureServerSetup(serverPath);
+    try {
+        ensureServerSetup(serverPath);
+    } catch (e) {
+        console.warn('[Server] ensureServerSetup failed (non-critical):', e.message);
+    }
 
     // Writable path for .env (AppData, not the read-only resources folder)
     const userDataPath = app.getPath('userData');
@@ -428,24 +439,31 @@ function createWindow() {
         frame: true
     });
 
-    // Определяем URL: cloud-config.json → CLOUD_URL → localhost
-    const cloudApiUrl = getApiUrl();
-    let serverUrl;
-
+    // В cloud режиме загружаем локальный dist/index.html
+    // React уже знает Railway URL через VITE_API_URL встроенный при сборке
     const mode = readServerMode();
-    if (mode === 'cloud' || (cloudApiUrl && !cloudApiUrl.includes('localhost'))) {
-        // Cloud режим: загружаем Railway
-        const baseUrl = cloudApiUrl ? cloudApiUrl.replace('/api', '') : CLOUD_URL;
-        serverUrl = baseUrl;
-        console.log('[Electron] Cloud mode: loading from Railway:', serverUrl);
+    
+    if (mode === 'cloud') {
+        // Cloud режим: загружаем встроенный dist/index.html
+        // VITE_API_URL внутри уже указывает на Railway
+        let distPath;
+        if (isDev) {
+            distPath = path.join(__dirname, '../dist/index.html');
+        } else {
+            // В production: dist внутри asar (asarUnpack)
+            const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
+            const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
+            distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
+        }
+        console.log('[Electron] Cloud mode: loading local dist:', distPath);
+        mainWindow.loadFile(distPath);
     } else {
-        // Локальный режим: embedded server
-        serverUrl = `http://localhost:${SERVER_PORT}`;
+        // Локальный режим: embedded server на localhost
+        const serverUrl = `http://localhost:${SERVER_PORT}`;
         console.log('[Electron] Local mode: loading from server:', serverUrl);
+        mainWindow.loadURL(serverUrl);
     }
 
-    mainWindow.loadURL(serverUrl);
-    console.log('[Electron] Loading URL:', serverUrl);
 
     if (isDev) {
         // Open DevTools in development
@@ -641,37 +659,75 @@ async function waitForServer(maxAttempts = 15, intervalMs = 1000) {
     return false;
 }
 
+// Глобальный перехватчик необработанных ошибок — предотвращаем краш приложения
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[App] UnhandledRejection (caught):', reason);
+    // НЕ крашим приложение, просто логируем
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[App] UncaughtException (caught):', err.message);
+    // НЕ крашим приложение
+});
+
 app.whenReady().then(async () => {
-    // Initialize export folders
-    initializeExportFolders();
+    try {
+        // Initialize export folders
+        initializeExportFolders();
 
-    // Запускаем встроенный сервер ТОЛЬКО в локальных режимах
-    const mode = readServerMode();
-    if (mode === 'server' || mode === 'hybrid') {
-        console.log('[App] Mode:', mode, '— starting embedded server...');
-        startServer();
-        // Ждём пока сервер реально ответит на /api/health
-        await waitForServer();
-    } else {
-        console.log('[App] Mode:', mode, '— cloud mode, connecting to Railway:', CLOUD_URL);
-        serverStatus = 'external';
-    }
+        // Определяем режим и проверяем наличие сервера
+        let mode = readServerMode();
+        const serverPath = isDev
+            ? path.join(__dirname, '../../server')
+            : path.join(process.resourcesPath, 'server');
+        const serverExists = fs.existsSync(serverPath);
 
-    // Открыть окно
-    createWindow();
-
-    // Initialize auto-updater (only in production)
-    if (!isDev) {
-        autoUpdater = new AutoUpdater();
-        autoUpdater.init();
-        console.log('[AutoUpdater] Initialized');
-    }
-
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow();
+        // Если режим server/hybrid, но сервера нет — автоматически переключаем на cloud
+        if ((mode === 'server' || mode === 'hybrid') && !serverExists) {
+            console.log('[App] Server folder missing — auto-switching to cloud mode (Railway)');
+            writeServerMode('cloud');
+            mode = 'cloud';
         }
-    });
+
+        if (mode === 'server' || mode === 'hybrid') {
+            console.log('[App] Mode:', mode, '— starting embedded server...');
+            try {
+                startServer();
+                await waitForServer();
+            } catch (e) {
+                console.error('[App] Server start failed, falling back to cloud:', e.message);
+                mode = 'cloud';
+                serverStatus = 'external';
+            }
+        } else {
+            console.log('[App] Mode:', mode, '— cloud mode, connecting to Railway:', CLOUD_URL);
+            serverStatus = 'external';
+        }
+
+        // Открыть окно
+        createWindow();
+
+        // Initialize auto-updater (only in production)
+        if (!isDev) {
+            try {
+                autoUpdater = new AutoUpdater();
+                autoUpdater.init();
+                console.log('[AutoUpdater] Initialized');
+            } catch (e) {
+                console.warn('[AutoUpdater] Init failed (non-critical):', e.message);
+            }
+        }
+
+        app.on('activate', () => {
+            if (BrowserWindow.getAllWindows().length === 0) {
+                createWindow();
+            }
+        });
+    } catch (fatalErr) {
+        console.error('[App] Fatal startup error:', fatalErr.message);
+        // Даже при фатальной ошибке пытаемся открыть окно
+        try { createWindow(); } catch (e) { /* last resort */ }
+    }
 });
 
 // Unregister shortcuts and stop server on quit
