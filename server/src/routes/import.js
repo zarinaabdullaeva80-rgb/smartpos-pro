@@ -79,19 +79,27 @@ const COLUMN_MAPPINGS = {
         'код товара': 'code', 'код': 'code', 'артикул': 'code', 'sku': 'code', 'article': 'code',
         'арт': 'code', 'арт.': 'code', 'product code': 'code', 'item code': 'code', 'внутренний код': 'code',
         'категория': 'category', 'группа': 'category', 'category': 'category', 'group': 'category',
-        'группа товара': 'category', 'раздел': 'category', 'тип': 'category', 'подгруппа': 'category',
+        'группа товара': 'category', 'раздел': 'category', 'подгруппа': 'category',
         'единица': 'unit', 'ед. изм.': 'unit', 'ед.изм': 'unit', 'ед.изм.': 'unit', 'unit': 'unit', 'uom': 'unit',
         'единица измерения': 'unit', 'ед': 'unit', 'изм': 'unit', 'мера': 'unit',
         'цена': 'price_sale', 'цена продажи': 'price_sale', 'розничная цена': 'price_sale', 'price': 'price_sale', 'retail price': 'price_sale',
         'цена розница': 'price_sale', 'розница': 'price_sale', 'продажная цена': 'price_sale', 'цена реализации': 'price_sale',
         'sale price': 'price_sale', 'selling price': 'price_sale', 'retail': 'price_sale',
-        'себестоимость': 'price_purchase', 'закупочная цена': 'price_purchase', 'цена закупки': 'price_purchase', 'cost': 'price_purchase', 'purchase price': 'price_purchase',
-        'закупка': 'price_purchase', 'оптовая цена': 'price_purchase', 'входная цена': 'price_purchase',
-        'cost price': 'price_purchase', 'buy price': 'price_purchase', 'wholesale': 'price_purchase',
+        // Формат «Товары ИКПУ» (экспорт из учётных систем Узбекистана)
+        'цена продажи (вкл ндс)': 'price_sale', 'цена продажи (вкл. ндс)': 'price_sale',
+        'цена продажи (включая ндс)': 'price_sale', 'цена с ндс': 'price_sale',
+        'цена закупа': 'price_purchase', 'цена закупки': 'price_purchase',
+        'себестоимость': 'price_purchase', 'закупочная цена': 'price_purchase', 'cost': 'price_purchase',
+        'закупка': 'price_purchase', 'входная цена': 'price_purchase',
+        'cost price': 'price_purchase', 'buy price': 'price_purchase',
         'остаток': 'quantity', 'количество': 'quantity', 'кол-во': 'quantity', 'qty': 'quantity', 'quantity': 'quantity', 'stock': 'quantity',
         'кол': 'quantity', 'запас': 'quantity', 'наличие': 'quantity', 'остатки': 'quantity', 'in stock': 'quantity',
         'описание': 'description', 'description': 'description', 'примечание': 'description', 'комментарий': 'description',
+        'мнн': 'description',  // МНН (международное непатентованное наименование) → описание
         'мин. остаток': 'min_stock', 'минимальный остаток': 'min_stock', 'min stock': 'min_stock', 'мин остаток': 'min_stock',
+        'минимальное остаток': 'min_stock',
+        // ИКПУ и прочие специфичные поля — сохраняем в code
+        'икпу': 'code', 'код икпу': 'code',
     },
     categories: {
         'название': 'name', 'наименование': 'name', 'категория': 'name', 'name': 'name',
@@ -562,6 +570,173 @@ router.get('/logs', authenticate, async (req, res) => {
     } catch (error) {
         console.error('[Import] Logs error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/import/products/auto - Быстрый импорт товаров с автомаппингом
+ * Поддерживает формат экспорта из учётных систем Узбекистана (ИКПУ формат)
+ */
+router.post('/products/auto', authenticate, upload.single('file'), async (req, res) => {
+    const client = await pool.connect();
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+
+        const orgId = req.user?.organization_id;
+        const rows = parseFile(req.file.path, req.file.originalname);
+
+        if (!rows || rows.length === 0) {
+            return res.status(400).json({ error: 'Файл пуст или не удалось распознать данные' });
+        }
+
+        const fileHeaders = Object.keys(rows[0]);
+        const mapping = autoMapColumns(fileHeaders, 'products');
+
+        if (!mapping || Object.keys(mapping).length === 0) {
+            return res.status(400).json({
+                error: 'Не удалось автоматически определить колонки. Используйте /api/import/preview для ручного маппинга.',
+                fileHeaders
+            });
+        }
+
+        let imported = 0, updated = 0;
+        const errors = [];
+
+        // Кэш категорий
+        const catResult = await client.query(
+            'SELECT id, name FROM product_categories WHERE organization_id = $1 OR organization_id IS NULL',
+            [orgId]
+        );
+        const categoryMap = {};
+        catResult.rows.forEach(c => { categoryMap[c.name.toLowerCase()] = c.id; });
+
+        await client.query('BEGIN');
+
+        for (let i = 0; i < rows.length; i++) {
+            try {
+                const row = rows[i];
+                const mapped = {};
+                for (const [fileCol, dbField] of Object.entries(mapping)) {
+                    const val = row[fileCol];
+                    if (val !== undefined && val !== '') mapped[dbField] = val;
+                }
+
+                if (!mapped.name) continue; // пропускаем пустые строки
+
+                // Категория
+                let categoryId = null;
+                if (mapped.category) {
+                    const catName = String(mapped.category).trim();
+                    const catKey = catName.toLowerCase();
+                    if (categoryMap[catKey]) {
+                        categoryId = categoryMap[catKey];
+                    } else {
+                        const newCat = await client.query(
+                            'INSERT INTO product_categories (name, organization_id) VALUES ($1, $2) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id',
+                            [catName, orgId || null]
+                        );
+                        categoryId = newCat.rows[0].id;
+                        categoryMap[catKey] = categoryId;
+                    }
+                }
+
+                // Штрихкод
+                const barcode = mapped.barcode ? String(mapped.barcode).trim() : null;
+
+                // Дубликат по штрихкоду
+                let existingId = null;
+                if (barcode) {
+                    const dup = await client.query(
+                        'SELECT id FROM products WHERE barcode = $1 AND (organization_id = $2 OR organization_id IS NULL)',
+                        [barcode, orgId]
+                    );
+                    if (dup.rows.length > 0) existingId = dup.rows[0].id;
+                }
+
+                const priceSale = mapped.price_sale ? parseFloat(String(mapped.price_sale).replace(',', '.')) : 0;
+                const pricePurchase = mapped.price_purchase ? parseFloat(String(mapped.price_purchase).replace(',', '.')) : 0;
+                const quantity = mapped.quantity ? parseFloat(String(mapped.quantity).replace(',', '.')) : 0;
+                const minStock = mapped.min_stock ? parseInt(mapped.min_stock) : 0;
+                const unit = mapped.unit ? String(mapped.unit).trim() : 'шт';
+                const code = mapped.code ? String(mapped.code).trim() : null;
+
+                if (existingId) {
+                    await client.query(`
+                        UPDATE products SET
+                            name = $1, category_id = COALESCE($2, category_id),
+                            unit = COALESCE($3, unit), price_sale = $4,
+                            price_purchase = $5, code = COALESCE($6, code),
+                            min_stock = $7, updated_at = NOW()
+                        WHERE id = $8
+                    `, [mapped.name, categoryId, unit, priceSale, pricePurchase, code, minStock, existingId]);
+
+                    // Обновить остаток если указан
+                    if (quantity > 0) {
+                        await client.query(`
+                            INSERT INTO stock_balances (product_id, warehouse_id, quantity, available_quantity, organization_id)
+                            VALUES ($1, 1, $2, $2, $3)
+                            ON CONFLICT (product_id, warehouse_id) DO UPDATE
+                            SET quantity = $2, available_quantity = $2, updated_at = NOW()
+                        `, [existingId, quantity, orgId]);
+                    }
+                    updated++;
+                } else {
+                    const finalBarcode = barcode || await getUniqueBarcode(client);
+                    const insertResult = await client.query(`
+                        INSERT INTO products (
+                            name, barcode, code, category_id, unit,
+                            price_sale, price_purchase, min_stock,
+                            is_active, organization_id, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, NOW())
+                        RETURNING id
+                    `, [mapped.name, finalBarcode, code, categoryId, unit, priceSale, pricePurchase, minStock, orgId || null]);
+
+                    const newProductId = insertResult.rows[0].id;
+
+                    // Добавить начальный остаток
+                    if (quantity > 0) {
+                        await client.query(`
+                            INSERT INTO stock_balances (product_id, warehouse_id, quantity, available_quantity, organization_id)
+                            VALUES ($1, 1, $2, $2, $3)
+                            ON CONFLICT (product_id, warehouse_id) DO UPDATE
+                            SET quantity = $2, available_quantity = $2
+                        `, [newProductId, quantity, orgId]);
+                    }
+                    imported++;
+                }
+            } catch (rowErr) {
+                errors.push({ row: i + 2, error: rowErr.message });
+            }
+        }
+
+        await client.query('COMMIT');
+
+        // Лог
+        try {
+            await pool.query(`
+                INSERT INTO import_logs (type, filename, total_rows, imported, updated, errors, user_id, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            `, ['products_auto', req.file.originalname, rows.length, imported, updated, JSON.stringify(errors.slice(0, 100)), req.user?.id || null]);
+        } catch (e) { /* ignore log error */ }
+
+        try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+
+        res.json({
+            success: true,
+            totalRows: rows.length,
+            imported,
+            updated,
+            errorsCount: errors.length,
+            errors: errors.slice(0, 20),
+            mapping, // показываем какой маппинг был определён
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        console.error('[Import Auto] Error:', error);
+        res.status(500).json({ error: error.message });
+    } finally {
+        client.release();
     }
 });
 

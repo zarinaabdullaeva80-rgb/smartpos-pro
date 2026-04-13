@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartPOS Pro — Руководство по подключению</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+        :root {
+            --primary: #2563eb;
+            --primary-light: #3b82f6;
+            --primary-dark: #1d4ed8;
+            --accent: #8b5cf6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --card-bg: #f8fafc;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text);
+            line-height: 1.7;
+            background: var(--bg);
+            font-size: 14px;
+        }
+
+        @media print {
+            body { font-size: 12px; }
+            .page-break { page-break-before: always; }
+            .no-print { display: none !important; }
+            .cover { min-height: 100vh; }
+        }
+
+        /* Cover Page */
+        .cover {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 50%, #1e1b4b 100%);
+            color: white;
+            text-align: center;
+            padding: 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cover::before {
+            content: '';
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+            top: -100px;
+            right: -100px;
+            border-radius: 50%;
+        }
+
+        .cover::after {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%);
+            bottom: -50px;
+            left: -50px;
+            border-radius: 50%;
+        }
+
+        .cover-logo {
+            font-size: 4rem;
+            font-weight: 800;
+            letter-spacing: -2px;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-subtitle {
+            font-size: 1.5rem;
+            font-weight: 300;
+            color: #94a3b8;
+            margin-bottom: 3rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-desc {
+            font-size: 1.1rem;
+            color: #cbd5e1;
+            max-width: 500px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-version {
+            position: absolute;
+            bottom: 2rem;
+            color: #475569;
+            font-size: 0.9rem;
+            z-index: 1;
+        }
+
+        /* Content */
+        .content {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 3rem 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--primary-dark);
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 3px solid var(--primary);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text);
+            margin: 2.5rem 0 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        h2 .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            font-size: 1rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        h3 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 1.5rem 0 0.75rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .card-highlight {
+            border-left: 4px solid var(--primary);
+            background: linear-gradient(135deg, #eff6ff, #f8fafc);
+        }
+
+        .card-success {
+            border-left: 4px solid var(--success);
+            background: linear-gradient(135deg, #ecfdf5, #f8fafc);
+        }
+
+        .card-warning {
+            border-left: 4px solid var(--warning);
+            background: linear-gradient(135deg, #fffbeb, #f8fafc);
+        }
+
+        .card-danger {
+            border-left: 4px solid var(--danger);
+            background: linear-gradient(135deg, #fef2f2, #f8fafc);
+        }
+
+        .card-title {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Code blocks */
+        pre {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 1.25rem;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin: 1rem 0;
+        }
+
+        code {
+            background: #f1f5f9;
+            color: var(--primary-dark);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.9em;
+        }
+
+        pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+
+        .code-comment { color: #64748b; }
+        .code-string { color: #a5f3fc; }
+        .code-key { color: #c4b5fd; }
+        .code-url { color: #86efac; }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: var(--primary);
+            color: white;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        th:first-child { border-radius: 8px 0 0 0; }
+        th:last-child { border-radius: 0 8px 0 0; }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:nth-child(even) { background: #f8fafc; }
+        tr:hover { background: #f1f5f9; }
+
+        /* Lists */
+        ol, ul {
+            margin: 0.75rem 0;
+            padding-left: 1.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Mode cards */
+        .modes-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .mode-card {
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .mode-card.recommended {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, #eff6ff, white);
+            position: relative;
+        }
+
+        .mode-card.recommended::after {
+            content: '⭐ Рекомендуемый';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: white;
+            font-size: 0.75rem;
+            padding: 0.15rem 0.75rem;
+            border-radius: 20px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .mode-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .mode-title {
+            font-weight: 700;
+            font-size: 1.05rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .mode-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* Divider */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge-blue { background: #dbeafe; color: #1d4ed8; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-orange { background: #fed7aa; color: #9a3412; }
+
+        /* Screenshot placeholder */
+        .screenshot {
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);
+            border: 2px dashed #c7d2fe;
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            text-align: center;
+            color: #6366f1;
+            font-weight: 500;
+            margin: 1rem 0;
+        }
+
+        /* TOC */
+        .toc {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 2rem 0;
+        }
+
+        .toc-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            color: var(--primary-dark);
+        }
+
+        .toc-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .toc-list li {
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .toc-list li:last-child { border-bottom: none; }
+
+        .toc-num {
+            color: var(--primary);
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
+        }
+
+        /* Print button */
+        .print-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(37,99,235,0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 1000;
+            transition: all 0.2s;
+        }
+
+        .print-btn:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(37,99,235,0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Print Button -->
+    <button class="print-btn no-print" onclick="window.print()">
+        📄 Сохранить как PDF
+    </button>
+
+    <!-- Cover Page -->
+    <div class="cover">
+        <div class="cover-logo">SmartPOS Pro</div>
+        <div class="cover-subtitle">Система автоматизации торговли</div>
+        <div class="cover-title">Руководство по подключению<br>для новых клиентов</div>
+        <div class="cover-desc">
+            Пошаговая инструкция по настройке и началу работы с облачной платформой SmartPOS Pro
+        </div>
+        <div class="cover-version">
+            Версия 4.0.0 &nbsp;•&nbsp; Апрель 2026 &nbsp;•&nbsp; Конфиденциально
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+        <!-- Table of Contents -->
+        <div class="toc">
+            <div class="toc-title">📋 Содержание</div>
+            <ul class="toc-list">
+                <li><span><span class="toc-num">1.</span> Режимы подключения</span></li>
+                <li><span><span class="toc-num">2.</span> Скачивание приложения</span></li>
+                <li><span><span class="toc-num">3.</span> Настройка облачного подключения</span></li>
+                <li><span><span class="toc-num">4.</span> Активация лицензии</span></li>
+                <li><span><span class="toc-num">5.</span> Вход в систему</span></li>
+                <li><span><span class="toc-num">6.</span> Первоначальная настройка</span></li>
+                <li><span><span class="toc-num">7.</span> Подключение мобильного POS</span></li>
+                <li><span><span class="toc-num">8.</span> Часто задаваемые вопросы</span></li>
+                <li><span><span class="toc-num">9.</span> Контакты поддержки</span></li>
+            </ul>
+        </div>
+
+        <hr>
+
+        <!-- Section 1 -->
+        <h2><span class="step-num">1</span> Режимы подключения</h2>
+
+        <p>SmartPOS Pro поддерживает три режима работы. Выберите подходящий для вашего бизнеса:</p>
+
+        <div class="modes-grid">
+            <div class="mode-card recommended">
+                <div class="mode-icon">☁️</div>
+                <div class="mode-title">Облако (SaaS)</div>
+                <div class="mode-desc">
+                    Данные хранятся на облачном сервере. Доступ с любого устройства. Ничего устанавливать не нужно.
+                </div>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon">🖥️</div>
+                <div class="mode-title">Свой сервер</div>
+                <div class="mode-desc">
+                    Полная установка на ваш компьютер. Все данные хранятся локально. Нужен PostgreSQL.
+                </div>
+            </div>
+            <div class="mode-card">
+                <div class="mode-icon">🔄</div>
+                <div class="mode-title">Гибрид</div>
+                <div class="mode-desc">
+                    Локальный сервер + синхронизация с облаком. Работает при отключении интернета.
+                </div>
+            </div>
+        </div>
+
+        <div class="card card-highlight">
+            <div class="card-title">💡 Рекомендация</div>
+            <p style="margin:0">Для большинства клиентов мы рекомендуем <strong>облачный режим</strong> — не нужно устанавливать сервер, базу данных или настраивать сеть. Просто скачайте приложение и подключитесь!</p>
+        </div>
+
+        <div class="page-break"></div>
+
+        <!-- Section 2 -->
+        <h2><span class="step-num">2</span> Скачивание приложения</h2>
+
+        <p>Скачайте приложение для вашей платформы:</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Платформа</th>
+                    <th>Файл</th>
+                    <th>Размер</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>🖥️ <strong>Windows (Desktop)</strong></td>
+                    <td><code>SmartPOS-Pro-Setup-3.0.0.exe</code></td>
+                    <td>~200 МБ</td>
+                </tr>
+                <tr>
+                    <td>📱 <strong>Android (Mobile POS)</strong></td>
+                    <td><code>SmartPOS-Pro-v4.0.0-offline.apk</code></td>
+                    <td>~105 МБ</td>
+                </tr>
+                <tr>
+                    <td>🌐 <strong>Веб-версия (PWA)</strong></td>
+                    <td colspan="2">Ничего скачивать не нужно — откройте в браузере</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="card card-success">
+            <div class="card-title">🌐 Ссылка для скачивания</div>
+            <p style="margin:0;word-break:break-all">
+                <strong>GitHub Releases:</strong><br>
+                <a href="https://github.com/zarinaabdullaeva80-rgb/smartpos-pro/releases/tag/v4.0.0" style="color: var(--primary)">
+                    https://github.com/zarinaabdullaeva80-rgb/smartpos-pro/releases/tag/v4.0.0
+                </a>
+            </p>
+        </div>
+
+        <div class="card card-success">
+            <div class="card-title">🌐 PWA (Веб-версия) — без скачивания</div>
+            <p style="margin:0;word-break:break-all">
+                Откройте в браузере Chrome или Edge:<br>
+                <a href="https://smartpos-pro-production-f885.up.railway.app" style="color: var(--primary)">
+                    https://smartpos-pro-production-f885.up.railway.app
+                </a>
+            </p>
+        </div>
+
+        <h3>Установка на Windows</h3>
+        <ol>
+            <li>Скачайте файл <code>SmartPOS-Pro-Setup-3.0.0.exe</code></li>
+            <li>Запустите установщик двойным щелчком</li>
+            <li>Следуйте инструкциям мастера установки</li>
+            <li>Приложение появится на рабочем столе</li>
+        </ol>
+
+        <h3>Установка на Android</h3>
+        <ol>
+            <li>Скачайте файл <code>SmartPOS-Pro-v4.0.0-offline.apk</code> на телефон</li>
+            <li>Откройте файл и разрешите установку из неизвестных источников</li>
+            <li>Дождитесь завершения установки</li>
+            <li>Откройте приложение</li>
+        </ol>
+
+        <div class="page-break"></div>
+
+        <!-- Section 3 -->
+        <h2><span class="step-num">3</span> Настройка облачного подключения</h2>
+
+        <p>При первом запуске приложения вам нужно настроить подключение к серверу.</p>
+
+        <h3>На Desktop (Windows)</h3>
+        <ol>
+            <li>Откройте SmartPOS Pro</li>
+            <li>На экране входа нажмите вкладку <strong>«Сервер»</strong></li>
+            <li>Выберите режим <strong>«Облако»</strong> ☁️</li>
+            <li>В поле URL введите адрес сервера:
+                <pre><code>https://smartpos-pro-production-f885.up.railway.app/api</code></pre>
+            </li>
+            <li>Нажмите <strong>«Проверить подключение»</strong></li>
+            <li>Дождитесь сообщения <strong style="color: var(--success)">«Подключено» ✅</strong></li>
+            <li>Нажмите <strong>«Сохранить»</strong></li>
+        </ol>
+
+        <h3>На Mobile (Android)</h3>
+        <ol>
+            <li>Откройте SmartPOS Pro</li>
+            <li>Приложение автоматически покажет экран <strong>«Подключение к серверу»</strong></li>
+            <li>Выберите <strong>«Облако»</strong></li>
+            <li>Введите тот же URL сервера</li>
+            <li>Нажмите <strong>«Проверить подключение»</strong> → <strong>«Сохранить»</strong></li>
+        </ol>
+
+        <div class="card card-warning">
+            <div class="card-title">⚠️ Важно</div>
+            <p style="margin:0">Убедитесь, что адрес сервера начинается с <code>https://</code> и заканчивается на <code>/api</code>. Без <code>/api</code> подключение не будет работать.</p>
+        </div>
+
+        <div class="page-break"></div>
+
+        <!-- Section 4 -->
+        <h2><span class="step-num">4</span> Активация лицензии</h2>
+
+        <p>После подключения к серверу нужно активировать лицензионный ключ.</p>
+
+        <ol>
+            <li>На экране входа нажмите вкладку <strong>«Лицензия»</strong></li>
+            <li>Введите лицензионный ключ в формате <code>XXXX-XXXX-XXXX-XXXX</code></li>
+            <li>Нажмите <strong>«Активировать лицензию»</strong></li>
+            <li>Дождитесь подтверждения: <strong style="color: var(--success)">«Лицензия активирована!» ✅</strong></li>
+        </ol>
+
+        <div class="card card-highlight">
+            <div class="card-title">🔑 Где получить лицензионный ключ?</div>
+            <p style="margin:0">Лицензионный ключ предоставляется при покупке программы. Если у вас нет ключа, обратитесь к вашему менеджеру или в службу поддержки.</p>
+        </div>
+
+        <div class="card card-success">
+            <div class="card-title">📱 На мобильном устройстве</div>
+            <p style="margin:0">Мобильная версия <strong>не требует ввода лицензии</strong> — лицензия проверяется автоматически через учётную запись.</p>
+        </div>
+
+        <!-- Section 5 -->
+        <h2><span class="step-num">5</span> Вход в систему</h2>
+
+        <p>После активации лицензии и подключения к серверу:</p>
+
+        <ol>
+            <li>На экране входа убедитесь что вкладка <strong>«Вход»</strong> активна</li>
+            <li>Введите <strong>Имя пользователя</strong> (логин), полученный от администратора</li>
+            <li>Введите <strong>Пароль</strong></li>
+            <li>При желании поставьте галочку <strong>«Запомнить меня»</strong></li>
+            <li>Нажмите <strong>«Войти»</strong></li>
+        </ol>
+
+        <div class="card card-warning">
+            <div class="card-title">⚠️ Безопасность</div>
+            <p style="margin:0">
+                • Не передавайте свой пароль другим лицам<br>
+                • При первом входе рекомендуется сменить пароль<br>
+                • Функция «Запомнить меня» сохраняет <strong>только логин</strong>, пароль вводится каждый раз
+            </p>
+        </div>
+
+        <div class="page-break"></div>
+
+        <!-- Section 6 -->
+        <h2><span class="step-num">6</span> Первоначальная настройка</h2>
+
+        <p>После входа рекомендуем выполнить следующие шаги:</p>
+
+        <h3>6.1 Настройка товаров</h3>
+        <ol>
+            <li>Перейдите в раздел <strong>Товары</strong> в боковом меню</li>
+            <li>Нажмите <strong>«+ Добавить товар»</strong></li>
+            <li>Заполните: наименование, цена, штрихкод, единица измерения</li>
+            <li>Нажмите <strong>«Сохранить»</strong></li>
+        </ol>
+
+        <div class="card card-highlight">
+            <div class="card-title">📥 Массовый импорт</div>
+            <p style="margin:0">Вы можете импортировать товары из Excel файла. Перейдите в <strong>Настройки → Импорт данных</strong> и загрузите файл в формате CSV или XLSX.</p>
+        </div>
+
+        <h3>6.2 Настройка категорий</h3>
+        <ol>
+            <li>Перейдите в <strong>Категории</strong></li>
+            <li>Создайте категории для группировки товаров (например: «Напитки», «Еда», «Сладости»)</li>
+        </ol>
+
+        <h3>6.3 Добавление сотрудников</h3>
+        <ol>
+            <li>Перейдите в <strong>Сотрудники</strong></li>
+            <li>Добавьте кассиров и менеджеров</li>
+            <li>Назначьте им роли и права доступа</li>
+        </ol>
+
+        <!-- Section 7 -->
+        <h2><span class="step-num">7</span> Подключение мобильного POS</h2>
+
+        <p>Мобильное приложение можно использовать как дополнительную кассу.</p>
+
+        <h3>Облачный режим (рекомендуемый)</h3>
+        <ol>
+            <li>Установите APK на смартфон/планшет</li>
+            <li>В настройках выберите <strong>«Облако»</strong></li>
+            <li>Введите тот же URL облачного сервера</li>
+            <li>Войдите с логином/паролем сотрудника</li>
+            <li>Готово! Продажи автоматически синхронизируются</li>
+        </ol>
+
+        <h3>WiFi режим (без интернета)</h3>
+        <ol>
+            <li>Убедитесь, что телефон и компьютер в одной WiFi-сети</li>
+            <li>В настройках выберите <strong>«WiFi клиент»</strong></li>
+            <li>Нажмите <strong>«Найти сервер в WiFi сети»</strong></li>
+            <li>Или введите IP-адрес вручную (например: <code>http://192.168.1.45:5000/api</code>)</li>
+        </ol>
+
+        <div class="page-break"></div>
+
+        <!-- Section 8 -->
+        <h2><span class="step-num">8</span> Часто задаваемые вопросы</h2>
+
+        <div class="card" style="margin-bottom: 0.75rem">
+            <div class="card-title">❓ Нет подключения к серверу</div>
+            <p style="margin:0">Проверьте интернет-соединение и правильность URL сервера. Убедитесь, что адрес начинается с <code>https://</code> и заканчивается на <code>/api</code>.</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 0.75rem">
+            <div class="card-title">❓ Забыл пароль</div>
+            <p style="margin:0">Обратитесь к администратору вашей организации. Он может сбросить пароль через панель управления.</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 0.75rem">
+            <div class="card-title">❓ Можно ли работать без интернета?</div>
+            <p style="margin:0">Да! Выберите режим <strong>«Свой сервер»</strong> или <strong>«Гибрид»</strong>. В этих режимах данные хранятся локально и синхронизируются при появлении интернета.</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 0.75rem">
+            <div class="card-title">❓ Мои данные видны другим клиентам?</div>
+            <p style="margin:0"><strong>Нет!</strong> Каждая организация имеет полностью изолированное пространство данных. Ваши товары, продажи и клиенты доступны только вашей организации.</p>
+        </div>
+
+        <div class="card" style="margin-bottom: 0.75rem">
+            <div class="card-title">❓ Как получить обновления?</div>
+            <p style="margin:0">
+                <strong>PWA:</strong> обновляется автоматически<br>
+                <strong>Desktop/Mobile:</strong> скачайте новую версию с GitHub Releases
+            </p>
+        </div>
+
+        <!-- Section 9 -->
+        <h2><span class="step-num">9</span> Контакты поддержки</h2>
+
+        <div class="card card-highlight">
+            <table style="margin:0">
+                <tbody>
+                    <tr>
+                        <td><strong>📧 Email</strong></td>
+                        <td>support@smartpos.uz</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📱 Telegram</strong></td>
+                        <td>@smartpos_support</td>
+                    </tr>
+                    <tr>
+                        <td><strong>📞 Телефон</strong></td>
+                        <td>+998 (XX) XXX-XX-XX</td>
+                    </tr>
+                    <tr>
+                        <td><strong>🕐 Время работы</strong></td>
+                        <td>Пн–Пт: 9:00 — 18:00 (Ташкент)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>SmartPOS Pro</strong> v4.0.0 — © 2026. Все права защищены.</p>
+            <p>Данное руководство является конфиденциальным документом и предназначено только для авторизованных пользователей.</p>
+        </div>
+
+    </div>
+
+</body>
+</html>
