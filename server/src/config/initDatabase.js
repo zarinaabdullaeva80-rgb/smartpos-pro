@@ -838,6 +838,8 @@ async function addMissingColumns(pool) {
         'CREATE INDEX IF NOT EXISTS idx_customers_org ON customers(organization_id)',
         'CREATE INDEX IF NOT EXISTS idx_employees_org ON employees(organization_id)',
         'CREATE INDEX IF NOT EXISTS idx_categories_org ON product_categories(organization_id)',
+        // Allow NULL in products.code (ИКПУ may be empty in import files)
+        'ALTER TABLE products ALTER COLUMN code DROP NOT NULL',
     ];
 
     for (const q of alterQueries) {
