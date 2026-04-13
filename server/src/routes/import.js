@@ -610,10 +610,15 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
         const categoryMap = {};
         catResult.rows.forEach(c => { categoryMap[c.name.toLowerCase()] = c.id; });
 
+        // Получаем основной склад
+        const warehouseRes = await client.query('SELECT id FROM warehouses WHERE organization_id = $1 LIMIT 1', [orgId]);
+        const warehouseId = warehouseRes.rows[0]?.id || 1;
+
         await client.query('BEGIN');
 
         for (let i = 0; i < rows.length; i++) {
             try {
+                await client.query(`SAVEPOINT row_${i}`);
                 const row = rows[i];
                 const mapped = {};
                 for (const [fileCol, dbField] of Object.entries(mapping)) {
@@ -677,11 +682,12 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                     if (quantity > 0) {
                         await client.query(`
                             INSERT INTO stock_balances (product_id, warehouse_id, quantity, available_quantity, organization_id)
-                            VALUES ($1, 1, $2, $2, $3)
+                            VALUES ($1, $2, $3, $3, $4)
                             ON CONFLICT (product_id, warehouse_id) DO UPDATE
-                            SET quantity = $2, available_quantity = $2, updated_at = NOW()
-                        `, [existingId, quantity, orgId]);
+                            SET quantity = $3, available_quantity = $3, updated_at = NOW()
+                        `, [existingId, warehouseId, quantity, orgId]).catch(() => {});
                     }
+                    await client.query(`RELEASE SAVEPOINT row_${i}`);
                     updated++;
                 } else {
                     const finalBarcode = barcode || await getUniqueBarcode(client);
@@ -700,14 +706,17 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                     if (quantity > 0) {
                         await client.query(`
                             INSERT INTO stock_balances (product_id, warehouse_id, quantity, available_quantity, organization_id)
-                            VALUES ($1, 1, $2, $2, $3)
+                            VALUES ($1, $2, $3, $3, $4)
                             ON CONFLICT (product_id, warehouse_id) DO UPDATE
-                            SET quantity = $2, available_quantity = $2
-                        `, [newProductId, quantity, orgId]);
+                            SET quantity = $3, available_quantity = $3
+                        `, [newProductId, warehouseId, quantity, orgId]).catch(() => {});
                     }
+                    await client.query(`RELEASE SAVEPOINT row_${i}`);
                     imported++;
                 }
             } catch (rowErr) {
+                // Откатываем только эту строку — транзакция остаётся активной
+                await client.query(`ROLLBACK TO SAVEPOINT row_${i}`).catch(() => {});
                 errors.push({ row: i + 2, error: rowErr.message });
             }
         }
