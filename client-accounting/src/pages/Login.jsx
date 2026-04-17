@@ -299,7 +299,13 @@ function Login({ onLogin }) {
         setLoading(true);
 
         try {
-            const response = await authAPI.login(credentials);
+            // ★ Передаём license_key для проверки принадлежности на сервере
+            const savedLicenseKey = localStorage.getItem('license_key');
+            const loginPayload = { 
+                ...credentials,
+                ...(savedLicenseKey ? { license_key: savedLicenseKey } : {})
+            };
+            const response = await authAPI.login(loginPayload);
             localStorage.setItem('token', response.data.token);
             localStorage.setItem('user', JSON.stringify(response.data.user));
 

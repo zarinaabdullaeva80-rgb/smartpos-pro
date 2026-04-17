@@ -4,13 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Helper function to add license filter only if organization_id exists
-const getLicenseFilter = (orgId, paramNum, columnPrefix = '') => {
-    if (orgId) {
-        return { filter: ` AND ${columnPrefix}organization_id = $${paramNum}`, params: [orgId], nextParam: paramNum + 1 };
-    }
-    return { filter: '', params: [], nextParam: paramNum };
-};
+// All queries now use mandatory organization_id filtering
 
 // Аналитика продаж
 router.get('/sales-analytics', authenticate, async (req, res) => {
@@ -35,15 +29,10 @@ router.get('/sales-analytics', authenticate, async (req, res) => {
       WHERE 1=1
     `;
 
-        const params = [];
-        let paramCount = 1;
-
-        // Add license filter if user has organization_id
-        if (req.user?.organization_id) {
-            query += ` AND s.organization_id = $${paramCount}`;
-            params.push(req.user?.organization_id);
-            paramCount++;
-        }
+        const orgId = req.user.organization_id;
+        const params = [orgId];
+        let paramCount = 2;
+        query += ` AND s.organization_id = $1`;
 
         if (dateFrom) {
             query += ` AND s.document_date >= $${paramCount}`;
@@ -86,14 +75,10 @@ router.get('/top-products', authenticate, async (req, res) => {
       WHERE 1=1
     `;
 
-        const params = [];
-        let paramCount = 1;
-
-        if (req.user?.organization_id) {
-            query += ` AND s.organization_id = $${paramCount}`;
-            params.push(req.user?.organization_id);
-            paramCount++;
-        }
+        const orgId = req.user.organization_id;
+        const params = [orgId];
+        let paramCount = 2;
+        query += ` AND s.organization_id = $1`;
 
         if (dateFrom) {
             query += ` AND s.document_date >= $${paramCount}`;
@@ -141,14 +126,11 @@ router.get('/inventory-balances', authenticate, async (req, res) => {
       WHERE p.is_active = true AND w.is_active = true
     `;
 
-        const params = [];
-        let paramCount = 1;
-
-        if (req.user?.organization_id) {
-            query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NOT NULL)`;
-            params.push(req.user?.organization_id);
-            paramCount++;
-        }
+        const orgId = req.user.organization_id;
+        const params = [orgId];
+        let paramCount = 2;
+ 
+        query += ` AND p.organization_id = $1 AND w.organization_id = $1`;
 
         if (warehouseId) {
             query += ` AND w.id = $${paramCount}`;
@@ -178,31 +160,19 @@ router.get('/inventory-balances', authenticate, async (req, res) => {
 router.get('/financial-summary', authenticate, async (req, res) => {
     try {
         const { dateFrom, dateTo } = req.query;
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
 
-        let salesParams = [];
-        let purchasesParams = [];
-        let salesParamCount = 1;
-        let purchasesParamCount = 1;
+        let salesParams = [orgId];
+        let purchasesParams = [orgId];
+        let salesParamCount = 2;
+        let purchasesParamCount = 2;
         let salesDateFilter = '';
         let purchasesDateFilter = '';
 
-        // Build license filter
-        let salesLicenseFilter = '';
-        let purchasesLicenseFilter = '';
-        let balanceLicenseFilter = '';
-
-        if (orgId) {
-            salesLicenseFilter = ` AND organization_id = $${salesParamCount}`;
-            salesParams.push(orgId);
-            salesParamCount++;
-
-            purchasesLicenseFilter = ` AND organization_id = $${purchasesParamCount}`;
-            purchasesParams.push(orgId);
-            purchasesParamCount++;
-
-            balanceLicenseFilter = ` AND organization_id = $1`;
-        }
+        // Mandatory license filter
+        const salesLicenseFilter = ' AND organization_id = $1';
+        const purchasesLicenseFilter = ' AND organization_id = $1';
+        const balanceLicenseFilter = ' AND organization_id = $1';
 
         if (dateFrom) {
             salesDateFilter += ` AND document_date >= $${salesParamCount}`;
@@ -252,7 +222,7 @@ router.get('/financial-summary', authenticate, async (req, res) => {
         const [salesResult, purchasesResult, balanceResult] = await Promise.all([
             pool.query(salesQuery, salesParams),
             pool.query(purchasesQuery, purchasesParams),
-            pool.query(balanceQuery, orgId ? [orgId] : [])
+            pool.query(balanceQuery, [orgId])
         ]);
 
         const totalSales = parseFloat(salesResult.rows[0]?.total_sales || 0);
@@ -299,14 +269,11 @@ router.get('/counterparty-report', authenticate, async (req, res) => {
       WHERE c.is_active = true
     `;
 
-        const params = [];
-        let paramCount = 1;
-
-        if (req.user?.organization_id) {
-            query += ` AND (c.organization_id = $${paramCount} OR c.organization_id IS NOT NULL)`;
-            params.push(req.user?.organization_id);
-            paramCount++;
-        }
+        const orgId = req.user.organization_id;
+        const params = [orgId];
+        let paramCount = 2;
+ 
+        query += ` AND c.organization_id = $1`;
 
         if (type) {
             query += ` AND c.type = $${paramCount}`;
@@ -341,17 +308,15 @@ router.get('/dashboard', authenticate, async (req, res) => {
     try {
         const today = new Date().toISOString().split('T')[0];
         const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
 
         // Продажи за сегодня
         let todaySalesData = { amount: 0, count: 0 };
         try {
-            const licenseFilter = orgId ? ' AND organization_id = $2' : '';
-            const params = orgId ? [today, orgId] : [today];
             const todaySales = await pool.query(
                 `SELECT COALESCE(SUM(final_amount), 0) as amount, COUNT(*) as count
-                 FROM sales WHERE DATE(document_date) = $1${licenseFilter}`,
-                params
+                 FROM sales WHERE DATE(document_date) = $1 AND organization_id = $2`,
+                [today, orgId]
             );
             todaySalesData = {
                 amount: parseFloat(todaySales.rows[0]?.amount || 0),
@@ -364,12 +329,10 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Продажи за месяц
         let monthSalesData = { amount: 0, count: 0 };
         try {
-            const licenseFilter = orgId ? ' AND organization_id = $2' : '';
-            const params = orgId ? [monthStart, orgId] : [monthStart];
             const monthSales = await pool.query(
                 `SELECT COALESCE(SUM(final_amount), 0) as amount, COUNT(*) as count
-                 FROM sales WHERE document_date >= $1${licenseFilter}`,
-                params
+                 FROM sales WHERE document_date >= $1 AND organization_id = $2`,
+                [monthStart, orgId]
             );
             monthSalesData = {
                 amount: parseFloat(monthSales.rows[0]?.amount || 0),
@@ -382,11 +345,9 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Количество товаров
         let productsCount = 0;
         try {
-            const licenseFilter = orgId ? ' AND organization_id = $1' : '';
-            const params = orgId ? [orgId] : [];
             const products = await pool.query(
-                `SELECT COUNT(*) as count FROM products WHERE is_active = true${licenseFilter}`,
-                params
+                `SELECT COUNT(*) as count FROM products WHERE is_active = true AND organization_id = $1`,
+                [orgId]
             );
             productsCount = parseInt(products.rows[0]?.count || 0);
         } catch (e) {
@@ -396,11 +357,9 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Количество активных пользователей
         let activeUsersCount = 0;
         try {
-            const licenseFilter = orgId ? ' AND organization_id = $1' : '';
-            const params = orgId ? [orgId] : [];
             const activeUsers = await pool.query(
-                `SELECT COUNT(*) as count FROM users WHERE is_active = true${licenseFilter}`,
-                params
+                `SELECT COUNT(*) as count FROM users WHERE is_active = true AND organization_id = $1`,
+                [orgId]
             );
             activeUsersCount = parseInt(activeUsers.rows[0]?.count || 0);
         } catch (e) {
@@ -410,8 +369,6 @@ router.get('/dashboard', authenticate, async (req, res) => {
         // Товары с низким остатком (РЕАЛЬНЫЙ запрос)
         let lowStockProducts = [];
         try {
-            const licenseFilter = orgId ? ' AND p.organization_id = $1' : '';
-            const params = orgId ? [orgId] : [];
             const lowStock = await pool.query(
                 `SELECT 
                     p.id, p.name, p.min_stock,
@@ -420,12 +377,12 @@ router.get('/dashboard', authenticate, async (req, res) => {
                  FROM products p
                  LEFT JOIN inventory_movements im ON p.id = im.product_id
                  LEFT JOIN warehouses w ON im.warehouse_id = w.id
-                 WHERE p.is_active = true${licenseFilter}
+                 WHERE p.is_active = true AND p.organization_id = $1
                  GROUP BY p.id, p.name, p.min_stock, w.name
                  HAVING COALESCE(SUM(im.quantity), 0) < GREATEST(p.min_stock, 10)
                  ORDER BY COALESCE(SUM(im.quantity), 0) ASC
                  LIMIT 20`,
-                params
+                [orgId]
             );
             lowStockProducts = lowStock.rows.map(row => ({
                 name: row.name,

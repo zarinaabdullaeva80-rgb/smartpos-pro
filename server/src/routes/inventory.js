@@ -10,7 +10,7 @@ const router = express.Router();
  */
 router.get('/', authenticate, async (req, res) => {
     try {
-        const orgId = req.user?.organization_id;
+        const orgId = req.user.organization_id;
         const { search, warehouse_id } = req.query;
 
         let query = `
@@ -24,16 +24,10 @@ router.get('/', authenticate, async (req, res) => {
             FROM products p
             LEFT JOIN product_categories pc ON p.category_id = pc.id
             LEFT JOIN inventory_movements im ON p.id = im.product_id
-            WHERE p.is_active = true
+            WHERE p.is_active = true AND p.organization_id = $1
         `;
-        const params = [];
-        let paramCount = 1;
-
-        if (orgId) {
-            query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NULL)`;
-            params.push(orgId);
-            paramCount++;
-        }
+        const params = [orgId];
+        let paramCount = 2;
 
         if (warehouse_id) {
             query += ` AND im.warehouse_id = $${paramCount}`;
@@ -66,20 +60,30 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
     try {
         const { product_id, quantity, document_type, warehouse_id, notes } = req.body;
-        const orgId = req.user?.organization_id;
+        const orgId = req.user.organization_id;
 
         if (!product_id || quantity === undefined) {
             return res.status(400).json({ error: 'product_id и quantity обязательны' });
+        }
+
+        // Verify product ownership
+        const productCheck = await pool.query('SELECT 1 FROM products WHERE id = $1 AND organization_id = $2', [product_id, orgId]);
+        if (productCheck.rows.length === 0) {
+            return res.status(403).json({ error: 'Доступ запрещен' });
         }
 
         // Определить склад
         let whId = warehouse_id;
         if (!whId) {
             const wh = await pool.query(
-                'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
-                orgId ? [orgId] : []
+                'SELECT id FROM warehouses WHERE is_active = true AND organization_id = $1 LIMIT 1',
+                [orgId]
             );
-            whId = wh.rows[0]?.id || 1;
+            whId = wh.rows[0]?.id;
+            if (!whId) return res.status(400).json({ error: 'Склад не найден' });
+        } else {
+            const whCheck = await pool.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [whId, orgId]);
+            if (whCheck.rows.length === 0) return res.status(403).json({ error: 'Склад не принадлежит организации' });
         }
 
         const result = await pool.query(
@@ -91,8 +95,8 @@ router.post('/', authenticate, async (req, res) => {
 
         // Получить обновлённый остаток
         const stock = await pool.query(
-            'SELECT COALESCE(SUM(quantity), 0) AS total_stock FROM inventory_movements WHERE product_id = $1',
-            [product_id]
+            'SELECT COALESCE(SUM(quantity), 0) AS total_stock FROM inventory_movements WHERE product_id = $1 AND organization_id = $2',
+            [product_id, orgId]
         );
 
         res.status(201).json({
@@ -108,12 +112,11 @@ router.post('/', authenticate, async (req, res) => {
 /**
  * POST /api/inventory/save
  * Сохранение результатов инвентаризации (подсчёта)
- * IMPORTANT: Must be before /:id to prevent Express matching "save" as :id
  */
 router.post('/save', authenticate, async (req, res) => {
     try {
-        const { items, date, total_counted, discrepancies } = req.body;
-        const orgId = req.user?.organization_id;
+        const { items, warehouseId: customWarehouseId } = req.body;
+        const orgId = req.user.organization_id;
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'items array is required' });
@@ -123,17 +126,26 @@ router.post('/save', authenticate, async (req, res) => {
         const errors = [];
 
         // Определить склад
-        let warehouseId = 1;
-        try {
+        let warehouseId = customWarehouseId;
+        if (!warehouseId) {
             const wh = await pool.query(
-                'SELECT id FROM warehouses WHERE is_active = true' + (orgId ? ' AND organization_id = $1' : '') + ' LIMIT 1',
-                orgId ? [orgId] : []
+                'SELECT id FROM warehouses WHERE is_active = true AND organization_id = $1 LIMIT 1',
+                [orgId]
             );
             if (wh.rows.length > 0) warehouseId = wh.rows[0].id;
-        } catch (e) { /* use default */ }
+        } else {
+            const whCheck = await pool.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [warehouseId, orgId]);
+            if (whCheck.rows.length === 0) return res.status(403).json({ error: 'Склад не принадлежит организации' });
+        }
+        
+        if (!warehouseId) return res.status(400).json({ error: 'Склад не найден' });
 
         for (const item of items) {
             try {
+                // Verify product ownership
+                const pCheck = await pool.query('SELECT 1 FROM products WHERE id = $1 AND organization_id = $2', [item.product_id, orgId]);
+                if (pCheck.rows.length === 0) throw new Error('Доступ к товару запрещен');
+
                 const diff = item.actual_quantity - item.expected_quantity;
                 
                 if (diff !== 0) {
@@ -150,9 +162,7 @@ router.post('/save', authenticate, async (req, res) => {
                         `Инвентаризация: ожидалось ${item.expected_quantity}, факт ${item.actual_quantity}`
                     ]);
 
-                    // Обновить stock_balances чтобы десктоп видел актуальные остатки
-                    // available_quantity — GENERATED ALWAYS (= quantity - reserved_quantity)
-                    // поэтому обновляем только quantity
+                    // Обновить stock_balances
                     await pool.query(`
                         INSERT INTO stock_balances (product_id, warehouse_id, quantity, updated_at)
                         VALUES ($1, $2, $3, NOW())
@@ -193,12 +203,18 @@ router.post('/save', authenticate, async (req, res) => {
 /**
  * GET /api/inventory/movements/:productId
  * История движений конкретного товара
- * IMPORTANT: Must be before /:id to prevent Express matching "movements" as :id
  */
 router.get('/movements/:productId', authenticate, async (req, res) => {
     try {
         const { productId } = req.params;
         const { limit = 50, offset = 0 } = req.query;
+        const orgId = req.user.organization_id;
+
+        // Verify product ownership
+        const productCheck = await pool.query('SELECT 1 FROM products WHERE id = $1 AND organization_id = $2', [productId, orgId]);
+        if (productCheck.rows.length === 0) {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
 
         const result = await pool.query(`
             SELECT 
@@ -209,10 +225,10 @@ router.get('/movements/:productId', authenticate, async (req, res) => {
             FROM inventory_movements im
             LEFT JOIN warehouses w ON im.warehouse_id = w.id
             LEFT JOIN users u ON im.user_id = u.id
-            WHERE im.product_id = $1
+            WHERE im.product_id = $1 AND im.organization_id = $2
             ORDER BY im.created_at DESC
-            LIMIT $2 OFFSET $3
-        `, [productId, parseInt(limit), parseInt(offset)]);
+            LIMIT $3 OFFSET $4
+        `, [productId, orgId, parseInt(limit), parseInt(offset)]);
 
         res.json({ movements: result.rows, total: result.rows.length });
     } catch (error) {
@@ -224,17 +240,16 @@ router.get('/movements/:productId', authenticate, async (req, res) => {
 /**
  * GET /api/inventory/:id
  * Остатки конкретного товара (по складам)
- * IMPORTANT: Must be AFTER /movements/:productId and /save routes
  */
 router.get('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
-        const orgId = req.user?.organization_id;
+        const orgId = req.user.organization_id;
 
         // Информация о товаре
         const productResult = await pool.query(
-            'SELECT p.*, pc.name AS category_name FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.id = $1',
-            [id]
+            'SELECT p.*, pc.name AS category_name FROM products p LEFT JOIN product_categories pc ON p.category_id = pc.id WHERE p.id = $1 AND p.organization_id = $2',
+            [id, orgId]
         );
 
         if (productResult.rows.length === 0) {
@@ -242,28 +257,22 @@ router.get('/:id', authenticate, async (req, res) => {
         }
 
         // Остатки по складам
-        let stockQuery = `
+        const stockResult = await pool.query(`
             SELECT 
                 w.id AS warehouse_id,
                 w.name AS warehouse_name,
                 COALESCE(SUM(im.quantity), 0) AS quantity
             FROM warehouses w
             LEFT JOIN inventory_movements im ON w.id = im.warehouse_id AND im.product_id = $1
-            WHERE w.is_active = true
-        `;
-        const params = [id];
-        if (orgId) {
-            stockQuery += ' AND (w.organization_id = $2 OR w.organization_id IS NULL)';
-            params.push(orgId);
-        }
-        stockQuery += ' GROUP BY w.id, w.name ORDER BY w.name';
-
-        const stockResult = await pool.query(stockQuery, params);
+            WHERE w.is_active = true AND w.organization_id = $2
+            GROUP BY w.id, w.name 
+            ORDER BY w.name
+        `, [id, orgId]);
 
         // Общий остаток
         const totalStock = await pool.query(
-            'SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory_movements WHERE product_id = $1',
-            [id]
+            'SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory_movements WHERE product_id = $1 AND organization_id = $2',
+            [id, orgId]
         );
 
         res.json({

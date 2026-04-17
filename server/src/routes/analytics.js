@@ -44,7 +44,7 @@ router.get('/abc-analysis', authenticate, checkPermission('reports.analytics'), 
                     AND s.organization_id = $3
         `;
 
-        const params = [sd, ed, req.user?.organization_id];
+        const params = [sd, ed, req.user.organization_id];
 
         if (warehouseId) {
             query += ` AND s.warehouse_id = $${params.length + 1}`;
@@ -142,18 +142,18 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             WHERE s.status = 'confirmed'
             AND s.document_date BETWEEN $1 AND $2
             AND s.organization_id = $3
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         // Расходы
         const expensesResult = await pool.query(`
             SELECT 
                 COALESCE(SUM(amount), 0) as operating_expenses,
                 COUNT(*) as expense_count
-            FROM finance_transactions
-            WHERE type = 'expense'
-            AND transaction_date BETWEEN $1 AND $2
+            FROM payments
+            WHERE payment_type = 'expense'
+            AND document_date BETWEEN $1 AND $2
             AND organization_id = $3
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         // Возвраты
         const returnsResult = await pool.query(`
@@ -162,7 +162,7 @@ router.get('/profit-loss', authenticate, checkPermission('reports.finance'), asy
             WHERE status = 'confirmed'
             AND return_date BETWEEN $1 AND $2
             AND organization_id = $3
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         const revenue = parseFloat(salesResult.rows[0].revenue);
         const returns = parseFloat(returnsResult.rows[0].returns_amount);
@@ -205,21 +205,21 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
         const cashResult = await pool.query(`
             SELECT COALESCE(SUM(
                 CASE 
-                    WHEN type = 'income' THEN amount
-                    WHEN type = 'expense' THEN -amount
+                    WHEN payment_type = 'income' THEN amount
+                    WHEN payment_type = 'expense' THEN -amount
                     ELSE 0
                 END
             ), 0) as cash
-            FROM finance_transactions
-            WHERE transaction_date <= $1 AND organization_id = $2
-        `, [balanceDate, req.user?.organization_id]);
+            FROM payments
+            WHERE document_date <= $1 AND organization_id = $2
+        `, [balanceDate, req.user.organization_id]);
 
         const inventoryResult = await pool.query(`
             SELECT COALESCE(SUM(im.quantity * COALESCE(p.price_purchase, p.price_sale, 0)), 0) as inventory_value
             FROM inventory_movements im
             JOIN products p ON im.product_id = p.id
             WHERE p.organization_id = $1
-        `, [req.user?.organization_id]);
+        `, [req.user.organization_id]);
 
         const receivablesResult = await pool.query(`
             SELECT COALESCE(SUM(total_amount), 0) as receivables
@@ -228,7 +228,7 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
             AND payment_status NOT IN ('paid')
             AND document_date <= $1
             AND organization_id = $2
-        `, [balanceDate, req.user?.organization_id]);
+        `, [balanceDate, req.user.organization_id]);
 
         // ОБЯЗАТЕЛЬСТВА
         const payablesResult = await pool.query(`
@@ -238,7 +238,7 @@ router.get('/balance-sheet', authenticate, checkPermission('reports.finance'), a
             AND payment_status NOT IN ('paid')
             AND document_date <= $1
             AND organization_id = $2
-        `, [balanceDate, req.user?.organization_id]);
+        `, [balanceDate, req.user.organization_id]);
 
         const cash = parseFloat(cashResult.rows[0].cash);
         const inventory = parseFloat(inventoryResult.rows[0].inventory_value);
@@ -304,7 +304,7 @@ router.get('/demand-forecast', authenticate, checkPermission('reports.analytics'
             AND s.organization_id = $2
             GROUP BY DATE(s.document_date)
             ORDER BY sale_date
-        `, [productId, req.user?.organization_id]);
+        `, [productId, req.user.organization_id]);
 
         if (historyResult.rows.length === 0) {
             return res.json({
@@ -320,8 +320,8 @@ router.get('/demand-forecast', authenticate, checkPermission('reports.analytics'
         const avgDailySales = recentSales.reduce((sum, row) => sum + parseFloat(row.quantity_sold), 0) / window;
 
         // Прогноз на следующие 7, 14, 30 дней
-        const productResult = await pool.query('SELECT name FROM products WHERE id = $1 AND organization_id = $2', [productId, req.user?.organization_id]);
-        const stockResult = await pool.query('SELECT COALESCE(SUM(quantity), 0) as stock FROM inventory_movements WHERE product_id = $1', [productId]);
+        const productResult = await pool.query('SELECT name FROM products WHERE id = $1 AND organization_id = $2', [productId, req.user.organization_id]);
+        const stockResult = await pool.query('SELECT COALESCE(SUM(quantity), 0) as stock FROM inventory_movements WHERE product_id = $1 AND organization_id = $2', [productId, req.user.organization_id]);
         const product = productResult.rows[0];
         const currentStock = parseFloat(stockResult.rows[0]?.stock || 0);
 
@@ -375,7 +375,7 @@ router.get('/category-analysis', authenticate, checkPermission('reports.analytic
             AND s.organization_id = $3
             GROUP BY c.name
             ORDER BY total_revenue DESC
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed },
@@ -426,7 +426,7 @@ router.get('/sales-chart', authenticate, async (req, res) => {
             AND organization_id = $3
             GROUP BY ${dateFormat}
             ORDER BY period
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed, groupBy },
@@ -482,7 +482,7 @@ router.get('/top-products', authenticate, async (req, res) => {
             GROUP BY p.id, p.code, p.name, p.barcode, pc.name
             ORDER BY ${orderByClause}
             LIMIT $3
-        `, [sd, ed, limit, req.user?.organization_id]);
+        `, [sd, ed, limit, req.user.organization_id]);
 
         res.json({
             period: { startDate: sd, endDate: ed },
@@ -530,7 +530,7 @@ router.get('/cashier-performance', authenticate, async (req, res) => {
             AND s.organization_id = $3
             GROUP BY u.id, u.full_name, u.username
             ORDER BY total_revenue DESC
-        `, [sd, ed, req.user?.organization_id]);
+        `, [sd, ed, req.user.organization_id]);
 
         const cashiers = result.rows.map(row => ({
             ...row,
@@ -582,7 +582,7 @@ router.get('/warehouse-report', authenticate, async (req, res) => {
             WHERE w.is_active = true AND w.organization_id = $3
         `;
 
-        const params = [sd, ed, req.user?.organization_id];
+        const params = [sd, ed, req.user.organization_id];
 
         if (warehouseId) {
             query += ` AND w.id = $${params.length + 1}`;
@@ -612,7 +612,7 @@ router.get('/warehouse-report', authenticate, async (req, res) => {
 
         const inventoryResult = await pool.query(
             inventoryQuery,
-            warehouseId ? [req.user?.organization_id, warehouseId] : [req.user?.organization_id]
+            warehouseId ? [req.user.organization_id, warehouseId] : [req.user.organization_id]
         );
 
         // Объединить данные
@@ -680,7 +680,7 @@ router.get('/rfm-analysis', authenticate, async (req, res) => {
                 END as segment
             FROM rfm_scores
             ORDER BY total_spent DESC
-        `, [req.user?.organization_id]);
+        `, [req.user.organization_id]);
 
         // Собрать статистику по сегментам
         const segments = {};

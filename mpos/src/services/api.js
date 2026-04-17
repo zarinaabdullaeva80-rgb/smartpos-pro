@@ -430,4 +430,36 @@ export const healthAPI = {
     detailed: () => api.get('/health/detailed'),
 };
 
+// License API - Лицензирование (публичные endpoints, без аутентификации)
+export const licenseAPI = {
+    /**
+     * Резолв лицензионного ключа → URL сервера + данные компании.
+     * Вызывается ДО логина, обращается к центральному облачному серверу.
+     * @param {string} key - Лицензионный ключ
+     * @param {string} cloudUrl - URL облачного сервера (опционально)
+     */
+    resolve: async (key, cloudUrl) => {
+        const baseUrl = cloudUrl || getApiUrl();
+        const response = await axios.get(`${baseUrl}/license/resolve`, {
+            params: { key },
+            timeout: 10000,
+            headers: {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
+            },
+        });
+        return response;
+    },
+
+    /** Проверка состояния целевого сервера */
+    checkHealth: async (serverUrl) => {
+        const url = serverUrl.endsWith('/api') ? serverUrl : `${serverUrl}/api`;
+        const response = await axios.get(`${url}/health`, {
+            timeout: 5000,
+            headers: { 'ngrok-skip-browser-warning': 'true' },
+        });
+        return response;
+    },
+};
+
 export default api;

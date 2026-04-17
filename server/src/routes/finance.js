@@ -14,15 +14,9 @@ router.use(authenticateToken);
 // Получить все счета и кассы
 router.get('/accounts', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
-        let query = 'SELECT * FROM bank_accounts';
-        const params = [];
-        if (orgId) {
-            query += ' WHERE organization_id = $1';
-            params.push(orgId);
-        }
-        query += ' ORDER BY type, name';
-        const result = await pool.query(query, params);
+        const orgId = req.user.organization_id;
+        const query = 'SELECT * FROM bank_accounts WHERE organization_id = $1 ORDER BY type, name';
+        const result = await pool.query(query, [orgId]);
         res.json({ accounts: result.rows });
     } catch (error) {
         console.error('Ошибка получения счетов:', error);
@@ -33,17 +27,12 @@ router.get('/accounts', async (req, res) => {
 // Получить счет по ID
 router.get('/accounts/:id', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
-        let query = 'SELECT * FROM bank_accounts WHERE id = $1';
-        const params = [req.params.id];
-        if (orgId) {
-            query += ' AND organization_id = $2';
-            params.push(orgId);
-        }
-        const result = await pool.query(query, params);
+        const orgId = req.user.organization_id;
+        const query = 'SELECT * FROM bank_accounts WHERE id = $1 AND organization_id = $2';
+        const result = await pool.query(query, [req.params.id, orgId]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Счет не найден' });
+            return res.status(404).json({ error: 'Счет не найден или доступ запрещен' });
         }
 
         res.json(result.rows[0]);
@@ -58,7 +47,7 @@ router.post('/accounts', async (req, res) => {
     const { code, name, type, account_number, bank_name, currency, balance } = req.body;
 
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const result = await pool.query(
             `INSERT INTO bank_accounts 
              (code, name, type, account_number, bank_name, currency, balance, organization_id) 
@@ -67,7 +56,7 @@ router.post('/accounts', async (req, res) => {
             [code, name, type, account_number, bank_name, currency || 'RUB', balance || 0, orgId]
         );
 
-        await logAudit(req.user.id, 'CREATE', 'bank_accounts', result.rows[0].id, null, result.rows[0], req.ip);
+        await logAudit(req.user.id, 'CREATE', 'bank_accounts', result.rows[0].id, null, result.rows[0], req.ip, req.user.organization_id);
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -84,26 +73,22 @@ router.put('/accounts/:id', async (req, res) => {
     const { code, name, type, account_number, bank_name, currency, is_active } = req.body;
 
     try {
-        const oldResult = await pool.query('SELECT * FROM bank_accounts WHERE id = $1', [req.params.id]);
+        const orgId = req.user.organization_id;
+        const oldResult = await pool.query('SELECT * FROM bank_accounts WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
 
-        const orgId = req.user?.organization_id || null;
-        let updateQuery = `UPDATE bank_accounts 
+        if (oldResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Счет не найден или доступ запрещен' });
+        }
+
+        const updateQuery = `UPDATE bank_accounts 
              SET code = $1, name = $2, type = $3, account_number = $4, 
                  bank_name = $5, currency = $6, is_active = $7
-             WHERE id = $8`;
-        const updateParams = [code, name, type, account_number, bank_name, currency, is_active, req.params.id];
-        if (orgId) {
-            updateQuery += ' AND organization_id = $9';
-            updateParams.push(orgId);
-        }
-        updateQuery += ' RETURNING *';
+             WHERE id = $8 AND organization_id = $9
+             RETURNING *`;
+        const updateParams = [code, name, type, account_number, bank_name, currency, is_active, req.params.id, orgId];
         const result = await pool.query(updateQuery, updateParams);
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Счет не найден' });
-        }
-
-        await logAudit(req.user.id, 'UPDATE', 'bank_accounts', req.params.id, oldResult.rows[0], result.rows[0], req.ip);
+        await logAudit(req.user.id, 'UPDATE', 'bank_accounts', req.params.id, oldResult.rows[0], result.rows[0], req.ip, req.user.organization_id);
 
         res.json(result.rows[0]);
     } catch (error) {
@@ -115,10 +100,18 @@ router.put('/accounts/:id', async (req, res) => {
 // Удалить счет
 router.delete('/accounts/:id', async (req, res) => {
     try {
+        const orgId = req.user.organization_id;
+
+        // Проверяем существование и принадлежность
+        const accountCheck = await pool.query('SELECT id FROM bank_accounts WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
+        if (accountCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Счет не найден или доступ запрещен' });
+        }
+
         // Проверяем, есть ли платежи по этому счету
         const paymentsCheck = await pool.query(
-            'SELECT COUNT(*) FROM payments WHERE bank_account_id = $1',
-            [req.params.id]
+            'SELECT COUNT(*) FROM payments WHERE bank_account_id = $1 AND organization_id = $2',
+            [req.params.id, orgId]
         );
 
         if (parseInt(paymentsCheck.rows[0].count) > 0) {
@@ -127,15 +120,8 @@ router.delete('/accounts/:id', async (req, res) => {
             });
         }
 
-        const orgId = req.user?.organization_id || null;
-        let deleteQuery = 'DELETE FROM bank_accounts WHERE id = $1';
-        const deleteParams = [req.params.id];
-        if (orgId) {
-            deleteQuery += ' AND organization_id = $2';
-            deleteParams.push(orgId);
-        }
-        await pool.query(deleteQuery, deleteParams);
-        await logAudit(req.user.id, 'DELETE', 'bank_accounts', req.params.id, null, null, req.ip);
+        await pool.query('DELETE FROM bank_accounts WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
+        await logAudit(req.user.id, 'DELETE', 'bank_accounts', req.params.id, null, null, req.ip, req.user.organization_id);
 
         res.status(204).send();
     } catch (error) {
@@ -153,7 +139,7 @@ router.get('/payments', async (req, res) => {
     const { dateFrom, dateTo, type, counterparty_id, status } = req.query;
 
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         let query = `
             SELECT p.*, 
                    c.name as counterparty_name,
@@ -164,17 +150,11 @@ router.get('/payments', async (req, res) => {
             LEFT JOIN counterparties c ON p.counterparty_id = c.id
             LEFT JOIN bank_accounts ba ON p.bank_account_id = ba.id
             LEFT JOIN users u ON p.user_id = u.id
-            WHERE 1=1
+            WHERE p.organization_id = $1
         `;
 
-        const params = [];
-        let paramCount = 1;
-
-        if (orgId) {
-            query += ` AND p.organization_id = $${paramCount}`;
-            params.push(orgId);
-            paramCount++;
-        }
+        const params = [orgId];
+        let paramCount = 2;
 
         if (dateFrom) {
             query += ` AND p.document_date >= $${paramCount}`;
@@ -219,8 +199,8 @@ router.get('/payments', async (req, res) => {
 // Получить платеж по ID
 router.get('/payments/:id', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
-        let query = `SELECT p.*, 
+        const orgId = req.user.organization_id;
+        const query = `SELECT p.*, 
                     c.name as counterparty_name,
                     ba.name as bank_account_name,
                     u.full_name as user_name
@@ -228,16 +208,11 @@ router.get('/payments/:id', async (req, res) => {
              LEFT JOIN counterparties c ON p.counterparty_id = c.id
              LEFT JOIN bank_accounts ba ON p.bank_account_id = ba.id
              LEFT JOIN users u ON p.user_id = u.id
-             WHERE p.id = $1`;
-        const params = [req.params.id];
-        if (orgId) {
-            query += ' AND p.organization_id = $2';
-            params.push(orgId);
-        }
-        const result = await pool.query(query, params);
+             WHERE p.id = $1 AND p.organization_id = $2`;
+        const result = await pool.query(query, [req.params.id, orgId]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Платеж не найден' });
+            return res.status(404).json({ error: 'Платеж не найден или доступ запрещен' });
         }
 
         res.json(result.rows[0]);
@@ -263,18 +238,16 @@ router.post('/payments', async (req, res) => {
     } = req.body;
 
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
 
-        // Verify entities belong to license
-        if (orgId) {
-            if (counterparty_id) {
-                const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterparty_id, orgId]);
-                if (cCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
-            }
-            if (bank_account_id) {
-                const bCheck = await pool.query('SELECT 1 FROM bank_accounts WHERE id = $1 AND organization_id = $2', [bank_account_id, orgId]);
-                if (bCheck.rows.length === 0) throw new Error('Счет не найден в вашей организации');
-            }
+        // Verify entities belong to license/organization
+        if (counterparty_id) {
+            const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterparty_id, orgId]);
+            if (cCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
+        }
+        if (bank_account_id) {
+            const bCheck = await pool.query('SELECT 1 FROM bank_accounts WHERE id = $1 AND organization_id = $2', [bank_account_id, orgId]);
+            if (bCheck.rows.length === 0) throw new Error('Счет не найден в вашей организации');
         }
 
         const result = await pool.query(
@@ -300,7 +273,7 @@ router.post('/payments', async (req, res) => {
             ]
         );
 
-        await logAudit(req.user.id, 'CREATE', 'payments', result.rows[0].id, null, result.rows[0], req.ip);
+        await logAudit(req.user.id, 'CREATE', 'payments', result.rows[0].id, null, result.rows[0], req.ip, req.user.organization_id);
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -308,7 +281,7 @@ router.post('/payments', async (req, res) => {
         if (error.code === '23505') {
             return res.status(400).json({ error: 'Платеж с таким номером уже существует' });
         }
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(400).json({ error: error.message || 'Ошибка сервера' });
     }
 });
 
@@ -326,51 +299,43 @@ router.put('/payments/:id', async (req, res) => {
     } = req.body;
 
     try {
-        const oldResult = await pool.query('SELECT * FROM payments WHERE id = $1', [req.params.id]);
+        const orgId = req.user.organization_id;
+        const oldResult = await pool.query('SELECT * FROM payments WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
 
-        if (oldResult.rows[0]?.status === 'confirmed') {
+        if (oldResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Платеж не найден или доступ запрещен' });
+        }
+
+        if (oldResult.rows[0].status === 'confirmed') {
             return res.status(400).json({ error: 'Нельзя изменить проведенный платеж' });
         }
 
-        const orgId = req.user?.organization_id || null;
-
-        // Verify entities belong to license
-        if (orgId) {
-            if (counterparty_id) {
-                const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterparty_id, orgId]);
-                if (cCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
-            }
-            if (bank_account_id) {
-                const bCheck = await pool.query('SELECT 1 FROM bank_accounts WHERE id = $1 AND organization_id = $2', [bank_account_id, orgId]);
-                if (bCheck.rows.length === 0) throw new Error('Счет не найден в вашей организации');
-            }
+        // Verify entities belong to organization
+        if (counterparty_id) {
+            const cCheck = await pool.query('SELECT 1 FROM counterparties WHERE id = $1 AND organization_id = $2', [counterparty_id, orgId]);
+            if (cCheck.rows.length === 0) throw new Error('Контрагент не найден в вашей организации');
+        }
+        if (bank_account_id) {
+            const bCheck = await pool.query('SELECT 1 FROM bank_accounts WHERE id = $1 AND organization_id = $2', [bank_account_id, orgId]);
+            if (bCheck.rows.length === 0) throw new Error('Счет не найден в вашей организации');
         }
 
-        let updateQuery = `UPDATE payments 
+        const updateQuery = `UPDATE payments 
              SET document_number = $1, document_date = $2, payment_type = $3, 
                  counterparty_id = $4, bank_account_id = $5, amount = $6, 
                  currency = $7, purpose = $8
-             WHERE id = $9`;
-        const updateParams = [document_number, document_date, payment_type, counterparty_id, bank_account_id, amount, currency, purpose, req.params.id];
-
-        if (orgId) {
-            updateQuery += ' AND organization_id = $10';
-            updateParams.push(orgId);
-        }
-        updateQuery += ' RETURNING *';
+             WHERE id = $9 AND organization_id = $10
+             RETURNING *`;
+        const updateParams = [document_number, document_date, payment_type, counterparty_id, bank_account_id, amount, currency, purpose, req.params.id, orgId];
 
         const result = await pool.query(updateQuery, updateParams);
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Платеж не найден' });
-        }
-
-        await logAudit(req.user.id, 'UPDATE', 'payments', req.params.id, oldResult.rows[0], result.rows[0], req.ip);
+        await logAudit(req.user.id, 'UPDATE', 'payments', req.params.id, oldResult.rows[0], result.rows[0], req.ip, req.user.organization_id);
 
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Ошибка обновления платежа:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(400).json({ error: error.message || 'Ошибка сервера' });
     }
 });
 
@@ -451,21 +416,19 @@ router.post('/payments/:id/confirm', async (req, res) => {
 // Удалить платеж
 router.delete('/payments/:id', async (req, res) => {
     try {
-        const payment = await pool.query('SELECT * FROM payments WHERE id = $1', [req.params.id]);
+        const orgId = req.user.organization_id;
+        const payment = await pool.query('SELECT * FROM payments WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
 
-        if (payment.rows[0]?.status === 'confirmed') {
+        if (payment.rows.length === 0) {
+            return res.status(404).json({ error: 'Платеж не найден или доступ запрещен' });
+        }
+
+        if (payment.rows[0].status === 'confirmed') {
             return res.status(400).json({ error: 'Нельзя удалить проведенный платеж' });
         }
 
-        const orgId = req.user?.organization_id || null;
-        let query = 'DELETE FROM payments WHERE id = $1';
-        const params = [req.params.id];
-        if (orgId) {
-            query += ' AND organization_id = $2';
-            params.push(orgId);
-        }
-        await pool.query(query, params);
-        await logAudit(req.user.id, 'DELETE', 'payments', req.params.id, null, null, req.ip);
+        await pool.query('DELETE FROM payments WHERE id = $1 AND organization_id = $2', [req.params.id, orgId]);
+        await logAudit(req.user.id, 'DELETE', 'payments', req.params.id, null, null, req.ip, req.user.organization_id);
 
         res.status(204).send();
     } catch (error) {
@@ -483,22 +446,16 @@ router.get('/transactions', async (req, res) => {
     const { dateFrom, dateTo, account } = req.query;
 
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         let query = `
             SELECT t.*, u.full_name as user_name
             FROM transactions t
             LEFT JOIN users u ON t.user_id = u.id
-            WHERE 1=1
+            WHERE t.organization_id = $1
         `;
 
-        const params = [];
-        let paramCount = 1;
-
-        if (orgId) {
-            query += ` AND t.organization_id = $${paramCount}`;
-            params.push(orgId);
-            paramCount++;
-        }
+        const params = [orgId];
+        let paramCount = 2;
 
         if (dateFrom) {
             query += ` AND t.transaction_date >= $${paramCount}`;
@@ -539,25 +496,19 @@ router.get('/profit-loss-detailed', async (req, res) => {
         const sd = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const ed = endDate || new Date().toISOString().split('T')[0];
 
-        const orgId = req.user?.organization_id || null;
-        let salesQuery = `SELECT COALESCE(SUM(total_amount), 0) as revenue FROM sales WHERE status = 'confirmed' AND document_date BETWEEN $1 AND $2`;
-        let cogsQuery = `
+        const orgId = req.user.organization_id;
+        const salesQuery = `SELECT COALESCE(SUM(total_amount), 0) as revenue FROM sales WHERE status = 'confirmed' AND document_date BETWEEN $1 AND $2 AND organization_id = $3`;
+        const cogsQuery = `
             SELECT COALESCE(SUM(si.quantity * COALESCE(p.price_purchase, 0)), 0) as cogs
             FROM sale_items si
             JOIN sales s ON si.sale_id = s.id
             JOIN products p ON si.product_id = p.id
             WHERE s.status = 'confirmed' AND s.document_date BETWEEN $1 AND $2
+            AND s.organization_id = $3
         `;
 
-        const salesParams = [sd, ed];
-        const cogsParams = [sd, ed];
-
-        if (orgId) {
-            salesQuery += ' AND organization_id = $3';
-            salesParams.push(orgId);
-            cogsQuery += ' AND s.organization_id = $3';
-            cogsParams.push(orgId);
-        }
+        const salesParams = [sd, ed, orgId];
+        const cogsParams = [sd, ed, orgId];
 
         const salesResult = await pool.query(salesQuery, salesParams);
         const cogsResult = await pool.query(cogsQuery, cogsParams);
@@ -587,22 +538,14 @@ router.get('/cash-flow', async (req, res) => {
         const sd = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const ed = endDate || new Date().toISOString().split('T')[0];
 
-        const orgId = req.user?.organization_id || null;
-        let inQuery = `SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_type = 'incoming' AND status = 'confirmed' AND document_date BETWEEN $1 AND $2`;
-        let outQuery = `SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_type = 'outgoing' AND status = 'confirmed' AND document_date BETWEEN $1 AND $2`;
+        const orgId = req.user.organization_id;
+        const inQuery = `SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_type = 'incoming' AND status = 'confirmed' AND document_date BETWEEN $1 AND $2 AND organization_id = $3`;
+        const outQuery = `SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_type = 'outgoing' AND status = 'confirmed' AND document_date BETWEEN $1 AND $2 AND organization_id = $3`;
 
-        const inParams = [sd, ed];
-        const outParams = [sd, ed];
+        const params = [sd, ed, orgId];
 
-        if (orgId) {
-            inQuery += ' AND organization_id = $3';
-            inParams.push(orgId);
-            outQuery += ' AND organization_id = $3';
-            outParams.push(orgId);
-        }
-
-        const incomingResult = await pool.query(inQuery, inParams);
-        const outgoingResult = await pool.query(outQuery, outParams);
+        const incomingResult = await pool.query(inQuery, params);
+        const outgoingResult = await pool.query(outQuery, params);
 
         const inflow = parseFloat(incomingResult.rows[0].total);
         const outflow = parseFloat(outgoingResult.rows[0].total);
@@ -624,18 +567,20 @@ router.get('/profitability', async (req, res) => {
         const { startDate, endDate } = req.query;
         const sd = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         const ed = endDate || new Date().toISOString().split('T')[0];
+        const orgId = req.user.organization_id;
 
         const salesResult = await pool.query(`
             SELECT COALESCE(SUM(total_amount), 0) as revenue
-            FROM sales WHERE status = 'confirmed' AND document_date BETWEEN $1 AND $2
-        `, [sd, ed]);
+            FROM sales WHERE status = 'confirmed' AND document_date BETWEEN $1 AND $2 AND organization_id = $3
+        `, [sd, ed, orgId]);
 
         const cogsResult = await pool.query(`
             SELECT COALESCE(SUM(si.quantity * COALESCE(p.price_purchase, 0)), 0) as cogs
             FROM sale_items si JOIN sales s ON si.sale_id = s.id
             JOIN products p ON si.product_id = p.id
             WHERE s.status = 'confirmed' AND s.document_date BETWEEN $1 AND $2
-        `, [sd, ed]);
+            AND s.organization_id = $3
+        `, [sd, ed, orgId]);
 
         const revenue = parseFloat(salesResult.rows[0].revenue);
         const cogs = parseFloat(cogsResult.rows[0].cogs);
@@ -662,11 +607,11 @@ router.get('/profitability', async (req, res) => {
 // GET /finance/payables - задолженность перед поставщиками
 router.get('/payables', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const today = new Date().toISOString().split('T')[0];
 
         // Агрегируем по поставщикам из закупок (неоплаченные)
-        let query = `
+        const query = `
             SELECT
                 c.id,
                 c.name,
@@ -684,13 +629,11 @@ router.get('/payables', async (req, res) => {
             FROM purchases p
             JOIN counterparties c ON p.counterparty_id = c.id
             WHERE p.status NOT IN ('paid', 'cancelled')
+            AND p.organization_id = $2
+            GROUP BY c.id, c.name, c.inn, c.phone 
+            ORDER BY overdue DESC, total DESC
         `;
-        const params = [today];
-        if (orgId) {
-            query += ' AND p.organization_id = $2';
-            params.push(orgId);
-        }
-        query += ' GROUP BY c.id, c.name, c.inn, c.phone ORDER BY overdue DESC, total DESC';
+        const params = [today, orgId];
 
         const result = await pool.query(query, params);
         const creditors = result.rows;
@@ -721,21 +664,18 @@ router.get('/payables', async (req, res) => {
 router.post('/payables/:creditorId/payment', async (req, res) => {
     try {
         const { amount } = req.body;
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const { creditorId } = req.params;
 
         // Обновляем статус закупок (самую старую сначала)
-        let query = `
+        const query = `
             UPDATE purchases SET status = 'paid'
             WHERE counterparty_id = $1 AND status NOT IN ('paid', 'cancelled')
+            AND organization_id = $2
         `;
-        const params = [creditorId];
-        if (orgId) {
-            query += ' AND organization_id = $2';
-            params.push(orgId);
-        }
+        const params = [creditorId, orgId];
         await pool.query(query, params);
-        await logAudit(req.user.id, 'PAYMENT', 'purchases', creditorId, null, { amount }, req.ip);
+        await logAudit(req.user.id, 'PAYMENT', 'purchases', creditorId, null, { amount }, req.ip, req.user.organization_id);
 
         res.json({ success: true, message: `Оплата ${amount} записана` });
     } catch (error) {
@@ -751,11 +691,11 @@ router.post('/payables/:creditorId/payment', async (req, res) => {
 // GET /finance/receivables - задолженность покупателей перед нами
 router.get('/receivables', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const today = new Date().toISOString().split('T')[0];
 
         // Агрегируем по покупателям из продаж (неоплаченные)
-        let query = `
+        const query = `
             SELECT
                 c.id,
                 c.name,
@@ -765,7 +705,7 @@ router.get('/receivables', async (req, res) => {
                 COALESCE(SUM(s.total_amount), 0) AS total,
                 COALESCE(SUM(CASE WHEN s.due_date < $1 THEN s.total_amount ELSE 0 END), 0) AS overdue,
                 MAX(CASE WHEN s.due_date < $1 THEN ($1::date - s.due_date::date) ELSE 0 END) AS days,
-                MAX(s.document_date) AS last_payment,
+                MAX(s.document_date) AS last_purchase,
                 CASE
                     WHEN MAX(CASE WHEN s.due_date < $1 THEN ($1::date - s.due_date::date) ELSE 0 END) > 30 THEN 'critical'
                     WHEN COALESCE(SUM(CASE WHEN s.due_date < $1 THEN s.total_amount ELSE 0 END), 0) > 0 THEN 'overdue'
@@ -775,13 +715,11 @@ router.get('/receivables', async (req, res) => {
             JOIN counterparties c ON s.customer_id = c.id
             WHERE s.status = 'confirmed' AND s.payment_status NOT IN ('paid', 'cancelled')
               AND s.customer_id IS NOT NULL
+              AND s.organization_id = $2
+            GROUP BY c.id, c.name, c.inn, c.phone, c.email 
+            ORDER BY overdue DESC, total DESC
         `;
-        const params = [today];
-        if (orgId) {
-            query += ' AND s.organization_id = $2';
-            params.push(orgId);
-        }
-        query += ' GROUP BY c.id, c.name, c.inn, c.phone, c.email ORDER BY overdue DESC, total DESC';
+        const params = [today, orgId];
 
         const result = await pool.query(query, params);
         const debtors = result.rows;
@@ -809,21 +747,18 @@ router.get('/receivables', async (req, res) => {
 router.post('/receivables/:debtorId/payment', async (req, res) => {
     try {
         const { amount } = req.body;
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const { debtorId } = req.params;
 
-        let query = `
+        const query = `
             UPDATE sales SET payment_status = 'paid'
             WHERE customer_id = $1 AND status = 'confirmed'
               AND payment_status NOT IN ('paid', 'cancelled')
+              AND organization_id = $2
         `;
-        const params = [debtorId];
-        if (orgId) {
-            query += ' AND organization_id = $2';
-            params.push(orgId);
-        }
+        const params = [debtorId, orgId];
         await pool.query(query, params);
-        await logAudit(req.user.id, 'PAYMENT', 'sales', debtorId, null, { amount }, req.ip);
+        await logAudit(req.user.id, 'PAYMENT', 'sales', debtorId, null, { amount }, req.ip, req.user.organization_id);
 
         res.json({ success: true, message: `Платёж ${amount} записан` });
     } catch (error) {
@@ -835,21 +770,18 @@ router.post('/receivables/:debtorId/payment', async (req, res) => {
 // GET /finance/receivables/reconciliation-report - акт сверки
 router.get('/receivables/reconciliation-report', async (req, res) => {
     try {
-        const orgId = req.user?.organization_id || null;
+        const orgId = req.user.organization_id;
         const today = new Date().toLocaleDateString('ru-RU');
-        let query = `
+        const query = `
             SELECT c.name, SUM(s.total_amount) as total
             FROM sales s
             JOIN counterparties c ON s.customer_id = c.id
             WHERE s.status = 'confirmed' AND s.payment_status NOT IN ('paid', 'cancelled')
+            AND s.organization_id = $1
+            GROUP BY c.name 
+            ORDER BY total DESC
         `;
-        const params = [];
-        if (orgId) {
-            query += ' AND s.organization_id = $1';
-            params.push(orgId);
-        }
-        query += ' GROUP BY c.name ORDER BY total DESC';
-        const result = await pool.query(query, params);
+        const result = await pool.query(query, [orgId]);
 
         let text = `АКТ СВЕРКИ ВЗАИМОРАСЧЁТОВ\nДата: ${today}\n\n`;
         result.rows.forEach(r => {
@@ -860,6 +792,7 @@ router.get('/receivables/reconciliation-report', async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="act_sverki_${Date.now()}.txt"`);
         res.send(text);
     } catch (error) {
+        console.error('Error generating reconciliation report:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });

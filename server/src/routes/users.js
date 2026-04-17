@@ -70,7 +70,15 @@ router.post('/', authenticate, authorize('Администратор'), async (r
         });
     } catch (error) {
         console.error('Ошибка создания пользователя:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        if (error.code === '23505') {
+            if (error.detail.includes('username')) {
+                return res.status(400).json({ error: `Логин «${req.body.username}» уже занят` });
+            }
+            if (error.detail.includes('email')) {
+                return res.status(400).json({ error: `Email «${req.body.email}» уже зарегистрирован` });
+            }
+        }
+        res.status(500).json({ error: 'Ошибка сервера: ' + error.message });
     }
 });
 

@@ -21,6 +21,10 @@ let dynamicApiUrl = null;
 // Сохранённый облачный URL клиента (загружается из AsyncStorage)
 let savedCloudUrl = null;
 
+// Лицензионные данные (загружаются из AsyncStorage)
+let savedLicenseKey = null;
+let savedLicenseData = null;
+
 /**
  * Инициализировать настройки из AsyncStorage (вызвать при старте App)
  */
@@ -36,6 +40,17 @@ export async function initSettings() {
         if (cloud) {
             savedCloudUrl = cloud;
             console.log('[Settings] Restored cloud URL:', cloud);
+        }
+        // Загрузить лицензионные данные
+        const licKey = await AsyncStorage.getItem('license_key');
+        if (licKey) {
+            savedLicenseKey = licKey;
+            console.log('[Settings] Restored license key:', licKey.substring(0, 8) + '...');
+        }
+        const licData = await AsyncStorage.getItem('license_data');
+        if (licData) {
+            savedLicenseData = JSON.parse(licData);
+            console.log('[Settings] Restored license data:', savedLicenseData.company_name);
         }
     } catch (e) {
         console.log('[Settings] Init error:', e.message);
@@ -86,6 +101,72 @@ export function resetApiUrl() {
  */
 export function getApiUrl() {
     return dynamicApiUrl || DEFAULT_SERVER_URL;
+}
+
+// ========================================================
+// 🔑 ЛИЦЕНЗИОННЫЙ КЛЮЧ
+// ========================================================
+
+/**
+ * Сохранить лицензионный ключ и данные лицензии
+ */
+export async function setLicenseKey(key, licenseData) {
+    savedLicenseKey = key;
+    savedLicenseData = licenseData;
+    try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('license_key', key);
+        if (licenseData) {
+            await AsyncStorage.setItem('license_data', JSON.stringify(licenseData));
+        }
+        // Автоматически установить URL сервера из лицензии
+        if (licenseData?.server_url) {
+            setApiUrl(licenseData.server_url);
+            await AsyncStorage.setItem('server_url', licenseData.server_url);
+        }
+        console.log('[License] Key saved:', key.substring(0, 8) + '...');
+    } catch (e) {
+        console.log('[License] Save error:', e.message);
+    }
+}
+
+/**
+ * Получить сохранённый лицензионный ключ
+ */
+export function getLicenseKey() {
+    return savedLicenseKey;
+}
+
+/**
+ * Получить данные лицензии (company_name, server_url и т.д.)
+ */
+export function getLicenseData() {
+    return savedLicenseData;
+}
+
+/**
+ * Проверить, есть ли активированная лицензия
+ */
+export function hasLicense() {
+    return !!savedLicenseKey;
+}
+
+/**
+ * Сбросить лицензию (выход из аккаунта лицензии)
+ */
+export async function clearLicense() {
+    savedLicenseKey = null;
+    savedLicenseData = null;
+    dynamicApiUrl = null;
+    try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.removeItem('license_key');
+        await AsyncStorage.removeItem('license_data');
+        await AsyncStorage.removeItem('server_url');
+        await AsyncStorage.removeItem('token');
+        await AsyncStorage.removeItem('user');
+    } catch (e) { /* ignore */ }
+    console.log('[License] Cleared');
 }
 
 /**
@@ -306,7 +387,7 @@ export const LOG_CONFIG = {
 };
 
 // Версия приложения
-export const APP_VERSION = '4.0.0';
+export const APP_VERSION = '4.1.0';
 
 // Dev mode
 export const IS_DEV = false;

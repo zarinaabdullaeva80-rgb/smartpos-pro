@@ -19,9 +19,16 @@ router.get('/', async (req, res) => {
         let query = 'SELECT * FROM warehouses';
         const params = [];
 
-        if (orgId) {
+        if (req.user?.user_type === 'super_admin') {
+            if (orgId) {
+                query += ' WHERE (organization_id = $1 OR organization_id IS NULL)';
+                params.push(orgId);
+            }
+        } else if (orgId) {
             query += ' WHERE organization_id = $1';
             params.push(orgId);
+        } else {
+            query += ' WHERE 1=0';
         }
 
         query += ' ORDER BY name';
@@ -40,9 +47,16 @@ router.get('/:id', async (req, res) => {
         let query = 'SELECT * FROM warehouses WHERE id = $1';
         const params = [req.params.id];
 
-        if (orgId) {
+        if (req.user?.user_type === 'super_admin') {
+            if (orgId) {
+                query += ' AND (organization_id = $2 OR organization_id IS NULL)';
+                params.push(orgId);
+            }
+        } else if (orgId) {
             query += ' AND organization_id = $2';
             params.push(orgId);
+        } else {
+            query += ' AND 1=0';
         }
 
         const result = await pool.query(query, params);
@@ -121,33 +135,70 @@ router.put('/:id', async (req, res) => {
 
 // Удалить склад
 router.delete('/:id', async (req, res) => {
+    const client = await pool.connect();
     try {
-        // Проверяем, есть ли движения по этому складу
-        const movementsCheck = await pool.query(
-            'SELECT COUNT(*) FROM inventory_movements WHERE warehouse_id = $1',
-            [req.params.id]
-        );
+        await client.query('BEGIN');
+        const { id } = req.params;
+        const orgId = req.user?.organization_id;
 
-        if (parseInt(movementsCheck.rows[0].count) > 0) {
-            return res.status(400).json({
-                error: 'Невозможно удалить склад, по которому есть движения товаров'
-            });
+        // Cleanup dependent tables first
+        const cleanupTables = [
+            'inventory_movements',
+            'inventory_adjustments',
+            'inventory_check_items',
+            'stock_balances',
+            'stock_movements',
+            'warehouse_document_items'
+        ];
+
+        for (const table of cleanupTables) {
+            let q = `DELETE FROM ${table} WHERE warehouse_id = $1`;
+            const p = [id];
+            if (orgId) {
+                q += ' AND organization_id = $2';
+                p.push(orgId);
+            }
+            await client.query(q, p);
         }
 
-        const orgId = req.user?.organization_id;
+        // Fix references in other tables if any (set to NULL or delete?)
+        // sales_items and purchase_items often have warehouse_id. 
+        // We'll set them to NULL to keep the rest of the record.
+        const refTables = ['sale_items', 'purchase_items', 'return_items'];
+        for (const table of refTables) {
+            let q = `UPDATE ${table} SET warehouse_id = NULL WHERE warehouse_id = $1`;
+            const p = [id];
+            if (orgId) {
+                q += ' AND organization_id = $2';
+                p.push(orgId);
+            }
+            await client.query(q, p);
+        }
+
+        // Finally delete the warehouse
         let deleteQuery = 'DELETE FROM warehouses WHERE id = $1';
-        const deleteParams = [req.params.id];
+        const deleteParams = [id];
         if (orgId) {
             deleteQuery += ' AND organization_id = $2';
             deleteParams.push(orgId);
         }
-        await pool.query(deleteQuery, deleteParams);
-        await logAudit(req.user.id, 'DELETE', 'warehouses', req.params.id, null, null, req.ip);
+        
+        const deleteRes = await client.query(deleteQuery, deleteParams);
+        
+        if (deleteRes.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Склад не найден или нет доступа' });
+        }
 
+        await logAudit(req.user.id, 'DELETE', 'warehouses', id, null, null, req.ip);
+        await client.query('COMMIT');
         res.status(204).send();
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('Ошибка удаления склада:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({ error: 'Ошибка сервера: ' + error.message });
+    } finally {
+        client.release();
     }
 });
 

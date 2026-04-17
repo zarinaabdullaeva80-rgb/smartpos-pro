@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI } from '../services/api';
 import api from '../services/api';
-import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import ReceiptPrinter from '../components/ReceiptPrinter';
 import QRPaymentModal from '../components/QRPaymentModal';
+import ProductSearchInput from '../components/ProductSearchInput';
 import { useActionHandler } from '../hooks/useActionHandler';
 import ExportButton from '../components/ExportButton';
 import { useToast } from '../components/ToastProvider';
@@ -117,6 +118,32 @@ function Sales() {
         console.log('[SALES] Modal should be open now');
     };
 
+    // Autocomplete: добавить товар из поиска (или +1 если уже есть)
+    const handleProductSelect = (product) => {
+        const existingIndex = formData.items.findIndex(i => String(i.productId) === String(product.id));
+        if (existingIndex >= 0) {
+            // Товар уже в списке — +1 к количеству
+            const newItems = [...formData.items];
+            newItems[existingIndex].quantity += 1;
+            setFormData({ ...formData, items: newItems });
+        } else {
+            // Новый товар
+            setFormData({
+                ...formData,
+                items: [
+                    ...formData.items,
+                    {
+                        productId: product.id,
+                        productName: product.name,
+                        quantity: 1,
+                        price: product.price_sale || product.price || 0,
+                        vatRate: 20
+                    }
+                ]
+            });
+        }
+    };
+
     const handleAddItem = () => {
         setFormData({
             ...formData,
@@ -145,10 +172,23 @@ function Sales() {
             const product = products.find(p => p.id === parseInt(value));
             if (product) {
                 newItems[index].price = product.price_sale || 0;
+                newItems[index].productName = product.name;
             }
         }
 
         setFormData({ ...formData, items: newItems });
+    };
+
+    const handleQuantityChange = (index, delta) => {
+        const newItems = [...formData.items];
+        const newQty = newItems[index].quantity + delta;
+        if (newQty <= 0) {
+            // Удалить строку при 0
+            setFormData({ ...formData, items: newItems.filter((_, i) => i !== index) });
+        } else {
+            newItems[index].quantity = newQty;
+            setFormData({ ...formData, items: newItems });
+        }
     };
 
     const calculateTotal = () => {
@@ -455,172 +495,193 @@ function Sales() {
 
             {showModal && (
                 <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px' }}>
-                        <div className="modal-header">
-                            <h2>{editingSale ? t('sales.editSale', 'Редактирование продажи') : t('sales.newSale')}</h2>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px' }}>
+                        <div className="modal-header" style={{ padding: '12px 20px' }}>
+                            <h2 style={{ fontSize: '18px', margin: 0 }}>{editingSale ? t('sales.editSale', 'Редактирование продажи') : t('sales.newSale')}</h2>
                             <button onClick={() => setShowModal(false)} className="btn-close">×</button>
                         </div>
 
                         <form onSubmit={handleSubmit}>
-                            <div className="modal-body">
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>{t('sales.docNumber', 'Номер документа')}</label>
-                                        <input
-                                            type="text"
-                                            value={formData.documentNumber}
-                                            onChange={e => setFormData({ ...formData, documentNumber: e.target.value })}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>{t('sales.date')}</label>
+                            <div className="modal-body" style={{ padding: '12px 20px' }}>
+                                {/* Compact header: дата + покупатель + склад в одну строку */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr auto', gap: '10px', marginBottom: '12px', alignItems: 'end' }}>
+                                    <div className="form-group" style={{ margin: 0 }}>
+                                        <label style={{ fontSize: '12px', marginBottom: '4px' }}>{t('sales.date')}</label>
                                         <input
                                             type="date"
                                             value={formData.documentDate}
                                             onChange={e => setFormData({ ...formData, documentDate: e.target.value })}
                                             required
+                                            style={{ height: '36px', fontSize: '13px' }}
                                         />
                                     </div>
-                                </div>
-
-                                <div className="form-row">
-                                    <div className="form-group">
-                                        <label>{t('sales.pokupatel', 'Покупатель')} <span style={{ color: '#888', fontSize: '12px' }}>{t('sales.neobyazatelno', '(необязательно)')}</span></label>
+                                    <div className="form-group" style={{ margin: 0 }}>
+                                        <label style={{ fontSize: '12px', marginBottom: '4px' }}>{t('sales.pokupatel', 'Покупатель')}</label>
                                         <select
                                             value={formData.counterpartyId}
                                             onChange={e => setFormData({ ...formData, counterpartyId: e.target.value })}
+                                            style={{ height: '36px', fontSize: '13px' }}
                                         >
-                                            <option value="">{t('sales.roznichnyy_pokupatel', '— Розничный покупатель —')}</option>
+                                            <option value="">{t('sales.roznichnyy_pokupatel', '— Розничный —')}</option>
                                             {counterparties.map(cp => (
                                                 <option key={cp.id} value={cp.id}>{cp.name}</option>
                                             ))}
                                         </select>
                                     </div>
-                                    <div className="form-group">
-                                        <label>
-                                            Склад
-                                            {defaultWarehouseId && (
-                                                <Star size={14} style={{ marginLeft: '6px', color: '#ffc107', fill: '#ffc107' }} />
-                                            )}
+                                    <div className="form-group" style={{ margin: 0 }}>
+                                        <label style={{ fontSize: '12px', marginBottom: '4px' }}>
+                                            Склад {defaultWarehouseId && <Star size={10} style={{ color: '#ffc107', fill: '#ffc107' }} />}
                                         </label>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <select
-                                                value={formData.warehouseId}
-                                                onChange={e => setFormData({ ...formData, warehouseId: e.target.value })}
-                                                required
-                                                style={{ flex: 1 }}
-                                            >
-                                                <option value="">{t('sales.vyberite_sklad', 'Выберите склад')}</option>
-                                                {warehouses.map(wh => (
-                                                    <option key={wh.id} value={wh.id}>
-                                                        {wh.name} {defaultWarehouseId === String(wh.id) ? '⭐' : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <button
-                                                type="button"
-                                                className={`btn btn-sm ${defaultWarehouseId === String(formData.warehouseId) ? 'btn-warning' : 'btn-secondary'}`}
-                                                onClick={() => handleSetDefaultWarehouse(formData.warehouseId)}
-                                                title={defaultWarehouseId === String(formData.warehouseId) ? 'Убрать из умолчания' : 'Сделать по умолчанию'}
-                                                disabled={!formData.warehouseId}
-                                            >
-                                                <Star size={16} />
-                                            </button>
-                                        </div>
+                                        <select
+                                            value={formData.warehouseId}
+                                            onChange={e => setFormData({ ...formData, warehouseId: e.target.value })}
+                                            required
+                                            style={{ height: '36px', fontSize: '13px' }}
+                                        >
+                                            <option value="">{t('sales.vyberite_sklad', 'Склад')}</option>
+                                            {warehouses.map(wh => (
+                                                <option key={wh.id} value={wh.id}>
+                                                    {wh.name} {defaultWarehouseId === String(wh.id) ? '⭐' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>{t('sales.kommentariy', 'Комментарий')}</label>
-                                    <textarea
-                                        value={formData.notes}
-                                        onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                                        rows="2"
-                                    />
-                                </div>
-
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', marginBottom: '10px' }}>
-                                    <h3>{t('sales.tovary', 'Товары')}</h3>
-                                    <button type="button" onClick={handleAddItem} className="btn btn-secondary btn-sm">
-                                        <Plus size={16} /> Добавить строку
+                                    <button
+                                        type="button"
+                                        className={`btn btn-sm ${defaultWarehouseId === String(formData.warehouseId) ? 'btn-warning' : 'btn-secondary'}`}
+                                        onClick={() => handleSetDefaultWarehouse(formData.warehouseId)}
+                                        title={defaultWarehouseId === String(formData.warehouseId) ? 'Убрать из умолчания' : 'По умолчанию'}
+                                        disabled={!formData.warehouseId}
+                                        style={{ height: '36px', width: '36px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        <Star size={14} />
                                     </button>
                                 </div>
 
-                                <div className="table-container">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>{t('sales.tovar', 'Товар')}</th>
-                                                <th style={{ width: '120px' }}>{t('sales.kolichestvo', 'Количество')}</th>
-                                                <th style={{ width: '150px' }}>{t('sales.tsena', 'Цена')}</th>
-                                                <th style={{ width: '150px' }}>{t('sales.summa', 'Сумма')}</th>
-                                                <th style={{ width: '50px' }}></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {formData.items.map((item, index) => (
-                                                <tr key={index}>
-                                                    <td>
-                                                        <select
-                                                            value={item.productId}
-                                                            onChange={e => handleItemChange(index, 'productId', e.target.value)}
-                                                            required
-                                                        >
-                                                            <option value="">{t('sales.vyberite_tovar', 'Выберите товар')}</option>
-                                                            {products.map(p => (
-                                                                <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                    <td>
-                                                        <input
-                                                            type="number"
-                                                            min="0.001"
-                                                            step="0.001"
-                                                            value={item.quantity}
-                                                            onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value))}
-                                                            required
-                                                        />
-                                                    </td>
-                                                    <td>
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            step="0.01"
-                                                            value={item.price}
-                                                            onChange={e => handleItemChange(index, 'price', parseFloat(e.target.value))}
-                                                            required
-                                                        />
-                                                    </td>
-                                                    <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                                                        {formatCurrency(item.quantity * item.price)}
-                                                    </td>
-                                                    <td>
-                                                        <button type="button" onClick={() => handleRemoveItem(index)} className="btn btn-danger btn-sm">
-                                                            <X size={16} />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                {/* Поиск товара — autocomplete */}
+                                <div style={{ marginBottom: '10px' }}>
+                                    <ProductSearchInput
+                                        products={products}
+                                        onSelect={handleProductSelect}
+                                        placeholder="🔍 Поиск товара: название, код или штрихкод..."
+                                        warehouseId={formData.warehouseId}
+                                    />
                                 </div>
 
+                                {/* Компактная таблица товаров */}
                                 {formData.items.length > 0 && (
-                                    <div style={{ textAlign: 'right', marginTop: '15px', fontSize: '1.2rem' }}>
-                                        <strong>Итого к оплате: {formatCurrency(calculateTotal())}</strong>
+                                    <div style={{ maxHeight: '320px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+                                        <table style={{ margin: 0 }}>
+                                            <thead>
+                                                <tr>
+                                                    <th style={{ padding: '6px 10px', fontSize: '12px' }}>{t('sales.tovar', 'Товар')}</th>
+                                                    <th style={{ width: '130px', padding: '6px 10px', fontSize: '12px', textAlign: 'center' }}>{t('sales.kolichestvo', 'Кол-во')}</th>
+                                                    <th style={{ width: '120px', padding: '6px 10px', fontSize: '12px' }}>{t('sales.tsena', 'Цена')}</th>
+                                                    <th style={{ width: '110px', padding: '6px 10px', fontSize: '12px', textAlign: 'right' }}>{t('sales.summa', 'Сумма')}</th>
+                                                    <th style={{ width: '40px', padding: '6px 4px' }}></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {formData.items.map((item, index) => {
+                                                    const product = products.find(p => p.id === parseInt(item.productId));
+                                                    return (
+                                                        <tr key={index}>
+                                                            <td style={{ padding: '5px 10px', fontSize: '13px' }}>
+                                                                {item.productName || product?.name || (
+                                                                    <select
+                                                                        value={item.productId}
+                                                                        onChange={e => handleItemChange(index, 'productId', e.target.value)}
+                                                                        required
+                                                                        style={{ height: '30px', fontSize: '12px' }}
+                                                                    >
+                                                                        <option value="">Выберите…</option>
+                                                                        {products.map(p => (
+                                                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ padding: '5px 10px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                                                    <button type="button" onClick={() => handleQuantityChange(index, -1)}
+                                                                        style={{ width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--border-color, #d1d5db)', background: 'var(--bg-secondary, #f1f5f9)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                                                                        <Minus size={12} />
+                                                                    </button>
+                                                                    <input
+                                                                        type="number" min="0.001" step="0.001"
+                                                                        value={item.quantity}
+                                                                        onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)}
+                                                                        required
+                                                                        style={{ width: '50px', height: '28px', textAlign: 'center', fontSize: '13px', padding: '2px 4px' }}
+                                                                    />
+                                                                    <button type="button" onClick={() => handleQuantityChange(index, 1)}
+                                                                        style={{ width: '26px', height: '26px', borderRadius: '6px', border: '1px solid var(--border-color, #d1d5db)', background: 'var(--bg-secondary, #f1f5f9)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                                                                        <Plus size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                            <td style={{ padding: '5px 10px' }}>
+                                                                <input
+                                                                    type="number" min="0" step="0.01"
+                                                                    value={item.price}
+                                                                    onChange={e => handleItemChange(index, 'price', parseFloat(e.target.value) || 0)}
+                                                                    required
+                                                                    style={{ height: '28px', fontSize: '13px', padding: '2px 6px' }}
+                                                                />
+                                                            </td>
+                                                            <td style={{ textAlign: 'right', fontWeight: 600, fontSize: '13px', padding: '5px 10px' }}>
+                                                                {formatCurrency(item.quantity * item.price)}
+                                                            </td>
+                                                            <td style={{ padding: '5px 4px' }}>
+                                                                <button type="button" onClick={() => handleRemoveItem(index)}
+                                                                    style={{ width: '26px', height: '26px', borderRadius: '6px', border: 'none', background: '#fee2e2', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                                                                    <X size={14} />
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 )}
+
+                                {formData.items.length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted, #94a3b8)', fontSize: '14px' }}>
+                                        <Package size={32} style={{ marginBottom: '8px', opacity: 0.4 }} />
+                                        <p style={{ margin: 0 }}>Найдите и выберите товар в поиске выше</p>
+                                    </div>
+                                )}
+
+                                {/* Итого */}
+                                {formData.items.length > 0 && (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', padding: '10px 14px', background: 'var(--bg-secondary, #f8fafc)', borderRadius: '8px' }}>
+                                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{formData.items.length} {formData.items.length === 1 ? 'позиция' : 'позиций'}</span>
+                                        <strong style={{ fontSize: '18px' }}>Итого: {formatCurrency(calculateTotal())}</strong>
+                                    </div>
+                                )}
+
+                                {/* Комментарий — свёрнутый */}
+                                <details style={{ marginTop: '8px' }}>
+                                    <summary style={{ cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted, #94a3b8)' }}>💬 Комментарий</summary>
+                                    <textarea
+                                        value={formData.notes}
+                                        onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                                        rows="1"
+                                        placeholder="Заметки к продаже..."
+                                        style={{ marginTop: '6px', fontSize: '13px' }}
+                                    />
+                                </details>
                             </div>
 
-                            <div className="modal-footer" style={{ display: 'flex', gap: '10px', justifyContent: 'space-between' }}>
-                                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">{t('common.cancel')}</button>
-                                <div style={{ display: 'flex', gap: '10px' }}>
+                            <div className="modal-footer" style={{ display: 'flex', gap: '10px', justifyContent: 'space-between', padding: '10px 20px' }}>
+                                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary" style={{ fontSize: '13px' }}>{t('common.cancel')}</button>
+                                <div style={{ display: 'flex', gap: '8px' }}>
                                     {formData.items.length > 0 && (
                                         <button
                                             type="button"
                                             className="btn btn-info"
+                                            style={{ fontSize: '13px' }}
                                             onClick={() => {
                                                 setQRPaymentData({
                                                     amount: calculateTotal(),
@@ -629,10 +690,12 @@ function Sales() {
                                                 setShowQRPayment(true);
                                             }}
                                         >
-                                            <QrCode size={16} /> QR-оплата
+                                            <QrCode size={14} /> QR
                                         </button>
                                     )}
-                                    <button type="submit" className="btn btn-primary">{editingSale ? t('common.save') : t('sales.createSale', 'Создать продажу')}</button>
+                                    <button type="submit" className="btn btn-primary" style={{ fontSize: '13px' }}>
+                                        {editingSale ? t('common.save') : '✓ Продать'}
+                                    </button>
                                 </div>
                             </div>
                         </form>

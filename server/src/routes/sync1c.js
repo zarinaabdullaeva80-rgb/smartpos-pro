@@ -14,14 +14,33 @@ router.get('/settings', authenticate, async (req, res) => {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS sync_settings (
                 id SERIAL PRIMARY KEY,
-                setting_key VARCHAR(100) UNIQUE NOT NULL,
+                setting_key VARCHAR(100) NOT NULL,
                 setting_value TEXT,
                 description TEXT,
-                updated_at TIMESTAMP DEFAULT NOW()
+                organization_id INTEGER,
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(setting_key, organization_id)
             )
         `);
 
-        const result = await pool.query('SELECT * FROM sync_settings ORDER BY setting_key');
+        // Migration: add organization_id if it doesn't exist
+        await pool.query(`
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sync_settings' AND column_name='organization_id') THEN
+                    ALTER TABLE sync_settings ADD COLUMN organization_id INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sync_log' AND column_name='organization_id') THEN
+                    ALTER TABLE sync_log ADD COLUMN organization_id INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='external_id_mapping' AND column_name='organization_id') THEN
+                    ALTER TABLE external_id_mapping ADD COLUMN organization_id INTEGER;
+                END IF;
+            END $$;
+        `);
+
+        const orgId = req.user.organization_id;
+        const result = await pool.query('SELECT * FROM sync_settings WHERE organization_id = $1 ORDER BY setting_key', [orgId]);
 
         const settings = {};
         result.rows.forEach(row => {
@@ -42,13 +61,14 @@ router.put('/settings', authenticate, checkPermission('admin.settings'), auditLo
     try {
         const settings = req.body;
 
+        const orgId = req.user.organization_id;
         for (const [key, value] of Object.entries(settings)) {
             await pool.query(
-                `INSERT INTO sync_settings (setting_key, setting_value, updated_at)
-                 VALUES ($1, $2, NOW())
-                 ON CONFLICT (setting_key)
+                `INSERT INTO sync_settings (setting_key, setting_value, organization_id, updated_at)
+                 VALUES ($1, $2, $3, NOW())
+                 ON CONFLICT (setting_key, organization_id)
                  DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()`,
-                [key, value]
+                [key, value, orgId]
             );
         }
 
@@ -136,10 +156,10 @@ router.get('/log', authenticate, async (req, res) => {
                 records_total, records_success, records_error,
                 error_message, started_at, finished_at, duration_ms
             FROM sync_log
-            WHERE 1=1
+            WHERE organization_id = $1
         `;
-        const params = [];
-        let paramIndex = 1;
+        const params = [req.user.organization_id];
+        let paramIndex = 2;
 
         if (sync_type) {
             query += ` AND sync_type = $${paramIndex++}`;
@@ -198,10 +218,10 @@ router.get('/export/products', authenticate, async (req, res) => {
             LEFT JOIN product_categories pc ON p.category_id = pc.id
             LEFT JOIN external_id_mapping eim ON eim.entity_type = 'products' 
                 AND eim.internal_id = p.id AND eim.external_system = '1C'
-            WHERE 1=1
+            WHERE p.organization_id = $1
         `;
 
-        const params = [];
+        const params = [req.user.organization_id];
         if (date_from) {
             params.push(date_from);
             query += ` AND p.updated_at >= $${params.length}`;
@@ -246,12 +266,13 @@ router.post('/import/products', authenticate, checkPermission('products.write'),
             try {
                 const { external_id, name, barcode, article, unit, price, cost_price, category_name } = product;
 
-                // Проверить, существует ли товар с таким external_id
+                // Проверить, существует ли товар с таким external_id (в рамках организации)
                 const existing = await client.query(
                     `SELECT p.id FROM products p
                      JOIN external_id_mapping eim ON eim.internal_id = p.id
-                     WHERE eim.entity_type = 'products' AND eim.external_id = $1 AND eim.external_system = '1C'`,
-                    [external_id]
+                     WHERE eim.entity_type = 'products' AND eim.external_id = $1 AND eim.external_system = '1C'
+                     AND eim.organization_id = $2`,
+                    [external_id, req.user.organization_id]
                 );
 
                 let productId;
@@ -268,19 +289,19 @@ router.post('/import/products', authenticate, checkPermission('products.write'),
                 } else {
                     // Создать
                     const result = await client.query(
-                        `INSERT INTO products (name, barcode, code, unit, price_sale, price_purchase, is_active)
-                         VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
-                        [name, barcode, article, unit, price, cost_price]
+                        `INSERT INTO products (name, barcode, code, unit, price_sale, price_purchase, is_active, organization_id)
+                         VALUES ($1, $2, $3, $4, $5, $6, true, $7) RETURNING id`,
+                        [name, barcode, article, unit, price, cost_price, req.user.organization_id]
                     );
                     productId = result.rows[0].id;
 
                     // Сохранить маппинг
                     await client.query(
-                        `INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system)
-                         VALUES ('products', $1, $2, '1C')
-                         ON CONFLICT (entity_type, internal_id, external_system) 
+                        `INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system, organization_id)
+                         VALUES ('products', $1, $2, '1C', $3)
+                         ON CONFLICT (entity_type, internal_id, external_system, organization_id) 
                          DO UPDATE SET external_id = $2, updated_at = NOW()`,
-                        [productId, external_id]
+                        [productId, external_id, req.user.organization_id]
                     );
                 }
 
@@ -297,13 +318,15 @@ router.post('/import/products', authenticate, checkPermission('products.write'),
         await client.query(
             `UPDATE sync_log SET status = $1, records_success = $2, records_error = $3,
              error_message = $4, finished_at = NOW(), 
-             duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000
-             WHERE id = $5`,
+             duration_ms = EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000,
+             organization_id = $5
+             WHERE id = $6`,
             [
                 errors > 0 ? 'partial' : 'success',
                 success,
                 errors,
                 errors > 0 ? JSON.stringify(errorDetails) : null,
+                req.user.organization_id,
                 logId.rows[0].id
             ]
         );
@@ -365,10 +388,10 @@ router.get('/export/sales', authenticate, async (req, res) => {
                 AND eim_customer.internal_id = s.customer_id AND eim_customer.external_system = '1C'
             LEFT JOIN external_id_mapping eim_sale ON eim_sale.entity_type = 'sales' 
                 AND eim_sale.internal_id = s.id AND eim_sale.external_system = '1C'
-            WHERE s.status = 'confirmed'
+             WHERE s.status = 'confirmed' AND s.organization_id = $1
         `;
 
-        const params = [];
+        const params = [req.user.organization_id];
         if (date_from) {
             params.push(date_from);
             query += ` AND s.document_date >= $${params.length}`;
@@ -461,8 +484,9 @@ router.get('/export/categories', authenticate, async (req, res) => {
             LEFT JOIN product_categories parent ON c.parent_id = parent.id
             LEFT JOIN external_id_mapping eim ON eim.entity_type = 'categories' 
                 AND eim.internal_id = c.id AND eim.external_system = '1C'
+            WHERE c.organization_id = $1
             ORDER BY c.parent_id NULLS FIRST, c.name
-        `);
+        `, [req.user.organization_id]);
 
         res.json({
             timestamp: new Date().toISOString(),
@@ -502,10 +526,10 @@ router.post('/import/categories', authenticate, checkPermission('products.write'
         // Импорт родительских категорий
         for (const cat of rootCategories) {
             try {
-                // Проверяем существует ли категория по external_id
+                // Проверяем существует ли категория по external_id (в рамках организации)
                 const existingMapping = await client.query(
-                    'SELECT internal_id FROM external_id_mapping WHERE entity_type = $1 AND external_id = $2 AND external_system = $3',
-                    ['categories', cat.external_id, '1C']
+                    'SELECT internal_id FROM external_id_mapping WHERE entity_type = $1 AND external_id = $2 AND external_system = $3 AND organization_id = $4',
+                    ['categories', cat.external_id, '1C', req.user.organization_id]
                 );
 
                 if (existingMapping.rows.length > 0) {
@@ -518,14 +542,14 @@ router.post('/import/categories', authenticate, checkPermission('products.write'
                 } else {
                     // Создаём новую
                     const insertResult = await client.query(
-                        'INSERT INTO product_categories (name, description) VALUES ($1, $2) RETURNING id',
-                        [cat.name, cat.description || '']
+                        'INSERT INTO product_categories (name, description, organization_id) VALUES ($1, $2, $3) RETURNING id',
+                        [cat.name, cat.description || '', req.user.organization_id]
                     );
 
                     // Создаём маппинг
                     await client.query(
-                        'INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system) VALUES ($1, $2, $3, $4)',
-                        ['categories', insertResult.rows[0].id, cat.external_id, '1C']
+                        'INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system, organization_id) VALUES ($1, $2, $3, $4, $5)',
+                        ['categories', insertResult.rows[0].id, cat.external_id, '1C', req.user.organization_id]
                     );
                     imported++;
                 }
@@ -559,13 +583,13 @@ router.post('/import/categories', authenticate, checkPermission('products.write'
                     updated++;
                 } else {
                     const insertResult = await client.query(
-                        'INSERT INTO product_categories (name, description, parent_id) VALUES ($1, $2, $3) RETURNING id',
-                        [cat.name, cat.description || '', parentId]
+                        'INSERT INTO product_categories (name, description, parent_id, organization_id) VALUES ($1, $2, $3, $4) RETURNING id',
+                        [cat.name, cat.description || '', parentId, req.user.organization_id]
                     );
 
                     await client.query(
-                        'INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system) VALUES ($1, $2, $3, $4)',
-                        ['categories', insertResult.rows[0].id, cat.external_id, '1C']
+                        'INSERT INTO external_id_mapping (entity_type, internal_id, external_id, external_system, organization_id) VALUES ($1, $2, $3, $4, $5)',
+                        ['categories', insertResult.rows[0].id, cat.external_id, '1C', req.user.organization_id]
                     );
                     imported++;
                 }
@@ -576,9 +600,9 @@ router.post('/import/categories', authenticate, checkPermission('products.write'
 
         // Логируем синхронизацию
         await client.query(`
-            INSERT INTO sync_log (sync_type, direction, status, records_total, records_success, records_error, started_at, finished_at, duration_ms)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
-        `, ['categories', 'import', errors.length > 0 ? 'partial' : 'success', categories.length, imported + updated, errors.length, new Date(startTime), Date.now() - startTime]);
+            INSERT INTO sync_log (sync_type, direction, status, records_total, records_success, records_error, started_at, finished_at, duration_ms, organization_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)
+        `, ['categories', 'import', errors.length > 0 ? 'partial' : 'success', categories.length, imported + updated, errors.length, new Date(startTime), Date.now() - startTime, req.user.organization_id]);
 
         await client.query('COMMIT');
 
@@ -688,9 +712,9 @@ router.post('/sync/full', authenticate, checkPermission('admin.settings'), audit
 
                 // Логируем
                 await pool.query(`
-                    INSERT INTO sync_log (sync_type, direction, status, records_total, records_success, started_at, finished_at, duration_ms)
-                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
-                `, ['full', direction, 'success', 0, 0, new Date(startTime), Date.now() - startTime]);
+                    INSERT INTO sync_log (sync_type, direction, status, records_total, records_success, started_at, finished_at, duration_ms, organization_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8)
+                `, ['full', direction, 'success', 0, 0, new Date(startTime), Date.now() - startTime, req.user.organization_id]);
             } catch (err) {
                 await client.query('UPDATE sync_queue SET status = $1, error_message = $2, completed_at = NOW() WHERE id = $3', ['failed', err.message, queueId]);
             }

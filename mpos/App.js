@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Screens
 import LoginScreen from './src/screens/LoginScreen';
+import ServerSetupScreen from './src/screens/ServerSetupScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ProductsScreen from './src/screens/ProductsScreen';
 import CartScreen from './src/screens/CartScreen';
@@ -37,7 +38,7 @@ import SettingsService, { THEMES } from './src/services/settings';
 import ErrorReporter from './src/services/errorReporter';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import UpdateChecker from './src/components/UpdateChecker';
-import { setApiUrl } from './src/config/settings';
+import { setApiUrl, initSettings } from './src/config/settings';
 import SocketService from './src/services/socketService';
 import Sync1CService from './src/services/sync1c';
 import { I18nProvider } from './src/i18n';
@@ -85,6 +86,7 @@ const createPaperTheme = (isDark) => {
 function AppNavigator({ onLogout }) {
     const { theme, colors, isDark, setTheme } = useTheme();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [serverConfigured, setServerConfigured] = useState(false);
     const [loading, setLoading] = useState(true);
     const appState = useRef(AppState.currentState);
 
@@ -104,41 +106,21 @@ function AppNavigator({ onLogout }) {
 
     const checkAuth = async () => {
         try {
-            // Сначала восстанавливаем URL сервера из хранилища
-            const savedServerUrl = await AsyncStorage.getItem('server_url');
-            if (savedServerUrl) {
-                const apiUrl = savedServerUrl.endsWith('/api') ? savedServerUrl : `${savedServerUrl}/api`;
-                setApiUrl(apiUrl);
-                console.log('[App] Server URL restored:', apiUrl);
+            // Инициализировать настройки
+            await initSettings();
 
-                // Проверяем доступность сохранённого сервера
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
-                    const healthRes = await fetch(`${apiUrl}/health`, {
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    if (!healthRes.ok) throw new Error('Server unhealthy');
-                    console.log('[App] Saved server is reachable ✅');
-                } catch (e) {
-                    console.warn('[App] Saved server unreachable, trying auto-discover...');
-                    // Автопоиск локального сервера
-                    try {
-                        const { autoDiscoverServer } = require('./src/config/settings');
-                        const discovered = await autoDiscoverServer();
-                        if (discovered) {
-                            setApiUrl(discovered);
-                            // Сохраняем новый URL
-                            const baseUrl = discovered.replace(/\/api\/?$/, '');
-                            await AsyncStorage.setItem('server_url', baseUrl);
-                            console.log('[App] Auto-discovered server:', discovered);
-                        }
-                    } catch (discoverErr) {
-                        console.warn('[App] Auto-discover failed:', discoverErr.message);
-                    }
-                }
+            // Проверка сохранённого URL сервера
+            const savedServerUrl = await AsyncStorage.getItem('server_url');
+            if (!savedServerUrl) {
+                console.log('[App] No server configured, showing ServerSetupScreen');
+                setServerConfigured(false);
+                setLoading(false);
+                return;
             }
+            setServerConfigured(true);
+            const apiUrl = savedServerUrl.endsWith('/api') ? savedServerUrl : `${savedServerUrl}/api`;
+            setApiUrl(apiUrl);
+            console.log('[App] Server URL restored:', apiUrl);
 
             const token = await AsyncStorage.getItem('token');
             if (token) {
@@ -193,10 +175,20 @@ function AppNavigator({ onLogout }) {
                                 cardStyle: { backgroundColor: colors.background },
                             }}
                         >
-                            {!isAuthenticated ? (
-                                <Stack.Screen name="Login" options={{ headerShown: false }}>
-                                    {(props) => <LoginScreen {...props} onLogin={handleLogin} />}
-                                </Stack.Screen>
+                        {!serverConfigured ? (
+                            <Stack.Screen name="ServerSetup" options={{ headerShown: false }}>
+                                {(props) => <ServerSetupScreen {...props} onConnected={() => {
+                                    setServerConfigured(true);
+                                    checkAuth();
+                                }} />}
+                            </Stack.Screen>
+                        ) : !isAuthenticated ? (
+                            <Stack.Screen name="Login" options={{ headerShown: false }}>
+                                {(props) => <LoginScreen {...props} onLogin={handleLogin} onChangeServer={() => {
+                                    setServerConfigured(false);
+                                    setIsAuthenticated(false);
+                                }} />}
+                            </Stack.Screen>
                             ) : (
                                 <>
                                     <Stack.Screen name="Home" options={{ title: 'SmartPOS Pro' }}>

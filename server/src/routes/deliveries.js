@@ -38,6 +38,7 @@ const ensureTable = async () => {
             notes TEXT,
             zone_id INTEGER,
             priority INTEGER DEFAULT 0,
+            organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -48,6 +49,7 @@ const ensureTable = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deliveries_status ON deliveries(status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deliveries_date ON deliveries(scheduled_date)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_deliveries_courier ON deliveries(courier_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deliveries_org ON deliveries(organization_id)`);
 };
 
 /**
@@ -73,10 +75,10 @@ router.get('/', authenticate, async (req, res) => {
             FROM deliveries d
             LEFT JOIN employees e ON d.courier_id = e.id
             LEFT JOIN users u ON d.created_by = u.id
-            WHERE 1=1
+            WHERE d.organization_id = $1
         `;
-        const params = [];
-        let paramIndex = 1;
+        const params = [req.user.organization_id];
+        let paramIndex = 2;
 
         if (status && status !== 'all') {
             query += ` AND d.status = $${paramIndex++}`;
@@ -108,8 +110,8 @@ router.get('/', authenticate, async (req, res) => {
                 COUNT(*) FILTER (WHERE status = 'delivered' AND DATE(delivered_at) = CURRENT_DATE) as delivered_today,
                 COUNT(*) as total
             FROM deliveries
-            WHERE DATE(created_at) >= CURRENT_DATE - INTERVAL '7 days'
-        `);
+            WHERE organization_id = $1 AND DATE(created_at) >= CURRENT_DATE - INTERVAL '7 days'
+        `, [req.user.organization_id]);
 
         res.json({
             deliveries: result.rows,
@@ -134,8 +136,8 @@ router.get('/:id', authenticate, async (req, res) => {
             FROM deliveries d
             LEFT JOIN employees e ON d.courier_id = e.id
             LEFT JOIN users u ON d.created_by = u.id
-            WHERE d.id = $1
-        `, [id]);
+            WHERE d.id = $1 AND d.organization_id = $2
+        `, [id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Доставка не найдена' });
@@ -190,8 +192,8 @@ router.post('/', authenticate, checkPermission('sales.write'), auditLog, async (
                 address, address_lat, address_lng, items_count, total_amount, 
                 delivery_cost, courier_id, courier_name, scheduled_date,
                 scheduled_time_from, scheduled_time_to, estimated_delivery,
-                notes, zone_id, priority, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+                notes, zone_id, priority, organization_id, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
             RETURNING *
         `, [
             order_id || null,
@@ -213,6 +215,7 @@ router.post('/', authenticate, checkPermission('sales.write'), auditLog, async (
             notes || null,
             zone_id || null,
             priority || 0,
+            req.user.organization_id,
             req.user?.id || null
         ]);
 
@@ -254,10 +257,10 @@ router.put('/:id', authenticate, checkPermission('sales.write'), auditLog, async
         }
 
         setClause.push('updated_at = NOW()');
-        values.push(id);
+        values.push(id, req.user.organization_id);
 
         const result = await pool.query(
-            `UPDATE deliveries SET ${setClause.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+            `UPDATE deliveries SET ${setClause.join(', ')} WHERE id = $${paramIndex} AND organization_id = $${paramIndex + 1} RETURNING *`,
             values
         );
 
@@ -284,9 +287,9 @@ router.post('/:id/assign', authenticate, checkPermission('sales.write'), auditLo
             UPDATE deliveries 
             SET courier_id = $1, courier_name = $2, estimated_delivery = $3, 
                 status = 'in_transit', updated_at = NOW()
-            WHERE id = $4
+            WHERE id = $4 AND organization_id = $5
             RETURNING *
-        `, [courier_id || null, courier_name, estimated || null, id]);
+        `, [courier_id || null, courier_name, estimated || null, id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Доставка не найдена' });
@@ -312,9 +315,9 @@ router.post('/:id/complete', authenticate, checkPermission('sales.write'), audit
             SET status = 'delivered', delivered_at = NOW(), 
                 notes = COALESCE(notes || E'\n', '') || COALESCE($1, ''),
                 updated_at = NOW()
-            WHERE id = $2
+            WHERE id = $2 AND organization_id = $3
             RETURNING *
-        `, [notes, id]);
+        `, [notes, id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Доставка не найдена' });
@@ -338,9 +341,9 @@ router.post('/:id/cancel', authenticate, checkPermission('sales.write'), auditLo
         const result = await pool.query(`
             UPDATE deliveries 
             SET status = 'cancelled', cancel_reason = $1, updated_at = NOW()
-            WHERE id = $2
+            WHERE id = $2 AND organization_id = $3
             RETURNING *
-        `, [reason || 'Не указана', id]);
+        `, [reason || 'Не указана', id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Доставка не найдена' });
@@ -361,9 +364,9 @@ router.get('/couriers/list', authenticate, async (req, res) => {
         const result = await pool.query(`
             SELECT id, name, phone, position
             FROM employees
-            WHERE is_active = true AND position ILIKE '%курьер%'
+            WHERE is_active = true AND organization_id = $1 AND position ILIKE '%курьер%'
             ORDER BY name
-        `);
+        `, [req.user.organization_id]);
 
         res.json(result.rows);
     } catch (error) {
@@ -378,8 +381,9 @@ router.get('/couriers/list', authenticate, async (req, res) => {
 router.delete('/:id', authenticate, checkPermission('admin.settings'), auditLog, async (req, res) => {
     try {
         const { id } = req.params;
+        const organization_id = req.user.organization_id;
 
-        await pool.query('DELETE FROM deliveries WHERE id = $1', [id]);
+        await pool.query('DELETE FROM deliveries WHERE id = $1 AND organization_id = $2', [id, organization_id]);
 
         res.json({ success: true, message: 'Доставка удалена' });
     } catch (error) {

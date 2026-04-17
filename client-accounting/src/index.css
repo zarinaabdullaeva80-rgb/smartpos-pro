@@ -322,7 +322,7 @@ table {
   border-collapse: collapse;
   background: transparent;
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* overflow: hidden убран — мешал корректному рендеру строк inline-редактирования */
 }
 
 thead {

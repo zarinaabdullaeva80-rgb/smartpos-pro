@@ -28,13 +28,18 @@ router.get('/', authenticate, async (req, res) => {
 
         const orgId = getOrgId(req);
 
-        if (orgId) {
-            query += ' WHERE c.organization_id = $1';
-            if (!includeInactive) {
-                query += ' AND c.is_active = true';
+        if (req.user?.user_type === 'super_admin') {
+            if (orgId) {
+                query += ' WHERE (c.organization_id = $1 OR c.organization_id IS NULL)';
             }
-        } else if (!includeInactive) {
-            query += ' WHERE c.is_active = true';
+        } else if (orgId) {
+            query += ' WHERE c.organization_id = $1';
+        } else {
+            query += ' WHERE 1=0';
+        }
+
+        if (!includeInactive) {
+            query += (query.includes('WHERE') ? ' AND' : ' WHERE') + ' c.is_active = true';
         }
 
         query += ' GROUP BY c.id, parent.id ORDER BY c.sort_order, c.name';
@@ -60,7 +65,7 @@ router.post('/', authenticate, authorize('Администратор', 'Мене
         const result = await pool.query(
             `INSERT INTO product_categories (name, description, parent_id, is_active, sort_order, code, organization_id) 
              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-            [name, description, parent_id || null, is_active, sort_order, code, orgId || 1]
+            [name, description, parent_id || null, is_active, sort_order, code, orgId]
         );
 
         res.status(201).json(result.rows[0]);
@@ -101,22 +106,32 @@ router.put('/:id', authenticate, authorize('Администратор', 'Мен
     }
 });
 
-// Удаление категории
+// Удаление категории (товары перемещаются в "Без категории")
 router.delete('/:id', authenticate, authorize('Администратор'), async (req, res) => {
     try {
         const { id } = req.params;
         const orgId = getOrgId(req);
+
+        // Сначала перемещаем все товары из этой категории в "Без категории"
+        await pool.query('UPDATE products SET category_id = NULL WHERE category_id = $1', [id]);
+
+        // Перемещаем дочерние категории на верхний уровень
+        await pool.query('UPDATE product_categories SET parent_id = NULL WHERE parent_id = $1', [id]);
+
         let query = 'DELETE FROM product_categories WHERE id = $1';
         const params = [id];
         if (orgId) {
             query += ' AND organization_id = $2';
             params.push(orgId);
         }
-        await pool.query(query, params);
-        res.json({ message: 'Категория удалена' });
+        const result = await pool.query(query, params);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Категория не найдена' });
+        }
+        res.json({ message: 'Категория удалена. Товары перемещены в "Без категории".' });
     } catch (error) {
         console.error('Ошибка удаления категории:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({ error: error.message || 'Ошибка сервера' });
     }
 });
 

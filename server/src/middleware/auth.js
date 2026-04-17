@@ -52,7 +52,7 @@ export const authenticate = async (req, res, next) => {
             license_id: userData.license_id || decoded.licenseId || null,
             licenseId: userData.license_id || decoded.licenseId || null,
             created_by_license_id: userData.created_by_license_id || null,
-            organization_id: userData.organization_id || decoded.organization_id || 1
+            organization_id: userData.organization_id || decoded.organization_id || null
         };
         next();
     } catch (error) {
@@ -112,7 +112,7 @@ export const optionalAuthenticate = async (req, res, next) => {
             license_id: userData.license_id || decoded.licenseId || null,
             licenseId: userData.license_id || decoded.licenseId || null,
             created_by_license_id: userData.created_by_license_id || null,
-            organization_id: userData.organization_id || decoded.organization_id || 1
+            organization_id: userData.organization_id || decoded.organization_id || null
         };
         next();
     } catch (error) {
@@ -185,12 +185,12 @@ export const authorize = (...allowedRoles) => {
 // Alias for backward compatibility
 export const requireRole = authorize;
 
-export const logAudit = async (userId, action, tableName, recordId, oldValues, newValues, ipAddress) => {
+export const logAudit = async (userId, action, tableName, recordId, oldValues, newValues, ipAddress, organizationId = null) => {
     try {
         await pool.query(
-            `INSERT INTO audit_log (user_id, action, table_name, record_id, old_values, new_values, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [userId, action, tableName, recordId, oldValues, newValues, ipAddress]
+            `INSERT INTO audit_log (user_id, action, table_name, record_id, old_values, new_values, ip_address, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [userId, action, tableName, recordId, oldValues, newValues, ipAddress, organizationId]
         );
     } catch (error) {
         console.error('Ошибка записи в журнал аудита:', error);

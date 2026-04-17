@@ -49,11 +49,12 @@ const upload = multer({
 router.post('/barcode/generate', authenticate, checkPermission('products.update'), async (req, res) => {
     try {
         const { productId, type = 'ean13' } = req.body;
+        const organization_id = req.user.organization_id;
 
         // Получить товар
         const productResult = await pool.query(
-            'SELECT * FROM products WHERE id = $1',
-            [productId]
+            'SELECT * FROM products WHERE id = $1 AND organization_id = $2',
+            [productId, organization_id]
         );
 
         if (productResult.rows.length === 0) {
@@ -69,8 +70,8 @@ router.post('/barcode/generate', authenticate, checkPermission('products.update'
 
             // Обновить товар
             await pool.query(
-                'UPDATE products SET barcode = $1 WHERE id = $2',
-                [barcodeText, productId]
+                'UPDATE products SET barcode = $1 WHERE id = $2 AND organization_id = $3',
+                [barcodeText, productId, organization_id]
             );
         }
 
@@ -108,10 +109,11 @@ router.get('/barcode/label/:productId', authenticate, async (req, res) => {
     try {
         const { productId } = req.params;
         const { type = 'ean13' } = req.query;
+        const organization_id = req.user.organization_id;
 
         const productResult = await pool.query(
-            'SELECT * FROM products WHERE id = $1',
-            [productId]
+            'SELECT * FROM products WHERE id = $1 AND organization_id = $2',
+            [productId, organization_id]
         );
 
         if (productResult.rows.length === 0) {
@@ -163,8 +165,9 @@ router.post('/barcode/validate', authenticate, async (req, res) => {
 router.get('/excel/export', authenticate, checkPermission('products.read'), async (req, res) => {
     try {
         const { categoryId, isActive } = req.query;
+        const organization_id = req.user.organization_id;
 
-        const filters = {};
+        const filters = { organization_id };
         if (categoryId) filters.categoryId = categoryId;
         if (isActive !== undefined) filters.isActive = isActive === 'true';
 
@@ -200,7 +203,7 @@ router.post('/excel/import', authenticate, checkPermission('products.create'), u
             return res.status(400).json({ error: 'Файл не загружен' });
         }
 
-        const results = await importProductsFromExcel(req.file.buffer, req.user.id);
+        const results = await importProductsFromExcel(req.file.buffer, req.user.id, req.user.organization_id);
 
         res.json({
             success: true,
@@ -259,6 +262,7 @@ router.post('/printer/test', authenticate, async (req, res) => {
 router.post('/printer/print-label', authenticate, checkPermission('products.read'), async (req, res) => {
     try {
         const { productId, printerPath, copies = 1, barcodeType = 'ean13' } = req.body;
+        const organization_id = req.user.organization_id;
 
         if (!printerPath) {
             return res.status(400).json({ error: 'Не указан путь к принтеру' });
@@ -266,8 +270,8 @@ router.post('/printer/print-label', authenticate, checkPermission('products.read
 
         // Получить товар
         const productResult = await pool.query(
-            'SELECT * FROM products WHERE id = $1',
-            [productId]
+            'SELECT * FROM products WHERE id = $1 AND organization_id = $2',
+            [productId, organization_id]
         );
 
         if (productResult.rows.length === 0) {
@@ -295,6 +299,7 @@ router.post('/printer/print-label', authenticate, checkPermission('products.read
 router.post('/printer/print-multiple', authenticate, checkPermission('products.read'), async (req, res) => {
     try {
         const { productIds, printerPath, copies = 1, barcodeType = 'ean13' } = req.body;
+        const organization_id = req.user.organization_id;
 
         if (!printerPath) {
             return res.status(400).json({ error: 'Не указан путь к принтеру' });
@@ -306,8 +311,8 @@ router.post('/printer/print-multiple', authenticate, checkPermission('products.r
 
         // Получить товары
         const productsResult = await pool.query(
-            'SELECT * FROM products WHERE id = ANY($1::int[])',
-            [productIds]
+            'SELECT * FROM products WHERE id = ANY($1::int[]) AND organization_id = $2',
+            [productIds, organization_id]
         );
 
         const results = await printMultipleLabels(productsResult.rows, printerPath, {

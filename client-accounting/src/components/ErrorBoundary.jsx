@@ -48,56 +48,133 @@ class ErrorBoundary extends Component {
     render() {
         if (this.state.hasError) {
             return (
-                <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                    <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-6">
-                        <div className="text-center mb-4">
-                            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mb-4">
-                                <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                            </div>
-                            <h2 className="text-2xl font-bold text-gray-800 mb-2">
-                                Что-то пошло не так
-                            </h2>
-                            <p className="text-gray-600 mb-4">
-                                Произошла ошибка при загрузке приложения
-                            </p>
+                <div style={{
+                    minHeight: '100vh',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'var(--bg-primary, #0f0d1a)',
+                    padding: '20px'
+                }}>
+                    <div style={{
+                        maxWidth: '480px',
+                        width: '100%',
+                        background: 'var(--bg-secondary, #1a1625)',
+                        borderRadius: '16px',
+                        padding: '40px 32px',
+                        boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+                        border: '1px solid var(--border-color, #2a2438)',
+                        textAlign: 'center'
+                    }}>
+                        {/* Иконка */}
+                        <div style={{
+                            width: '72px', height: '72px',
+                            borderRadius: '50%',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            margin: '0 auto 20px'
+                        }}>
+                            <svg width="36" height="36" fill="none" stroke="#ef4444" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                <line x1="12" y1="9" x2="12" y2="13" />
+                                <line x1="12" y1="17" x2="12.01" y2="17" />
+                            </svg>
                         </div>
 
-                        {process.env.NODE_ENV === 'development' && this.state.error && (
-                            <div className="mb-4 p-4 bg-gray-100 rounded border border-gray-300">
-                                <p className="font-mono text-sm text-red-600 mb-2">
+                        <h2 style={{
+                            fontSize: '22px', fontWeight: 700,
+                            color: 'var(--text-primary, #e8e2f4)',
+                            marginBottom: '10px'
+                        }}>
+                            Что-то пошло не так
+                        </h2>
+
+                        <p style={{
+                            color: 'var(--text-muted, #8b7faa)',
+                            fontSize: '14px',
+                            marginBottom: '24px',
+                            lineHeight: 1.5
+                        }}>
+                            Произошла ошибка при загрузке страницы.
+                            Попробуйте обновить или вернуться на главную.
+                        </p>
+
+                        {/* Детали ошибки (dev mode) */}
+                        {this.state.error && (
+                            <details style={{
+                                marginBottom: '24px',
+                                textAlign: 'left',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                borderRadius: '10px',
+                                padding: '14px',
+                                border: '1px solid rgba(239, 68, 68, 0.2)'
+                            }}>
+                                <summary style={{
+                                    cursor: 'pointer',
+                                    color: '#ef4444',
+                                    fontSize: '13px',
+                                    fontWeight: 600
+                                }}>
+                                    🔍 Подробности ошибки
+                                </summary>
+                                <pre style={{
+                                    marginTop: '10px',
+                                    fontSize: '12px',
+                                    color: '#f87171',
+                                    overflow: 'auto',
+                                    maxHeight: '200px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    fontFamily: '"Fira Code", "Consolas", monospace'
+                                }}>
                                     {this.state.error.toString()}
-                                </p>
-                                {this.state.errorInfo && (
-                                    <details className="mt-2">
-                                        <summary className="cursor-pointer text-sm text-gray-700 font-medium">
-                                            Stack trace
-                                        </summary>
-                                        <pre className="mt-2 text-xs text-gray-600 overflow-auto max-h-48">
-                                            {this.state.errorInfo.componentStack}
-                                        </pre>
-                                    </details>
-                                )}
-                            </div>
+                                    {this.state.errorInfo?.componentStack}
+                                </pre>
+                            </details>
                         )}
 
-                        <div className="flex gap-3">
+                        <div style={{ display: 'flex', gap: '12px' }}>
                             <button
                                 onClick={this.handleReset}
-                                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                                style={{
+                                    flex: 1,
+                                    padding: '12px 20px',
+                                    borderRadius: '10px',
+                                    border: 'none',
+                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    color: 'white',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'opacity 0.2s'
+                                }}
                             >
-                                Попробовать снова
+                                🔄 Попробовать снова
                             </button>
                             <button
                                 onClick={() => window.location.href = '/'}
-                                className="flex-1 border border-gray-300 px-4 py-2 rounded hover:bg-gray-50 transition-colors"
+                                style={{
+                                    flex: 1,
+                                    padding: '12px 20px',
+                                    borderRadius: '10px',
+                                    border: '1px solid var(--border-color, #2a2438)',
+                                    background: 'var(--bg-primary, #0f0d1a)',
+                                    color: 'var(--text-primary, #e8e2f4)',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'opacity 0.2s'
+                                }}
                             >
-                                На главную
+                                🏠 На главную
                             </button>
                         </div>
 
-                        <p className="text-center text-sm text-gray-500 mt-4">
+                        <p style={{
+                            color: 'var(--text-muted, #6b6085)',
+                            fontSize: '12px',
+                            marginTop: '20px'
+                        }}>
                             Если проблема повторяется, обратитесь в поддержку
                         </p>
                     </div>

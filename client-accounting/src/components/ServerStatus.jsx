@@ -245,9 +245,8 @@ function ServerStatus() {
                 </div>
 
                 <p className="connection-instruction">
-                    Откройте мобильное приложение SmartPOS, зайдите в
-                    <strong> Настройки → Сервер</strong> и введите адрес ниже,
-                    или отсканируйте QR-код:
+                    При первом запуске мобильного приложения SmartPOS Pro
+                    отсканируйте QR-код камерой, или введите адрес вручную:
                 </p>
 
                 <div className="connection-url-box">
@@ -273,7 +272,7 @@ function ServerStatus() {
                         bgColor="#1e293b"
                         fgColor="#e2e8f0"
                     />
-                    <span className="qr-label">Сканируйте в мобильном приложении</span>
+                    <span className="qr-label">📱 Сканируйте при первом запуске приложения</span>
                 </div>
 
                 {serverInfo?.localIPs?.length > 1 && (
@@ -295,11 +294,11 @@ function ServerStatus() {
                     </div>
                     <div className="step">
                         <div className="step-num">2</div>
-                        <span>Откройте SmartPOS на телефоне → Настройки</span>
+                        <span>Установите и откройте SmartPOS Pro на телефоне</span>
                     </div>
                     <div className="step">
                         <div className="step-num">3</div>
-                        <span>Введите адрес сервера или сканируйте QR-код</span>
+                        <span>Нажмите «📱 Сканировать QR-код» или введите адрес вручную</span>
                     </div>
                 </div>
             </div>

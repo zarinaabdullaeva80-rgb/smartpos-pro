@@ -86,9 +86,9 @@ class SchedulerService {
 
         for (const { key, value, desc } of defaults) {
             await pool.query(`
-                INSERT INTO sync_settings (setting_key, setting_value, description)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (setting_key) DO NOTHING
+                INSERT INTO sync_settings (setting_key, setting_value, description, organization_id)
+                VALUES ($1, $2, $3, 1)
+                ON CONFLICT (setting_key, organization_id) DO NOTHING
             `, [key, value, desc]);
         }
     }

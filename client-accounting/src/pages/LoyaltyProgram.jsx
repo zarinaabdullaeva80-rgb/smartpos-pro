@@ -32,9 +32,15 @@ const LoyaltyProgram = () => {
     const loadTiers = async () => {
         try {
             const response = await loyaltyAPI.getProgram();
-            setTiers(response.data?.tiers || response.data || []);
+            const data = response.data;
+            // API может вернуть {tiers: [...]}, массив, или объект настроек
+            const tiersData = Array.isArray(data?.tiers) ? data.tiers 
+                            : Array.isArray(data) ? data 
+                            : [];
+            setTiers(tiersData);
         } catch (error) {
             console.error('Error loading tiers:', error);
+            setTiers([]);
         }
     };
 

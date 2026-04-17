@@ -74,7 +74,7 @@ router.get('/', authenticate, authorize('admin', 'superadmin'), async (req, res)
 
         // Multi-tenant: admins see only their organization's errors, superadmins see all
         if (req.user.role !== 'superadmin' && req.user?.organization_id) {
-            query += ` AND e.organization_id = $${paramIndex++}`;
+            query += ` AND e.license_id = $${paramIndex++}`;
             params.push(req.user?.organization_id);
         }
 
@@ -134,7 +134,7 @@ router.get('/stats', authenticate, authorize('admin', 'superadmin'), async (req,
 
         // Build license filter for non-superadmins
         const licenseFilter = req.user.role !== 'superadmin' && req.user?.organization_id
-            ? `AND organization_id = ${parseInt(req.user?.organization_id)}`
+            ? `AND license_id = ${parseInt(req.user?.organization_id)}`
             : '';
 
         const stats = await pool.query(`
@@ -225,7 +225,7 @@ router.post('/', async (req, res) => {
         const user_agent = req.headers['user-agent'];
 
         const result = await pool.query(`
-            INSERT INTO error_logs (type, severity, message, stack_trace, user_id, organization_id, url, component, metadata, ip_address, user_agent)
+            INSERT INTO error_logs (type, severity, message, stack_trace, user_id, license_id, url, component, metadata, ip_address, user_agent)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
         `, [type, severity, message, stack_trace, user_id, organization_id, url, component, metadata ? JSON.stringify(metadata) : null, ip_address, user_agent]);
@@ -252,7 +252,7 @@ router.put('/:id/resolve', authenticate, authorize('admin', 'superadmin'), async
 
         // Check ownership for non-superadmins
         if (req.user.role !== 'superadmin' && req.user?.organization_id) {
-            const check = await pool.query('SELECT 1 FROM error_logs WHERE id = $1 AND organization_id = $2', [id, req.user?.organization_id]);
+            const check = await pool.query('SELECT 1 FROM error_logs WHERE id = $1 AND license_id = $2', [id, req.user?.organization_id]);
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Доступ запрещён' });
             }

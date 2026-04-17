@@ -4,6 +4,7 @@ import { LayoutDashboard, Package, ShoppingCart, ShoppingBag, Users2, Wallet, Wa
 import Notifications from './Notifications';
 import SyncIndicator from './SyncIndicator';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import ShortcutsOverlay from './ShortcutsOverlay';
 import { useI18n } from '../i18n';
 import '../styles/Layout.css';
 
@@ -32,10 +33,7 @@ function Layout({ onLogout }) {
     ];
 
     // Глобальные горячие клавиши
-    useKeyboardShortcuts({
-        onSearch: () => searchInputRef.current?.focus(),
-        enabled: true
-    });
+    useKeyboardShortcuts();
 
     // Load sidebar state from localStorage
     useEffect(() => {
@@ -457,6 +455,9 @@ function Layout({ onLogout }) {
             <main className="main-content">
                 <Outlet />
             </main>
+
+            {/* Keyboard Shortcuts Overlay (Ctrl+/) */}
+            <ShortcutsOverlay />
         </div>
     );
 }

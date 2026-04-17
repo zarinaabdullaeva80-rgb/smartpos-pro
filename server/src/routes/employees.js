@@ -109,7 +109,7 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         );
 
         if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Пользователь с таким логином уже существует' });
+            return res.status(400).json({ error: `Логин «${username}» уже занят` });
         }
 
         // ✅ Проверить лимит сотрудников по лицензии
@@ -141,10 +141,10 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         // Create employee
         const orgId = getOrgId(req);
         const result = await pool.query(
-            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, created_by_organization_id, organization_id)
-             VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7, $8)
+            `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, license_id)
+             VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $8)
              RETURNING id, username, email, full_name, phone, role, is_active, created_at`,
-            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.organization_id, orgId || 1]
+            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.organization_id, orgId || req.user.organization_id || 1]
         );
 
 
@@ -170,7 +170,15 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         });
     } catch (error) {
         console.error('Error creating employee:', error);
-        res.status(500).json({ error: 'Ошибка создания сотрудника' });
+        if (error.code === '23505') {
+            if (error.detail.includes('username')) {
+                return res.status(400).json({ error: `Логин «${req.body.username}» уже занят` });
+            }
+            if (error.detail.includes('email')) {
+                return res.status(400).json({ error: `Email «${req.body.email}» уже зарегистрирован` });
+            }
+        }
+        res.status(500).json({ error: 'Ошибка сервера: ' + error.message });
     }
 });
 

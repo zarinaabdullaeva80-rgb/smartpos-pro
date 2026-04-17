@@ -99,16 +99,27 @@ router.get('/', authenticate, async (req, res) => {
              ), 0) AS quantity
       FROM products p
       LEFT JOIN product_categories pc ON p.category_id = pc.id
-      WHERE p.is_active = true
+      WHERE (p.is_active = true OR p.is_active IS NULL)
     `;
         const params = [];
         let paramCount = 1;
 
         // Multi-tenant filtering by organization_id
-        if (orgId) {
+        if (req.user?.user_type === 'super_admin') {
+            // Super-admin can see everything, including orphaned data
+            if (orgId) {
+                query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NULL)`;
+                params.push(orgId);
+                paramCount++;
+            }
+        } else if (orgId) {
+            // Normal clients strictly see only their own data
             query += ` AND p.organization_id = $${paramCount}`;
             params.push(orgId);
             paramCount++;
+        } else {
+            // No org ID and not super-admin? See nothing.
+            query += ` AND 1=0`;
         }
 
         if (category) {
@@ -125,7 +136,7 @@ router.get('/', authenticate, async (req, res) => {
 
         // active param now only used to show inactive (active=false) — default is always active only
         if (active === 'false') {
-            query = query.replace('p.is_active = true', 'p.is_active = false');
+            query = query.replace('(p.is_active = true OR p.is_active IS NULL)', 'p.is_active = false');
         }
 
         query += ' ORDER BY p.created_at DESC';
@@ -159,6 +170,7 @@ router.get('/', authenticate, async (req, res) => {
             });
         } else {
             const result = await pool.query(query, params);
+            console.log(`[DEBUG] GET /products orgId=${orgId} params=${JSON.stringify(params)} found=${result.rows.length}`);
             res.json({ products: result.rows });
         }
     } catch (error) {
@@ -185,10 +197,18 @@ router.get('/stock/all', authenticate, async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        if (orgId) {
+        if (req.user?.user_type === 'super_admin') {
+            if (orgId) {
+                query += ` AND (p.organization_id = $${paramCount} OR p.organization_id IS NULL)`;
+                params.push(orgId);
+                paramCount++;
+            }
+        } else if (orgId) {
             query += ` AND p.organization_id = $${paramCount}`;
             params.push(orgId);
             paramCount++;
+        } else {
+            query += ` AND 1=0`;
         }
 
         if (search) {
@@ -222,9 +242,16 @@ router.get('/:id', authenticate, async (req, res) => {
        LEFT JOIN product_categories pc ON p.category_id = pc.id
        WHERE p.id = $1`;
         const params = [req.params.id];
-        if (orgId) {
+        if (req.user?.user_type === 'super_admin') {
+            if (orgId) {
+                query += ' AND (p.organization_id = $2 OR p.organization_id IS NULL)';
+                params.push(orgId);
+            }
+        } else if (orgId) {
             query += ' AND p.organization_id = $2';
             params.push(orgId);
+        } else {
+            query += ' AND 1=0';
         }
         const result = await pool.query(query, params);
 
@@ -309,6 +336,18 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                  VALUES ($1, $2, 'receipt', $3, $4, $5)`,
                 [productId, warehouseId, initialQuantity, req.user.id, orgId || licenseId || null]
             );
+
+            // Также обновляем stock_balances
+            try {
+                await pool.query(
+                    `INSERT INTO stock_balances (product_id, warehouse_id, quantity, available_quantity, organization_id)
+                     VALUES ($1, $2, $3, $3, $4)
+                     ON CONFLICT (product_id, warehouse_id) DO UPDATE SET
+                       quantity = stock_balances.quantity + $3,
+                       available_quantity = stock_balances.available_quantity + $3`,
+                    [productId, warehouseId, initialQuantity, orgId || licenseId || null]
+                );
+            } catch (e) { /* stock_balances может не поддерживать upsert */ }
         }
 
         await logAudit(req.user.id, action, 'products', result.rows[0].id, null, result.rows[0], req.ip);
@@ -371,35 +410,155 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
     }
 });
 
-// Удаление товара (мягкое удаление)
-router.delete('/:id', authenticate, authorize('Администратор'), async (req, res) => {
+// Групповое перемещение товаров в другую категорию
+router.post('/bulk-move-category', authenticate, async (req, res) => {
+    const { ids, categoryId } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'Массив ids обязателен' });
+    }
+
+    const orgId = getOrgId(req);
+    try {
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+        let query = `UPDATE products SET category_id = $${ids.length + 1} WHERE id IN (${placeholders})`;
+        const params = [...ids, categoryId || null];
+        if (orgId) {
+            query += ` AND organization_id = $${ids.length + 2}`;
+            params.push(orgId);
+        }
+        const result = await pool.query(query, params);
+
+        const io = req.app.get('io');
+        if (io) io.emit('product:updated', { action: 'BULK_MOVE', count: result.rowCount });
+
+        res.json({ message: `Перемещено ${result.rowCount} товар(ов)`, moved: result.rowCount });
+    } catch (error) {
+        console.error('[BulkMove] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Переключение активности товара (вручную)
+router.patch('/:id/toggle-active', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
-
         const orgId = getOrgId(req);
-        let query = 'UPDATE products SET is_active = false WHERE id = $1';
+        let query = 'UPDATE products SET is_active = NOT is_active WHERE id = $1';
         const params = [id];
         if (orgId) {
             query += ' AND organization_id = $2';
             params.push(orgId);
         }
-        query += ' RETURNING *';
+        query += ' RETURNING id, is_active';
         const result = await pool.query(query, params);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Товар не найден' });
+        res.json({ product: result.rows[0], message: result.rows[0].is_active ? 'Товар активирован' : 'Товар деактивирован' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
-        if (result.rows.length === 0) {
+// ── Вспомогательная функция полного удаления товара ──
+// Удаляет ВСЕ связанные записи (9 FK-таблиц) перед удалением товара
+async function deleteProductById(productId) {
+    const dependentTables = [
+        'inventory_movements',
+        'sale_items',
+        'purchase_items',
+        'return_items',
+        'inventory_items',
+        'inventory_adjustments',
+        'inventory_check_items',
+        'stock_balances',
+        'stock_movements',
+        'warehouse_document_items'
+    ];
+
+    for (const table of dependentTables) {
+        try {
+            await pool.query(`DELETE FROM ${table} WHERE product_id = $1`, [productId]);
+        } catch (e) {
+            console.error(`[deleteProductById] Error in table ${table}:`, e.message);
+        }
+    }
+
+    // Удаляем сам товар
+    await pool.query('DELETE FROM products WHERE id = $1', [productId]);
+}
+
+// Групповое удаление товаров
+router.post('/bulk-delete', authenticate, async (req, res) => {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'Массив ids обязателен' });
+    }
+
+    const orgId = getOrgId(req);
+    const results = { deleted: 0, failed: 0, errors: [] };
+
+    for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        try {
+            // Проверяем что товар принадлежит организации
+            const check = await pool.query(
+                'SELECT id FROM products WHERE id = $1' + (orgId ? ' AND (organization_id = $2 OR organization_id IS NULL)' : ''),
+                orgId ? [id, orgId] : [id]
+            );
+            if (check.rows.length === 0) {
+                results.failed++;
+                results.errors.push({ id, error: 'Не найден' });
+                continue;
+            }
+
+            await deleteProductById(id);
+            results.deleted++;
+
+            // Логируем каждые 100
+            if (results.deleted % 100 === 0) {
+                console.log(`[BulkDelete] Progress: ${results.deleted}/${ids.length}`);
+            }
+        } catch (error) {
+            console.error(`[BulkDelete] Error deleting product ${id}:`, error.message);
+            results.failed++;
+            results.errors.push({ id, error: error.message });
+        }
+    }
+
+    console.log(`[BulkDelete] DONE: deleted=${results.deleted} failed=${results.failed} / total=${ids.length}`);
+    try { await logAudit(req.user.id, 'BULK_DELETE', 'products', null, null, { ids, results }, req.ip); } catch(e) {}
+
+    const io = req.app.get('io');
+    if (io) io.emit('product:updated', { action: 'BULK_DELETE', count: results.deleted });
+
+    res.json({ message: `Удалено ${results.deleted} из ${ids.length} товаров`, ...results });
+});
+
+// Удаление товара (полное удаление)
+router.delete('/:id', authenticate, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const orgId = getOrgId(req);
+        // Проверяем товар
+        const check = await pool.query(
+            'SELECT id, name FROM products WHERE id = $1' + (orgId ? ' AND (organization_id = $2 OR organization_id IS NULL)' : ''),
+            orgId ? [id, orgId] : [id]
+        );
+        if (check.rows.length === 0) {
             return res.status(404).json({ error: 'Товар не найден' });
         }
 
+        await deleteProductById(id);
+
         await logAudit(req.user.id, 'DELETE', 'products', id, null, null, req.ip);
 
-        // Emit real-time update (deactivation)
         const io = req.app.get('io');
         if (io) io.emit('product:updated', { id, action: 'DELETE' });
 
-        res.json({ message: 'Товар деактивирован' });
+        res.json({ message: 'Товар удалён' });
     } catch (error) {
         console.error('Ошибка удаления товара:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({ error: error.message || 'Ошибка сервера' });
     }
 });
 
@@ -501,9 +660,9 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
         }
 
         await pool.query(
-            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id, organization_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [id, whId, type || 'adjustment', actualQuantity, req.user.id, userLicenseId, orgId || 1]
+            `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, user_id, organization_id)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [id, whId, type || 'adjustment', actualQuantity, req.user.id, orgId || null]
         );
 
         // Get updated stock

@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
-import { autoDiscoverServer, setApiUrl, getApiUrl, APP_VERSION, initSettings, setCloudUrl, getCloudUrl } from '../config/settings';
+import { autoDiscoverServer, setApiUrl, getApiUrl, APP_VERSION, initSettings, setCloudUrl, getCloudUrl, getLicenseData } from '../config/settings';
 
 // Ключи хранилища
 const STORAGE_KEYS = {
@@ -14,7 +14,7 @@ const STORAGE_KEYS = {
     LAST_SERVER: 'last_server_name',
 };
 
-export default function LoginScreen({ onLogin }) {
+export default function LoginScreen({ onLogin, onChangeServer }) {
     const { colors } = useTheme();
 
     const [username, setUsername] = useState('');
@@ -135,56 +135,54 @@ export default function LoginScreen({ onLogin }) {
         }
     };
 
-    // Автоматический поиск сервера при загрузке
+    // Подключение к серверу на основе лицензии
     useEffect(() => {
-        const discoverServer = async () => {
+        const connectFromLicense = async () => {
             setServerStatus('searching');
-
-            // Инициализировать сохранённые настройки
             await initSettings();
 
-            // Проверяем сохранённый URL
+            const licenseData = getLicenseData();
             const savedUrl = await AsyncStorage.getItem(STORAGE_KEYS.SERVER_URL);
-            const savedName = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SERVER);
+
             if (savedUrl) {
+                // Проверяем доступность сохранённого сервера
                 try {
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
                     const response = await fetch(`${savedUrl}/health`, {
                         method: 'GET',
                         signal: controller.signal,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'ngrok-skip-browser-warning': 'true'
-                        }
+                        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }
                     });
                     clearTimeout(timeoutId);
                     if (response.ok) {
                         setApiUrl(savedUrl);
                         setServerUrl(savedUrl);
-                        setServerName(savedName || '');
+                        setServerName(licenseData?.company_name || '');
                         setServerStatus('found');
                         return;
                     }
                 } catch (e) {
-                    console.log('[Login] Saved server unavailable');
+                    console.log('[Login] Saved server unavailable:', e.message);
                 }
             }
 
-            // Автопоиск в локальной сети
+            // Fallback: попробовать автопоиск
             const foundUrl = await autoDiscoverServer();
             if (foundUrl) {
                 setApiUrl(foundUrl);
                 setServerUrl(foundUrl);
+                setServerName(licenseData?.company_name || '');
                 await AsyncStorage.setItem(STORAGE_KEYS.SERVER_URL, foundUrl);
                 setServerStatus('found');
             } else {
                 setServerUrl(getApiUrl());
+                setServerName(licenseData?.company_name || '');
                 setServerStatus('not_found');
             }
         };
 
-        discoverServer();
+        connectFromLicense();
     }, []);
 
     // Автологин после нахождения сервера
@@ -652,6 +650,23 @@ export default function LoginScreen({ onLogin }) {
                 </Card>
 
                 <Paragraph style={[styles.version, dynamicStyles.textSecondary]}>Версия {APP_VERSION}</Paragraph>
+
+                {/* Кнопка смены сервера */}
+                {onChangeServer && (
+                    <Button
+                        mode="text"
+                        onPress={async () => {
+                            await AsyncStorage.removeItem('server_url');
+                            await AsyncStorage.removeItem('server_name');
+                            onChangeServer();
+                        }}
+                        icon="server-network"
+                        labelStyle={[dynamicStyles.textSecondary, { fontSize: 12 }]}
+                        style={{ marginTop: 4 }}
+                    >
+                        Сменить сервер
+                    </Button>
+                )}
             </View>
 
             {/* Диалоги */}

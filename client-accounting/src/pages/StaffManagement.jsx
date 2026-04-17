@@ -104,7 +104,8 @@ function StaffManagement() {
             handleCloseModal();
         } catch (error) {
             console.error('Ошибка сохранения:', error);
-            setMessage({ type: 'error', text: error.response?.data?.error || 'Ошибка сохранения' });
+            const errorMsg = error.response?.data?.error || error.message || 'Ошибка сохранения';
+            setMessage({ type: 'error', text: errorMsg });
         } finally {
             setLoading(false);
         }
@@ -119,7 +120,7 @@ function StaffManagement() {
             await loadEmployees();
         } catch (error) {
             console.error('Ошибка удаления:', error);
-            setMessage({ type: 'error', text: 'Не удалось удалить сотрудника' });
+            setMessage({ type: 'error', text: error.response?.data?.error || 'Не удалось удалить сотрудника' });
         }
     };
 
@@ -132,7 +133,7 @@ function StaffManagement() {
             setMessage({ type: 'success', text: `Пароль сброшен: ${response.data.newPassword}` });
         } catch (error) {
             console.error('Ошибка сброса пароля:', error);
-            setMessage({ type: 'error', text: 'Не удалось сбросить пароль' });
+            setMessage({ type: 'error', text: error.response?.data?.error || 'Не удалось сбросить пароль' });
         }
     };
 

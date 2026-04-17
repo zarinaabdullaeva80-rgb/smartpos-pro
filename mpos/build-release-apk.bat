@@ -3,7 +3,7 @@ setlocal
 
 :: Set environment variables
 set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
-set JAVA_HOME=C:\Program Files\Microsoft\jdk-17.0.17.10-hotspot
+set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot
 
 :: Navigate to android directory
 cd /d "%~dp0android"

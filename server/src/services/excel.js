@@ -8,6 +8,7 @@ import pool from '../config/database.js';
  */
 export async function exportProductsToExcel(filters = {}) {
     try {
+        const organization_id = filters.organization_id;
         // Получить товары из БД
         let query = `
             SELECT 
@@ -28,11 +29,11 @@ export async function exportProductsToExcel(filters = {}) {
             FROM products p
             LEFT JOIN product_categories pc ON p.category_id = pc.id
             LEFT JOIN inventory_movements im ON p.id = im.product_id
-            WHERE 1=1
+            WHERE p.organization_id = $1
         `;
 
-        const params = [];
-        let paramIndex = 1;
+        const params = [organization_id];
+        let paramIndex = 2;
 
         if (filters.categoryId) {
             query += ` AND p.category_id = $${paramIndex++}`;
@@ -120,9 +121,10 @@ export async function exportProductsToExcel(filters = {}) {
  * Импорт товаров из Excel
  * @param {Buffer} fileBuffer - Буфер Excel файла
  * @param {number} userId - ID пользователя для логирования
+ * @param {number} organizationId - ID организации для изоляции данных
  * @returns {Promise<object>} - Результаты импорта
  */
-export async function importProductsFromExcel(fileBuffer, userId) {
+export async function importProductsFromExcel(fileBuffer, userId, organizationId) {
     const client = await pool.connect();
 
     try {
@@ -181,8 +183,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                 let categoryId = null;
                 if (productData.categoryName) {
                     const catResult = await client.query(
-                        'SELECT id FROM product_categories WHERE name = $1 LIMIT 1',
-                        [productData.categoryName]
+                        'SELECT id FROM product_categories WHERE name = $1 AND organization_id = $2 LIMIT 1',
+                        [productData.categoryName, organizationId]
                     );
                     categoryId = catResult.rows[0]?.id || null;
                 }
@@ -190,8 +192,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                 // Проверить существует ли товар
                 if (productData.id) {
                     const existingProduct = await client.query(
-                        'SELECT id FROM products WHERE id = $1',
-                        [productData.id]
+                        'SELECT id FROM products WHERE id = $1 AND organization_id = $2',
+                        [productData.id, organizationId]
                     );
 
                     if (existingProduct.rows.length > 0) {
@@ -202,7 +204,7 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                                 price_sale = $5, price_purchase = $6, unit = $7,
                                 vat_rate = $8, description = $9, is_active = $10,
                                 updated_at = NOW()
-                            WHERE id = $11
+                            WHERE id = $11 AND organization_id = $12
                         `, [
                             productData.name,
                             productData.barcode,
@@ -214,7 +216,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                             productData.vatRate,
                             productData.description,
                             productData.isActive,
-                            productData.id
+                            productData.id,
+                            organizationId
                         ]);
 
                         results.updated++;
@@ -223,8 +226,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                         await client.query(`
                             INSERT INTO products (
                                 id, name, barcode, code, category_id, price_sale, price_purchase,
-                                unit, vat_rate, description, is_active
-                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                                unit, vat_rate, description, is_active, organization_id
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                         `, [
                             productData.id,
                             productData.name,
@@ -236,7 +239,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                             productData.unit,
                             productData.vatRate,
                             productData.description,
-                            productData.isActive
+                            productData.isActive,
+                            organizationId
                         ]);
 
                         results.created++;
@@ -246,8 +250,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                     await client.query(`
                         INSERT INTO products (
                             name, barcode, code, category_id, price_sale, price_purchase,
-                            unit, vat_rate, description, is_active
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                            unit, vat_rate, description, is_active, organization_id
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     `, [
                         productData.name,
                         productData.barcode,
@@ -258,7 +262,8 @@ export async function importProductsFromExcel(fileBuffer, userId) {
                         productData.unit,
                         productData.vatRate,
                         productData.description,
-                        productData.isActive
+                        productData.isActive,
+                        organizationId
                     ]);
 
                     results.created++;

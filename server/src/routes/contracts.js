@@ -31,6 +31,7 @@ const ensureTable = async () => {
             notes TEXT,
             file_path VARCHAR(500),
             template_id INTEGER,
+            organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -41,6 +42,7 @@ const ensureTable = async () => {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_contracts_end_date ON contracts(end_date)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_contracts_counterparty ON contracts(counterparty_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_contracts_org ON contracts(organization_id)`);
 };
 
 /**
@@ -65,10 +67,10 @@ router.get('/', authenticate, async (req, res) => {
             FROM contracts c
             LEFT JOIN counterparties cp ON c.counterparty_id = cp.id
             LEFT JOIN users u ON c.created_by = u.id
-            WHERE 1=1
+            WHERE c.organization_id = $1
         `;
-        const params = [];
-        let paramIndex = 1;
+        const params = [req.user.organization_id];
+        let paramIndex = 2;
 
         if (status && status !== 'all') {
             query += ` AND c.status = $${paramIndex++}`;
@@ -97,7 +99,8 @@ router.get('/', authenticate, async (req, res) => {
                 COALESCE(SUM(amount) FILTER (WHERE status = 'active'), 0) as total_amount,
                 COUNT(*) as total
             FROM contracts
-        `);
+            WHERE organization_id = $1
+        `, [req.user.organization_id]);
 
         res.json({
             contracts: result.rows,
@@ -122,8 +125,8 @@ router.get('/:id', authenticate, async (req, res) => {
             FROM contracts c
             LEFT JOIN counterparties cp ON c.counterparty_id = cp.id
             LEFT JOIN users u ON c.created_by = u.id
-            WHERE c.id = $1
-        `, [id]);
+            WHERE c.id = $1 AND c.organization_id = $2
+        `, [id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Договор не найден' });
@@ -170,8 +173,9 @@ router.post('/', authenticate, checkPermission('admin.settings'), auditLog, asyn
             INSERT INTO contracts (
                 contract_number, name, counterparty_id, counterparty_name,
                 type, start_date, end_date, amount, currency,
-                auto_renew, terms, notes, template_id, status, created_by
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', $14)
+                auto_renew, terms, notes, template_id, status, 
+                organization_id, created_by
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', $14, $15)
             RETURNING *
         `, [
             contractNum,
@@ -187,6 +191,7 @@ router.post('/', authenticate, checkPermission('admin.settings'), auditLog, asyn
             terms || null,
             notes || null,
             template_id || null,
+            req.user.organization_id,
             req.user?.id || null
         ]);
 
@@ -227,10 +232,10 @@ router.put('/:id', authenticate, checkPermission('admin.settings'), auditLog, as
         }
 
         setClause.push('updated_at = NOW()');
-        values.push(id);
+        values.push(id, req.user.organization_id);
 
         const result = await pool.query(
-            `UPDATE contracts SET ${setClause.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+            `UPDATE contracts SET ${setClause.join(', ')} WHERE id = $${paramIndex} AND organization_id = $${paramIndex + 1} RETURNING *`,
             values
         );
 
@@ -263,9 +268,9 @@ router.post('/:id/renew', authenticate, checkPermission('admin.settings'), audit
                 amount = COALESCE($2, amount),
                 status = 'active',
                 updated_at = NOW()
-            WHERE id = $3
+            WHERE id = $3 AND organization_id = $4
             RETURNING *
-        `, [new_end_date, new_amount, id]);
+        `, [new_end_date, new_amount, id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Договор не найден' });
@@ -292,9 +297,9 @@ router.post('/:id/terminate', authenticate, checkPermission('admin.settings'), a
                 notes = COALESCE(notes || E'\n', '') || 'Причина расторжения: ' || COALESCE($1, 'Не указана'),
                 end_date = CURRENT_DATE,
                 updated_at = NOW()
-            WHERE id = $2
+            WHERE id = $2 AND organization_id = $3
             RETURNING *
-        `, [reason, id]);
+        `, [reason, id, req.user.organization_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Договор не найден' });
@@ -331,8 +336,9 @@ router.get('/templates/list', authenticate, async (req, res) => {
 router.delete('/:id', authenticate, checkPermission('admin.settings'), auditLog, async (req, res) => {
     try {
         const { id } = req.params;
+        const organization_id = req.user.organization_id;
 
-        await pool.query('DELETE FROM contracts WHERE id = $1', [id]);
+        await pool.query('DELETE FROM contracts WHERE id = $1 AND organization_id = $2', [id, organization_id]);
 
         res.json({ success: true, message: 'Договор удалён' });
     } catch (error) {

@@ -124,7 +124,7 @@ function LoyaltyCards() {
         printWindow.document.write(`
             <html>
             <head>
-                <title>{t('loyaltycards.karty_loyalnosti', 'Карты лояльности - SmartPOS Pro')}</title>
+                <title>${t('loyaltycards.karty_loyalnosti', 'Карты лояльности - SmartPOS Pro')}</title>
                 <style>
                     @page { size: A4; margin: 10mm; }
                     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 10mm; }
@@ -151,11 +151,11 @@ function LoyaltyCards() {
                 </style>
             </head>
             <body>
-                <h2>{t('loyaltycards.karty_loyalnosti', 'Карты лояльности — SmartPOS Pro')}</h2>
+                <h2>${t('loyaltycards.karty_loyalnosti', 'Карты лояльности — SmartPOS Pro')}</h2>
                 <div class="cards-grid">
                     ${cardsToprint.map(c => `
                         <div class="card-item">
-                            <div class="card-logo">SmartPOS <span>{t('loyaltycards.bonus', 'Бонус')}</span></div>
+                            <div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
                             <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
                             <div class="card-owner">${c.name || '____________________'}</div>
                             <div class="card-level">${c.level}</div>
@@ -263,7 +263,7 @@ function LoyaltyCards() {
             </head>
             <body>
                 <div class="card">
-                    <div class="logo">SmartPOS <span>{t('loyaltycards.bonus', 'Бонус')}</span></div>
+                    <div class="logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
                     <div class="card-number">${formatCardNumber(cardData?.number || '')}</div>
                     <div class="customer-name">${selectedCustomer?.name}</div>
                     <div class="level">★ ${cardData?.level || 'Standard'}</div>
@@ -271,7 +271,7 @@ function LoyaltyCards() {
                         ${barcodeImage ? `<img src="${barcodeImage}" alt="barcode" />` : '<div style="height:10mm;color:#999;font-size:8px">Barcode</div>'}
                     </div>
                     <div class="balance-row">
-                        <div class="balance">{t('loyaltycards.balans', 'Баланс:')} <strong>${new Intl.NumberFormat('ru-RU').format(balance)}</strong> {t('loyaltycards.b', 'б.')}</div>
+                        <div class="balance">${t('loyaltycards.balans', 'Баланс:')} <strong>${new Intl.NumberFormat('ru-RU').format(balance)}</strong> ${t('loyaltycards.b', 'б.')}</div>
                         <div class="cashback-badge">Кэшбек ${cashback}%</div>
                     </div>
                 </div>

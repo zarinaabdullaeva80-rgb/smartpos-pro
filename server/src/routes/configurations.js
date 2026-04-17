@@ -152,9 +152,9 @@ router.get('/user/modules', authenticateToken, async (req, res) => {
                 cm.sort_order
             FROM user_configurations uc
             JOIN configuration_modules cm ON uc.configuration_id = cm.configuration_id
-            WHERE uc.user_id = $1 AND uc.is_active = true AND cm.is_enabled = true
+            WHERE uc.user_id = $1 AND uc.is_active = true AND cm.is_enabled = true AND uc.organization_id = $2
             ORDER BY cm.sort_order
-        `, [userId]);
+        `, [userId, req.user.organization_id]);
 
         res.json(result.rows);
     } catch (error) {
@@ -192,14 +192,14 @@ router.post('/user/select', authenticateToken, async (req, res) => {
         await client.query(`
             UPDATE user_configurations 
             SET is_active = false 
-            WHERE user_id = $1
-        `, [userId]);
+            WHERE user_id = $1 AND organization_id = $2
+        `, [userId, req.user.organization_id]);
 
         // Check if user already has this configuration (reactivate it)
         const existingConfig = await client.query(`
             SELECT id FROM user_configurations 
-            WHERE user_id = $1 AND configuration_id = $2
-        `, [userId, configurationId]);
+            WHERE user_id = $1 AND configuration_id = $2 AND organization_id = $3
+        `, [userId, configurationId, req.user.organization_id]);
 
         if (existingConfig.rows.length > 0) {
             // Reactivate existing configuration
@@ -211,9 +211,9 @@ router.post('/user/select', authenticateToken, async (req, res) => {
         } else {
             // Insert new configuration
             await client.query(`
-                INSERT INTO user_configurations (user_id, configuration_id, is_active)
-                VALUES ($1, $2, true)
-            `, [userId, configurationId]);
+                INSERT INTO user_configurations (user_id, configuration_id, is_active, organization_id)
+                VALUES ($1, $2, true, $3)
+            `, [userId, configurationId, req.user.organization_id]);
         }
 
         await client.query('COMMIT');

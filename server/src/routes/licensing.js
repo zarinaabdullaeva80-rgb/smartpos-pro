@@ -6,6 +6,68 @@ import { auditLog } from '../middleware/audit.js';
 const router = express.Router();
 
 /**
+ * GET /api/license/resolve?key=XXXX-XXXX-XXXX-XXXX
+ * Публичный endpoint (без аутентификации) — резолв лицензионного ключа в URL сервера.
+ * Вызывается мобильным приложением при первом запуске до логина.
+ */
+router.get('/resolve', async (req, res) => {
+    try {
+        const { key } = req.query;
+
+        if (!key || key.trim().length < 8) {
+            return res.status(400).json({ valid: false, error: 'Введите лицензионный ключ' });
+        }
+
+        const result = await pool.query(
+            `SELECT id, license_key, license_type, status, expires_at,
+                    company_name, customer_name, server_type, server_url,
+                    max_devices, max_users, features
+             FROM licenses WHERE license_key = $1`,
+            [key.trim()]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ valid: false, error: 'Лицензионный ключ не найден' });
+        }
+
+        const license = result.rows[0];
+
+        if (license.status !== 'active') {
+            return res.status(403).json({
+                valid: false,
+                error: license.status === 'expired'
+                    ? 'Лицензия истекла. Обратитесь к администратору.'
+                    : `Лицензия ${license.status}. Обратитесь к администратору.`
+            });
+        }
+
+        // Проверить срок действия
+        if (license.expires_at && new Date(license.expires_at) < new Date()) {
+            await pool.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
+            return res.status(403).json({ valid: false, error: 'Лицензия истекла. Обратитесь к администратору.' });
+        }
+
+        // Определить URL сервера
+        const currentServerUrl = `${req.protocol}://${req.get('host')}/api`;
+        const serverUrl = license.server_url || currentServerUrl;
+
+        res.json({
+            valid: true,
+            company_name: license.company_name || license.customer_name || 'Организация',
+            server_url: serverUrl,
+            server_type: license.server_type || 'cloud',
+            license_type: license.license_type,
+            expires_at: license.expires_at,
+            max_devices: license.max_devices,
+        });
+
+    } catch (error) {
+        console.error('[License Resolve] Error:', error.message);
+        res.status(500).json({ valid: false, error: 'Ошибка сервера при проверке ключа' });
+    }
+});
+
+/**
  * POST /api/license/validate
  * Проверка действительности лицензии
  */

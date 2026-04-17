@@ -130,13 +130,32 @@ router.post('/register', async (req, res) => {
 // Вход в систему
 router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password, license_key } = req.body;
 
         if (!username || !password) {
             return res.status(400).json({ error: 'Логин и пароль обязательны' });
         }
 
-        console.log('Login attempt for:', username);
+        console.log('Login attempt for:', username, license_key ? `(license: ${license_key.substring(0, 8)}...)` : '(no license key)');
+
+        // 0. Если клиент передал license_key — определить license_id для проверки принадлежности
+        let expectedLicenseId = null;
+        if (license_key) {
+            try {
+                const licKeyRes = await pool.query(
+                    'SELECT id, status FROM licenses WHERE license_key = $1',
+                    [license_key]
+                );
+                if (licKeyRes.rows.length > 0) {
+                    if (licKeyRes.rows[0].status !== 'active') {
+                        return res.status(403).json({ error: 'Лицензия неактивна. Обратитесь к администратору.' });
+                    }
+                    expectedLicenseId = licKeyRes.rows[0].id;
+                }
+            } catch (e) {
+                console.log('License key lookup error:', e.message);
+            }
+        }
 
         // 1. Поиск пользователя в таблице users (безопасный запрос с fallback)
         let result;
@@ -194,6 +213,14 @@ router.post('/login', async (req, res) => {
 
             const licenseData = licenseResult.rows[0];
 
+            // ★ Проверка: лицензия из логина должна совпадать с лицензией, введённой клиентом
+            if (expectedLicenseId && licenseData.id !== expectedLicenseId) {
+                console.warn(`[AUTH] License mismatch! User "${username}" belongs to license #${licenseData.id}, but client activated license #${expectedLicenseId}`);
+                return res.status(401).json({ 
+                    error: 'Логин не принадлежит указанной лицензии. Проверьте лицензионный ключ.' 
+                });
+            }
+
             if (licenseData.status !== 'active') {
                 return res.status(401).json({ error: 'Лицензия неактивна или заблокирована' });
             }
@@ -246,6 +273,14 @@ router.post('/login', async (req, res) => {
             const validPassword = await bcrypt.compare(password, user.password_hash);
             if (!validPassword) {
                 return res.status(401).json({ error: 'Неверные учетные данные' });
+            }
+
+            // ★ Проверка: пользователь должен принадлежать к лицензии, введённой клиентом
+            if (expectedLicenseId && userLicenseId && userLicenseId !== expectedLicenseId) {
+                console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
+                return res.status(401).json({ 
+                    error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
+                });
             }
 
             // Проверить статус лицензии (если привязана)

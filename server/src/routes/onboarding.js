@@ -92,6 +92,69 @@ router.post('/register', async (req, res) => {
         );
 
         const user = userResult.rows[0];
+
+        // --- CLONE SYSTEM DEFAULTS ---
+        try {
+            // 1. Referral Settings
+            await client.query(`
+                INSERT INTO referral_settings (
+                    enabled, reward_type, reward_value, min_spent_amount, organization_id
+                )
+                SELECT enabled, reward_type, reward_value, min_spent_amount, $1
+                FROM referral_settings WHERE organization_id = 1
+                LIMIT 1
+            `, [org.id]);
+
+            // 2. Keyboard Shortcuts
+            await client.query(`
+                INSERT INTO keyboard_shortcuts (
+                    action, key_combo, description, organization_id
+                )
+                SELECT action, key_combo, description, $1
+                FROM keyboard_shortcuts WHERE organization_id = 1
+            `, [org.id]);
+
+            // 3. Achievements (System ones)
+            await client.query(`
+                INSERT INTO achievements (
+                    name, description, metric, criteria_value, reward_points, icon, organization_id
+                )
+                SELECT name, description, metric, criteria_value, reward_points, icon, $1
+                FROM achievements WHERE organization_id = 1
+            `, [org.id]);
+
+            // 4. System Settings
+            await client.query(`
+                INSERT INTO system_settings (
+                    setting_key, setting_value, group_name, organization_id
+                )
+                SELECT setting_key, setting_value, group_name, $1
+                FROM system_settings WHERE organization_id = 1
+            `, [org.id]);
+
+            // 5. Loyalty Settings
+            await client.query(`
+                INSERT INTO loyalty_settings (
+                    enabled, points_per_amount, amount_per_point, min_redeem_points, organization_id
+                )
+                SELECT enabled, points_per_amount, amount_per_point, min_redeem_points, $1
+                FROM loyalty_settings WHERE organization_id = 1
+                LIMIT 1
+            `, [org.id]);
+
+            // 6. Notification Templates
+            await client.query(`
+                INSERT INTO notification_templates (
+                    name, type, subject, body, channel, organization_id
+                )
+                SELECT name, type, subject, body, channel, $1
+                FROM notification_templates WHERE organization_id = 1
+            `, [org.id]);
+        } catch (cloneErr) {
+            console.warn('[ONBOARDING] Failed to clone some defaults:', cloneErr.message);
+            // Non-blocking error, we still want the registration to succeed
+        }
+
         await client.query('COMMIT');
 
         // Generate JWT

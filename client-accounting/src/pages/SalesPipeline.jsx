@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Briefcase, Plus, TrendingUp, DollarSign, Users, Settings, X } from 'lucide-react';
 import { crmAPI } from '../services/api';
-
+import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import { useConfirm } from '../components/ConfirmDialog';
 import '../styles/Common.css';
 import { useI18n } from '../i18n';
@@ -28,6 +28,7 @@ const SalesPipeline = () => {
         const saved = localStorage.getItem('crm_deals');
         return saved ? JSON.parse(saved) : [];
     });
+    const [customers, setCustomers] = useState([]);
     const [analytics, setAnalytics] = useState({});
     const [loading, setLoading] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -45,9 +46,16 @@ const SalesPipeline = () => {
     }, [deals]);
 
     useEffect(() => {
-        // Попытка синхронизации с сервером
         syncWithServer();
+        loadCustomers();
     }, []);
+
+    const loadCustomers = async () => {
+        try {
+            const res = await crmAPI.getCustomers({ limit: 500 });
+            setCustomers(res.data?.customers || res.data || []);
+        } catch (e) { console.log('Could not load customers'); }
+    };
 
     const syncWithServer = async () => {
         setLoading(true);
@@ -141,13 +149,7 @@ const SalesPipeline = () => {
         return deals.filter(d => d.stage_id === stageId);
     };
 
-    const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('ru-RU', {
-            style: 'currency',
-            currency: 'RUB',
-            minimumFractionDigits: 0
-        }).format(amount);
-    };
+    const formatCurrency = (amount) => formatCurrencyUZS(amount);
 
     return (
         <div className="page-container fade-in">
@@ -286,7 +288,12 @@ const SalesPipeline = () => {
                             </div>
                             <div className="form-group">
                                 <label>{t('salespipeline.klient', 'Клиент *')}</label>
-                                <input name="customer_id" type="number" required />
+                                <select name="customer_id" required>
+                                    <option value="">{t('salespipeline.vyberite_klienta', 'Выберите клиента')}</option>
+                                    {customers.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}{c.phone ? ` (${c.phone})` : ''}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label>{t('salespipeline.etap', 'Этап *')}</label>
