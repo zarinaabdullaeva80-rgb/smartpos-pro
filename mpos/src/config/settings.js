@@ -263,10 +263,9 @@ export async function autoDiscoverServer() {
         if (found) return found;
     }
 
-    // Шаг 3: Fallback — сохранённый облачный URL (или Railway по умолчанию)
-    const cloudUrl = getCloudUrl();
-    console.log('[AutoDiscover] Локальный сервер не найден → использую облако:', cloudUrl);
-    return `${cloudUrl}/api`;
+    // Шаг 3: Локальный сервер не найден
+    console.log('[AutoDiscover] Локальный сервер не найден');
+    return null;
 }
 
 
@@ -405,7 +404,7 @@ export const LOG_CONFIG = {
 };
 
 // Версия приложения
-export const APP_VERSION = '4.1.0';
+export const APP_VERSION = '4.1.1';
 
 // Dev mode
 export const IS_DEV = false;

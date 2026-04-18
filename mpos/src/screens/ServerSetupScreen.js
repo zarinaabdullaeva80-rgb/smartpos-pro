@@ -67,9 +67,10 @@ export default function ServerSetupScreen({ onConnected }) {
             const url = await autoDiscoverServer();
             if (url) {
                 setFoundUrl(url);
-                setStatusText('Сервер найден!');
-                // Автоматически подключаемся
-                await saveAndConnect(url, 'Авто-обнаружение');
+                setStatusText(`Найден сервер: ${url}`);
+                setPhase('manual'); // Показываем экран с кнопками, но предзаполняем URL
+                setManualUrl(url);
+                setManualName('Авто-обнаружение');
                 return;
             }
         } catch (e) {

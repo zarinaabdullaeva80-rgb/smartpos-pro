@@ -14,6 +14,17 @@ const STORAGE_KEYS = {
     LAST_SERVER: 'last_server_name',
 };
 
+// Камера для QR
+let CameraView = null;
+if (Platform.OS !== 'web') {
+    try {
+        const cameraModule = require('expo-camera');
+        CameraView = cameraModule.CameraView;
+    } catch (e) {
+        console.log('[Login] expo-camera not available');
+    }
+}
+
 export default function LoginScreen({ onLogin, onChangeServer }) {
     const { colors } = useTheme();
 
@@ -133,6 +144,27 @@ export default function LoginScreen({ onLogin, onChangeServer }) {
         } finally {
             setTestingServer(false);
         }
+    };
+
+    // QR-сканер
+    const [qrScanned, setQrScanned] = useState(false);
+
+    const handleQRScanned = async ({ data }) => {
+        if (qrScanned) return;
+        setQrScanned(true);
+
+        console.log('[Login] QR scanned:', data);
+        let url = data;
+        let name = '';
+        try {
+            const parsed = JSON.parse(data);
+            url = parsed.url || data;
+            name = parsed.name || '';
+        } catch (e) {}
+
+        setShowQRScanner(false);
+        setQrScanned(false);
+        await connectToServer(url, name);
     };
 
     // Подключение к серверу на основе лицензии
@@ -582,6 +614,20 @@ export default function LoginScreen({ onLogin, onChangeServer }) {
                         Добавить новый сервер
                     </Button>
 
+                    {CameraView && (
+                        <Button
+                            mode="contained"
+                            onPress={() => {
+                                setShowServerDialog(false);
+                                setShowQRScanner(true);
+                            }}
+                            icon="qrcode-scan"
+                            style={{ marginBottom: 8, backgroundColor: colors.primary }}
+                        >
+                            📱 Сканировать QR-код
+                        </Button>
+                    )}
+
                     <Button
                         mode="text"
                         onPress={resetAndSearch}
@@ -609,8 +655,8 @@ export default function LoginScreen({ onLogin, onChangeServer }) {
                 <Title style={[styles.title, dynamicStyles.text]}>SmartPOS Pro</Title>
                 <Paragraph style={[styles.subtitle, dynamicStyles.textSecondary]}>Мобильный POS</Paragraph>
 
-                {/* Статус сервера — нажмите для настройки */}
-                {renderServerStatus()}
+                {/* Статус сервера скрыт по просьбе пользователя */}
+                {/* {renderServerStatus()} */}
 
                 <Card style={[styles.card, dynamicStyles.card]}>
                     <Card.Content>
@@ -673,6 +719,38 @@ export default function LoginScreen({ onLogin, onChangeServer }) {
             {renderServerSettingsDialog()}
             {renderServerListDialog()}
             {renderAddServerDialog()}
+
+            {/* QR-сканер полноэкранный */}
+            <Portal>
+                {showQRScanner && CameraView && (
+                    <View style={StyleSheet.absoluteFillObject}>
+                        <CameraView
+                            style={StyleSheet.absoluteFillObject}
+                            facing="back"
+                            onBarcodeScanned={qrScanned ? undefined : handleQRScanned}
+                            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                        />
+                        <View style={styles.qrOverlay}>
+                            <View style={styles.qrFrame}>
+                                <View style={[styles.corner, styles.topLeft]} />
+                                <View style={[styles.corner, styles.topRight]} />
+                                <View style={[styles.corner, styles.bottomLeft]} />
+                                <View style={[styles.corner, styles.bottomRight]} />
+                            </View>
+                            <Paragraph style={styles.qrHint}>
+                                Наведите камеру на QR-код{'\n'}в веб-панели SmartPOS Pro
+                            </Paragraph>
+                            <Button
+                                mode="contained"
+                                onPress={() => setShowQRScanner(false)}
+                                style={{ marginTop: 40, backgroundColor: 'rgba(0,0,0,0.6)' }}
+                            >
+                                Закрыть
+                            </Button>
+                        </View>
+                    </View>
+                )}
+            </Portal>
         </KeyboardAvoidingView>
     );
 }
@@ -691,4 +769,13 @@ const styles = StyleSheet.create({
     input: { marginBottom: 16 },
     button: { marginTop: 8, paddingVertical: 8 },
     version: { textAlign: 'center', fontSize: 12 },
+    // QR Styles
+    qrOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+    qrFrame: { width: 250, height: 250, position: 'relative' },
+    corner: { position: 'absolute', width: 40, height: 40, borderColor: '#10b981', borderWidth: 4 },
+    topLeft: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0 },
+    topRight: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0 },
+    bottomLeft: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0 },
+    bottomRight: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 },
+    qrHint: { color: '#fff', marginTop: 24, textAlign: 'center', fontSize: 16, textShadowColor: '#000', textShadowRadius: 4 },
 });
