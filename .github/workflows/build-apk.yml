@@ -89,7 +89,7 @@ jobs:
         run: |
           echo "## 🎉 APK Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version:** 4.1.0 (build 41)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** 4.1.1 (build 42)" >> $GITHUB_STEP_SUMMARY
           echo "- **Type:** ${{ github.event.inputs.build_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.inputs.cloud_url }}" ]; then
