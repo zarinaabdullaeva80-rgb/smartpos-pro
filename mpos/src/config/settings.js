@@ -6,11 +6,29 @@
  */
 
 import { Platform } from 'react-native';
+
 // ========================================================
 // 🌐 АДРЕС СЕРВЕРА
 // ========================================================
+
+// Проверяем наличие преконфигурированного URL из нативного BuildConfig
+// (передаётся через Gradle: ./gradlew assembleRelease -PcloudUrl="https://...")
+let BUILD_CLOUD_URL = '';
+try {
+    const Constants = require('expo-constants').default;
+    const nativeCloudUrl = Constants?.expoConfig?.extra?.cloudUrl
+        || Constants?.manifest?.extra?.cloudUrl
+        || '';
+    if (nativeCloudUrl) {
+        BUILD_CLOUD_URL = nativeCloudUrl;
+        console.log('[Settings] Pre-configured cloud URL from build:', nativeCloudUrl);
+    }
+} catch (e) {
+    // expo-constants not available
+}
+
 // Облачный сервер по умолчанию (Railway) — используется как fallback
-const DEFAULT_CLOUD_URL = 'https://smartpos-pro-production-f885.up.railway.app';
+const DEFAULT_CLOUD_URL = BUILD_CLOUD_URL || 'https://smartpos-pro-production-f885.up.railway.app';
 
 // Default server URL
 const DEFAULT_SERVER_URL = `${DEFAULT_CLOUD_URL}/api`;

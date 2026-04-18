@@ -11,6 +11,11 @@ on:
         options:
           - release
           - debug
+      cloud_url:
+        description: 'Custom server URL (optional, for pre-configured builds)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build-apk:
@@ -49,10 +54,16 @@ jobs:
       - name: Build APK (${{ github.event.inputs.build_type }})
         working-directory: mpos/android
         run: |
+          GRADLE_ARGS=""
+          if [ -n "${{ github.event.inputs.cloud_url }}" ]; then
+            GRADLE_ARGS="-PcloudUrl=${{ github.event.inputs.cloud_url }}"
+            echo "🔧 Pre-configured build with cloud URL: ${{ github.event.inputs.cloud_url }}"
+          fi
+
           if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
-            ./gradlew assembleRelease
+            ./gradlew assembleRelease $GRADLE_ARGS
           else
-            ./gradlew assembleDebug
+            ./gradlew assembleDebug $GRADLE_ARGS
           fi
 
       - name: Find APK
@@ -74,8 +85,12 @@ jobs:
         run: |
           echo "## 🎉 APK Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** 4.1.0 (build 41)" >> $GITHUB_STEP_SUMMARY
           echo "- **Type:** ${{ github.event.inputs.build_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ github.event.inputs.cloud_url }}" ]; then
+            echo "- **Pre-configured URL:** ${{ github.event.inputs.cloud_url }}" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **APK:** ${{ steps.find_apk.outputs.apk_path }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Download from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
