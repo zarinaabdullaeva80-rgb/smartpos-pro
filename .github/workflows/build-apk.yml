@@ -44,6 +44,10 @@ jobs:
         working-directory: mpos
         run: npm install
 
+      - name: Generate native Android project
+        working-directory: mpos
+        run: npx expo prebuild --platform android --no-install
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
