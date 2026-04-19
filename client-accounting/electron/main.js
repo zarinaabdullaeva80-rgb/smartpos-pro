@@ -70,7 +70,7 @@ function readServerMode() {
     } catch (e) {
         console.log('[Config] Error reading server mode:', e.message);
     }
-    return 'cloud'; // по умолчанию — облако (Railway)
+    return 'server'; // по умолчанию — локальный сервер (self-hosted)
 }
 
 // Определяем URL API из встроенной конфигурации
@@ -232,9 +232,15 @@ function startServer() {
 
     // Если папка сервера отсутствует — это cloud-only сборка, пропускаем
     if (!isDev && !fs.existsSync(serverPath)) {
-        console.log('[Server] Server folder not found — cloud-only build, skipping local server');
-        serverStatus = 'external';
-        return;
+        console.log('[Server] Server folder not found in unpacked asar — checking fallback...');
+        const fallbackPath = path.join(process.resourcesPath, 'server');
+        if (fs.existsSync(fallbackPath)) {
+            // Если вдруг остался в старом месте
+        } else {
+            console.log('[Server] Server folder completely missing, skipping local server');
+            serverStatus = 'external';
+            return;
+        }
     }
 
     // Auto-setup: create .env and database if needed
@@ -439,34 +445,21 @@ function createWindow() {
         frame: true
     });
 
-    // В cloud режиме загружаем локальный dist/index.html
-    // React уже знает Railway URL через VITE_API_URL встроенный при сборке
-    const mode = readServerMode();
-    
-    if (mode === 'cloud') {
-        // Cloud режим: загружаем встроенный dist/index.html
-        // VITE_API_URL внутри уже указывает на Railway
-        let distPath;
-        if (isDev) {
-            distPath = path.join(__dirname, '../dist/index.html');
-        } else {
-            // В production: dist внутри asar (asarUnpack)
-            const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
-            const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
-            distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
-        }
-        console.log('[Electron] Cloud mode: loading local dist:', distPath);
-        mainWindow.loadFile(distPath);
+    // Всегда загружаем dist/index.html из файловой системы.
+    // React-приложение само подключается к localhost:5000/api для API.
+    // Это гарантирует мгновенную загрузку UI без ожидания сервера.
+    let distPath;
+    if (isDev) {
+        distPath = path.join(__dirname, '../dist/index.html');
     } else {
-        // Локальный режим: embedded server на localhost
-        const serverUrl = `http://localhost:${SERVER_PORT}`;
-        console.log('[Electron] Local mode: loading from server:', serverUrl);
-        mainWindow.loadURL(serverUrl);
+        const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
+        const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
+        distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
     }
-
+    console.log('[Electron] Loading dist:', distPath, '| exists:', fs.existsSync(distPath));
+    mainWindow.loadFile(distPath);
 
     if (isDev) {
-        // Open DevTools in development
         mainWindow.webContents.openDevTools();
     }
 
@@ -677,10 +670,11 @@ app.whenReady().then(async () => {
 
         // Определяем режим и проверяем наличие сервера
         let mode = readServerMode();
-        const serverPath = isDev
+        const serverPathPrimary = isDev
             ? path.join(__dirname, '../../server')
             : path.join(process.resourcesPath, 'server');
-        const serverExists = fs.existsSync(serverPath);
+        const serverExists = fs.existsSync(serverPathPrimary);
+        console.log('[App] Server path:', serverPathPrimary, '| exists:', serverExists);
 
         // Если режим server/hybrid, но сервера нет — автоматически переключаем на cloud
         if ((mode === 'server' || mode === 'hybrid') && !serverExists) {
@@ -693,7 +687,9 @@ app.whenReady().then(async () => {
             console.log('[App] Mode:', mode, '— starting embedded server...');
             try {
                 startServer();
-                await waitForServer();
+                // Даём серверу 2 секунды на инициализацию
+                await new Promise(r => setTimeout(r, 2000));
+                console.log('[App] Server started, proceeding to window...');
             } catch (e) {
                 console.error('[App] Server start failed, falling back to cloud:', e.message);
                 mode = 'cloud';

@@ -301,6 +301,45 @@ function ServerStatus() {
                         <span>Нажмите «📱 Сканировать QR-код» или введите адрес вручную</span>
                     </div>
                 </div>
+
+                {/* Добавлено: Раздел PWA доступа */}
+                <div className="pwa-access-section" style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '2px dashed rgba(255,255,255,0.1)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                        <Globe size={20} className="text-blue" />
+                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Доступ через браузер (PWA)</h3>
+                    </div>
+                    
+                    <p style={{ fontSize: '0.85rem', color: '#9ca3af', marginBottom: '1rem' }}>
+                        Для сотрудников без установки приложения. Просто отсканируйте код обычной камерой телефона:
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                        <div style={{ padding: '10px', backgroundColor: '#fff', borderRadius: '12px' }}>
+                            <QRCode
+                                value={`${connectionUrl}/mobile`}
+                                size={120}
+                                level="M"
+                                includeMargin={false}
+                                bgColor="#fff"
+                                fgColor="#000"
+                            />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <div className="connection-url-box" style={{ marginBottom: '0.5rem' }}>
+                                <code style={{ fontSize: '0.9rem' }}>{connectionUrl}/mobile</code>
+                                <button
+                                    className="copy-btn"
+                                    onClick={() => copyToClipboard(`${connectionUrl}/mobile`)}
+                                >
+                                    {copied ? <CheckCircle size={16} /> : <Copy size={16} />}
+                                </button>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                💡 Совет: После открытия нажмите «Добавить на главный экран» в меню браузера.
+                            </span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );

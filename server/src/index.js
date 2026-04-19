@@ -153,6 +153,7 @@ let clientDistPath = process.env.CLIENT_DIST_PATH || '';
 const fallbackPaths = [
     clientDistPath,
     path.resolve(__dirname, '..', '..', 'client-accounting', 'dist'),  // dev mode
+    path.resolve(__dirname, '..', '..', 'dist'),                        // Electron production mode
     path.resolve(__dirname, '..', 'dist'),                              // adjacent dist
     path.resolve(process.cwd(), 'dist'),                                // cwd/dist
 ];

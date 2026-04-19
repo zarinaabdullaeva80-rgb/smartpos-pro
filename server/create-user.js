@@ -7,23 +7,26 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 async function createUser() {
     try {
-        const hash = await bcrypt.hash('daler5861', 10);
-        const existing = await pool.query('SELECT id FROM users WHERE username = $1', ['daler0602']);
+        const hash = await bcrypt.hash('admin', 10);
+        const existing = await pool.query('SELECT id FROM users WHERE username = $1', ['admin']);
         
         if (existing.rows.length > 0) {
-            await pool.query('UPDATE users SET password_hash = $1 WHERE username = $2', [hash, 'daler0602']);
-            console.log('✅ Пароль обновлён для daler0602');
+            await pool.query('UPDATE users SET password_hash = $1, role = $3 WHERE username = $2', [hash, 'admin', 'super_admin']);
+            console.log('✅ Пароль обновлён для admin');
         } else {
             await pool.query(
-                `INSERT INTO users (username, password_hash, full_name, role, is_active, created_at) 
-                 VALUES ($1, $2, $3, $4, true, NOW())`,
-                ['daler0602', hash, 'Daler', 'admin']
+                `INSERT INTO users (username, password_hash, full_name, role, is_active, created_at, email) 
+                 VALUES ($1, $2, $3, $4, true, NOW(), $5)`,
+                ['admin', hash, 'Administrator', 'super_admin', 'admin@example.com']
             );
-            console.log('✅ Пользователь daler0602 создан (роль: admin)');
+            console.log('✅ Пользователь admin создан (роль: super_admin)');
         }
         
+        // Удаляем daler0602 если он был создан
+        await pool.query('DELETE FROM users WHERE username = $1', ['daler0602']);
+        
         // Проверка
-        const check = await pool.query('SELECT id, username, role, full_name FROM users WHERE username = $1', ['daler0602']);
+        const check = await pool.query('SELECT id, username, role, full_name FROM users WHERE username = $1', ['admin']);
         console.log('Пользователь:', check.rows[0]);
         
         await pool.end();
