@@ -84,7 +84,7 @@ async function connectToServer() {
     status.className = 'connect-status'; status.textContent = '⏳ Подключение...';
 
     try {
-        const res = await fetch(url + '/api/auth/login', {
+        const res = await fetch(url + '/api/auth/admin-login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: user, password: pass })
@@ -1444,7 +1444,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (savedUser && savedPass) {
             status.textContent = '⏳ Повторный вход...';
             try {
-                const res = await fetch(savedUrl + '/api/auth/login', {
+                const res = await fetch(savedUrl + '/api/auth/admin-login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ username: savedUser, password: atob(savedPass) })
