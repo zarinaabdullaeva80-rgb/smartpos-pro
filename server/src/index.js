@@ -147,6 +147,20 @@ if (fs.existsSync(mobileDistPath)) {
     });
 }
 
+// === Админ-панель (admin-panel/app) по пути /admin ===
+const adminPanelPath = process.env.ADMIN_PANEL_PATH || path.resolve(__dirname, '..', '..', 'admin-panel', 'app');
+console.log('[Static] Admin panel path:', adminPanelPath, '| exists:', fs.existsSync(adminPanelPath));
+
+if (fs.existsSync(adminPanelPath)) {
+    app.use('/admin', express.static(adminPanelPath, { 
+        maxAge: 0,  // Без кэша — всегда свежие файлы
+        setHeaders: (res) => {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        }
+    }));
+    console.log('[Static] ✅ Admin panel available at /admin');
+}
+
 // === Десктопное приложение (client-accounting/dist) ===
 // Try multiple paths for client dist
 let clientDistPath = process.env.CLIENT_DIST_PATH || '';
@@ -164,8 +178,8 @@ console.log('[Static] Serving client from:', clientDistPath, '| exists:', fs.exi
 
 if (fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
-    // SPA fallback: serve index.html for any non-API, non-mobile route
-    app.get(/^(?!\/api|\/socket\.io|\/uploads|\/health|\/api-docs|\/mobile|\/assets).*$/, (req, res, next) => {
+    // SPA fallback: serve index.html for any non-API, non-mobile, non-admin route
+    app.get(/^(?!\/api|\/socket\.io|\/uploads|\/health|\/api-docs|\/mobile|\/admin|\/assets).*$/, (req, res, next) => {
         const indexPath = path.join(clientDistPath, 'index.html');
         if (fs.existsSync(indexPath)) {
             res.sendFile(indexPath);
