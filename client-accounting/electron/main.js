@@ -425,7 +425,7 @@ function getLocalIPs() {
     return ips;
 }
 
-function createWindow() {
+async function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
@@ -445,25 +445,63 @@ function createWindow() {
         frame: true
     });
 
-    // Всегда загружаем dist/index.html из файловой системы.
-    // React-приложение само подключается к localhost:5000/api для API.
-    // Это гарантирует мгновенную загрузку UI без ожидания сервера.
-    let distPath;
-    if (isDev) {
-        distPath = path.join(__dirname, '../dist/index.html');
+    // Определяем URL для загрузки
+    const serverUrl = `http://localhost:${SERVER_PORT}`;
+    const mode = readServerMode();
+
+    if (mode === 'server' || mode === 'hybrid') {
+        // Локальный режим: ждём пока сервер будет готов, затем загружаем через HTTP
+        // Это решает проблему чёрного экрана при file:// + API на localhost:5000
+        console.log('[Electron] Waiting for local server to be ready...');
+        const serverReady = await waitForServer(20, 1000);
+
+        if (serverReady) {
+            console.log('[Electron] Server ready! Loading via HTTP:', serverUrl);
+            mainWindow.loadURL(serverUrl);
+        } else {
+            // Fallback: загружаем из файла если сервер не ответил
+            console.log('[Electron] Server not ready, falling back to loadFile');
+            let distPath;
+            if (isDev) {
+                distPath = path.join(__dirname, '../dist/index.html');
+            } else {
+                const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
+                const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
+                distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
+            }
+            console.log('[Electron] Loading dist file:', distPath, '| exists:', fs.existsSync(distPath));
+            mainWindow.loadFile(distPath);
+        }
     } else {
-        const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
-        const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
-        distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
+        // Cloud режим: загружаем из файла (API на облаке)
+        let distPath;
+        if (isDev) {
+            distPath = path.join(__dirname, '../dist/index.html');
+        } else {
+            const unpackedDist = path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'index.html');
+            const asarDist = path.join(app.getAppPath(), 'dist', 'index.html');
+            distPath = fs.existsSync(unpackedDist) ? unpackedDist : asarDist;
+        }
+        console.log('[Electron] Cloud mode, loading dist:', distPath, '| exists:', fs.existsSync(distPath));
+        mainWindow.loadFile(distPath);
     }
-    console.log('[Electron] Loading dist:', distPath, '| exists:', fs.existsSync(distPath));
-    mainWindow.loadFile(distPath);
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
     }
 
-    // DevTools shortcuts disabled in production
+    // Retry-логика: если страница не загрузилась — пробуем снова
+    mainWindow.webContents.on('did-fail-load', async (event, errorCode, errorDescription) => {
+        console.log('[Electron] Page load failed:', errorCode, errorDescription);
+        if (errorCode === -102 || errorCode === -6) { // ERR_CONNECTION_REFUSED / ERR_FILE_NOT_FOUND
+            console.log('[Electron] Retrying in 2 seconds...');
+            await new Promise(r => setTimeout(r, 2000));
+            const retryReady = await waitForServer(10, 1000);
+            if (retryReady) {
+                mainWindow.loadURL(serverUrl);
+            }
+        }
+    });
 
     // Window event handlers
     mainWindow.on('ready-to-show', () => {
@@ -687,9 +725,7 @@ app.whenReady().then(async () => {
             console.log('[App] Mode:', mode, '— starting embedded server...');
             try {
                 startServer();
-                // Даём серверу 2 секунды на инициализацию
-                await new Promise(r => setTimeout(r, 2000));
-                console.log('[App] Server started, proceeding to window...');
+                console.log('[App] Server process started, window will wait for it...');
             } catch (e) {
                 console.error('[App] Server start failed, falling back to cloud:', e.message);
                 mode = 'cloud';
@@ -700,8 +736,8 @@ app.whenReady().then(async () => {
             serverStatus = 'external';
         }
 
-        // Открыть окно
-        createWindow();
+        // Открыть окно (await — createWindow теперь async, ждёт готовности сервера)
+        await createWindow();
 
         // Initialize auto-updater (only in production)
         if (!isDev) {
