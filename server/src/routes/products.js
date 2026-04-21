@@ -89,7 +89,7 @@ router.get('/', authenticate, async (req, res) => {
       SELECT p.id, p.code, p.name, p.category_id, p.unit, 
              p.price_purchase, p.price_sale, p.price_retail, 
              p.vat_rate, p.description, p.barcode, p.image_url, 
-             p.is_active, p.organization_id, p.created_at, p.updated_at,
+             p.is_active, p.organization_id, p.min_stock, p.created_at, p.updated_at,
              pc.name as category_name,
              COALESCE((
                SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
@@ -177,6 +177,71 @@ router.get('/', authenticate, async (req, res) => {
         console.error('Ошибка получения товаров:', error);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
+});
+
+// Получение товаров с низкими остатками
+router.get('/low-stock', authenticate, async (req, res) => {
+    try {
+        const orgId = getOrgId(req);
+        let query = `
+            SELECT p.id, p.code, p.name, p.unit, p.min_stock, p.category_id,
+                   p.price_purchase, p.price_sale, p.is_active, p.barcode,
+                   pc.name as category_name,
+                   COALESCE((
+                     SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
+                                    WHEN im.document_type IN ('sale','write_off','transfer_out') THEN -im.quantity
+                                    ELSE im.quantity END)
+                     FROM inventory_movements im WHERE im.product_id = p.id
+                   ), 0) AS quantity
+            FROM products p
+            LEFT JOIN product_categories pc ON p.category_id = pc.id
+            WHERE (p.is_active = true OR p.is_active IS NULL)
+              AND p.min_stock > 0
+        `;
+        const params = [];
+        let paramCount = 1;
+
+        if (req.user?.user_type !== 'super_admin') {
+            if (orgId) {
+                query += ` AND p.organization_id = $${paramCount}`;
+                params.push(orgId);
+                paramCount++;
+            } else {
+                query += ' AND 1=0';
+            }
+        }
+
+        query += ' ORDER BY p.name';
+        const result = await pool.query(query, params);
+
+        // Filter in JS: only those where quantity < min_stock
+        const lowStock = result.rows.filter(p => parseFloat(p.quantity) <= parseFloat(p.min_stock) * 1.2);
+
+        res.json({ products: lowStock, total: lowStock.length });
+    } catch (error) {
+        console.error('Error fetching low-stock products:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Массовое обновление min_stock
+router.post('/bulk-update-min-stock', authenticate, async (req, res) => {
+    const { updates } = req.body; // [{id, min_stock}, ...]
+    if (!updates || !Array.isArray(updates)) {
+        return res.status(400).json({ error: 'Массив updates обязателен' });
+    }
+    const orgId = getOrgId(req);
+    let updated = 0;
+    for (const { id, min_stock } of updates) {
+        try {
+            let q = 'UPDATE products SET min_stock = $1 WHERE id = $2';
+            const p = [min_stock || 0, id];
+            if (orgId) { q += ' AND organization_id = $3'; p.push(orgId); }
+            const r = await pool.query(q, p);
+            if (r.rowCount > 0) updated++;
+        } catch (e) { /* skip */ }
+    }
+    res.json({ message: `Обновлено ${updated} из ${updates.length}`, updated });
 });
 
 // Получение всех товаров с остатками (MUST be before /:id to prevent Express /:id match)
@@ -308,11 +373,12 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             action = 'UPDATE';
         } else {
             // Create new product
+            const minStock = req.body.minStock || 0;
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, min_stock)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING *`,
-                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null]
+                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null, minStock]
             );
             action = 'CREATE';
         }

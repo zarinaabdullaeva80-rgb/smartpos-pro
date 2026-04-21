@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { productsAPI } from '../services/api';
 import api from '../services/api';
 import { generateBarcode, generateProductCode } from '../services/localStorageService';
-import { Plus, Search, Edit, Trash2, Package, Save, Barcode, RefreshCw, FolderOpen, Folder, ChevronRight, PlusCircle, X, Check, CheckSquare, Square, Move, Power, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Package, Save, Barcode, RefreshCw, FolderOpen, Folder, ChevronRight, PlusCircle, X, Check, CheckSquare, Square, Move, Power, ToggleLeft, ToggleRight, LayoutGrid, List, Grid3X3, ArrowUp, ArrowDown, Filter, AlertTriangle, ChevronLeft, Eye, Table2 } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import { useAutosave } from '../hooks/useAutosave';
 import useActionHandler from '../hooks/useActionHandler';
@@ -30,6 +30,22 @@ function Products() {
     const [showDraftNotice, setShowDraftNotice] = useState(false);
     const [showBarcodeModal, setShowBarcodeModal] = useState(false);
     const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
+
+    // ── Новые состояния: режимы, сортировка, пагинация, фильтры ──
+    const [viewMode, setViewMode] = useState(() => localStorage.getItem('products_viewMode') || 'table');
+    const [sortField, setSortField] = useState(null);
+    const [sortDirection, setSortDirection] = useState('asc');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(() => parseInt(localStorage.getItem('products_perPage')) || 50);
+    const [showFilters, setShowFilters] = useState(false);
+    const [activeTab, setActiveTab] = useState('products'); // 'products' | 'lowstock'
+    const [priceMin, setPriceMin] = useState('');
+    const [priceMax, setPriceMax] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [stockMin, setStockMin] = useState('');
+    const [stockMax, setStockMax] = useState('');
+    const [showLowStockOnly, setShowLowStockOnly] = useState(false);
     const [formData, setFormData] = useState({
         code: '',
         name: '',
@@ -116,7 +132,46 @@ function Products() {
         }
     };
 
-    // Фильтрация по категории, поиску и остаткам
+    // Save viewMode to localStorage
+    useEffect(() => { localStorage.setItem('products_viewMode', viewMode); }, [viewMode]);
+    useEffect(() => { localStorage.setItem('products_perPage', itemsPerPage); }, [itemsPerPage]);
+
+    // Reset page on filter change
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedCategoryId, onlyInStock, priceMin, priceMax, dateFrom, dateTo, stockMin, stockMax, showLowStockOnly, sortField, sortDirection]);
+
+    // Sort handler
+    const handleSort = useCallback((field) => {
+        if (sortField === field) {
+            setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    }, [sortField]);
+
+    const SortIcon = ({ field }) => {
+        if (sortField !== field) return <ArrowUp size={10} style={{ opacity: 0.2 }} />;
+        return sortDirection === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />;
+    };
+
+    // Clear all filters
+    const clearFilters = () => {
+        setPriceMin(''); setPriceMax(''); setDateFrom(''); setDateTo('');
+        setStockMin(''); setStockMax(''); setShowLowStockOnly(false);
+    };
+
+    // Update min_stock inline
+    const handleUpdateMinStock = async (productId, newMinStock) => {
+        try {
+            await api.post('/products/bulk-update-min-stock', { updates: [{ id: productId, min_stock: newMinStock }] });
+            setProducts(prev => prev.map(p => p.id === productId ? { ...p, min_stock: newMinStock } : p));
+            toast.success('Мин. остаток обновлён');
+        } catch (e) {
+            toast.error('Ошибка обновления');
+        }
+    };
+
+    // Фильтрация по категории, поиску, остаткам, ценам, датам
     const filteredProducts = useMemo(() => {
         let result = products;
 
@@ -144,8 +199,53 @@ function Products() {
             result = result.filter(p => (Number(p.quantity) || 0) > 0);
         }
 
+        // Фильтр по цене продажи
+        if (priceMin !== '') result = result.filter(p => (Number(p.price_sale) || 0) >= Number(priceMin));
+        if (priceMax !== '') result = result.filter(p => (Number(p.price_sale) || 0) <= Number(priceMax));
+
+        // Фильтр по дате добавления
+        if (dateFrom) result = result.filter(p => p.created_at && p.created_at >= dateFrom);
+        if (dateTo) result = result.filter(p => p.created_at && p.created_at.slice(0, 10) <= dateTo);
+
+        // Фильтр по остаткам
+        if (stockMin !== '') result = result.filter(p => (Number(p.quantity) || 0) >= Number(stockMin));
+        if (stockMax !== '') result = result.filter(p => (Number(p.quantity) || 0) <= Number(stockMax));
+
+        // Только с низкими остатками
+        if (showLowStockOnly) {
+            result = result.filter(p => {
+                const ms = Number(p.min_stock) || 0;
+                return ms > 0 && (Number(p.quantity) || 0) <= ms;
+            });
+        }
+
+        // Сортировка
+        if (sortField) {
+            result = [...result].sort((a, b) => {
+                let va = a[sortField], vb = b[sortField];
+                if (['price_purchase', 'price_sale', 'price_retail', 'quantity', 'min_stock', 'vat_rate'].includes(sortField)) {
+                    va = Number(va) || 0; vb = Number(vb) || 0;
+                } else if (sortField === 'created_at') {
+                    va = va || ''; vb = vb || '';
+                } else {
+                    va = (va || '').toString().toLowerCase(); vb = (vb || '').toString().toLowerCase();
+                }
+                if (va < vb) return sortDirection === 'asc' ? -1 : 1;
+                if (va > vb) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
         return result;
-    }, [products, selectedCategoryId, onlyInStock, searchTerm]);
+    }, [products, selectedCategoryId, onlyInStock, searchTerm, priceMin, priceMax, dateFrom, dateTo, stockMin, stockMax, showLowStockOnly, sortField, sortDirection]);
+
+    // Пагинация
+    const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+    const paginatedProducts = useMemo(() => {
+        if (itemsPerPage >= filteredProducts.length) return filteredProducts;
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredProducts.slice(start, start + itemsPerPage);
+    }, [filteredProducts, currentPage, itemsPerPage]);
 
     // Подсчёт товаров по категориям
     const categoryCounts = useMemo(() => {
@@ -155,6 +255,14 @@ function Products() {
             else counts[p.category_id] = (counts[p.category_id] || 0) + 1;
         });
         return counts;
+    }, [products]);
+
+    // Количество товаров с низкими остатками (для badge)
+    const lowStockCount = useMemo(() => {
+        return products.filter(p => {
+            const ms = Number(p.min_stock) || 0;
+            return ms > 0 && (Number(p.quantity) || 0) <= ms;
+        }).length;
     }, [products]);
 
     // Общая стоимость товаров
@@ -354,6 +462,17 @@ function Products() {
 
     return (
         <div className="products-page fade-in">
+            {/* ── Вкладки ── */}
+            <div style={{ display: 'flex', gap: '0', marginBottom: '16px', borderBottom: '2px solid var(--bg-secondary, #1e1e2e)' }}>
+                <button onClick={() => setActiveTab('products')} style={{ padding: '10px 20px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: activeTab === 'products' ? 700 : 400, color: activeTab === 'products' ? 'var(--primary)' : 'var(--text-secondary, #aaa)', background: 'none', borderBottom: activeTab === 'products' ? '2px solid var(--primary)' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s' }}>
+                    📦 {t('products.title')}
+                </button>
+                <button onClick={() => setActiveTab('lowstock')} style={{ padding: '10px 20px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: activeTab === 'lowstock' ? 700 : 400, color: activeTab === 'lowstock' ? '#f59e0b' : 'var(--text-secondary, #aaa)', background: 'none', borderBottom: activeTab === 'lowstock' ? '2px solid #f59e0b' : '2px solid transparent', marginBottom: '-2px', transition: 'all 0.2s', position: 'relative' }}>
+                    ⚠️ Мин. остатки
+                    {lowStockCount > 0 && <span style={{ position: 'absolute', top: '4px', right: '2px', background: '#ef4444', color: '#fff', borderRadius: '50%', width: '18px', height: '18px', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{lowStockCount}</span>}
+                </button>
+            </div>
+
             <div className="page-header">
                 <div>
                     <h1>{t('products.title')}</h1>
@@ -422,7 +541,7 @@ function Products() {
 
             <div className="card mb-3">
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', padding: '12px' }}>
-                    <div className="search-bar" style={{ flex: 1, margin: 0, minWidth: '300px' }}>
+                    <div className="search-bar" style={{ flex: 1, margin: 0, minWidth: '200px' }}>
                         <Search size={18} />
                         <input
                             type="text"
@@ -437,19 +556,68 @@ function Products() {
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setOnlyInStock(!onlyInStock)}>
-                        <input 
-                            type="checkbox" 
-                            checked={onlyInStock} 
-                            onChange={() => {}} // Controlled via parent div click for better hit area
-                            style={{ cursor: 'pointer', width: '16px', height: '16px' }} 
-                        />
-                        <span style={{ fontSize: '13px', color: 'var(--text-secondary, #aaa)' }}>
-                            Только в наличии
-                        </span>
+                        <input type="checkbox" checked={onlyInStock} onChange={() => {}} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                        <span style={{ fontSize: '13px', color: 'var(--text-secondary, #aaa)' }}>В наличии</span>
+                    </div>
+
+                    {/* Кнопка фильтров */}
+                    <button className={`btn btn-sm ${showFilters ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowFilters(!showFilters)} style={{ fontSize: '12px' }}>
+                        <Filter size={14} /> Фильтры
+                    </button>
+
+                    {/* Переключатель режимов отображения */}
+                    <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '6px', padding: '2px' }}>
+                        {[
+                            { mode: 'table', icon: <Table2 size={14} />, title: 'Таблица' },
+                            { mode: 'grid', icon: <LayoutGrid size={14} />, title: 'Плитка' },
+                            { mode: 'list', icon: <List size={14} />, title: 'Список' },
+                            { mode: 'icons', icon: <Grid3X3 size={14} />, title: 'Значки' },
+                        ].map(v => (
+                            <button key={v.mode} onClick={() => setViewMode(v.mode)} title={v.title} style={{ padding: '5px 8px', border: 'none', borderRadius: '4px', cursor: 'pointer', background: viewMode === v.mode ? 'var(--primary)' : 'transparent', color: viewMode === v.mode ? '#fff' : 'var(--text-secondary, #aaa)', transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}>
+                                {v.icon}
+                            </button>
+                        ))}
                     </div>
                 </div>
+
+                {/* Панель расширенных фильтров */}
+                {showFilters && (
+                    <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'end' }}>
+                        <div>
+                            <label style={{ fontSize: '10px', color: '#888', display: 'block', marginBottom: '3px' }}>Цена продажи</label>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <input type="number" placeholder="от" value={priceMin} onChange={e => setPriceMin(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                                <input type="number" placeholder="до" value={priceMax} onChange={e => setPriceMax(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '10px', color: '#888', display: 'block', marginBottom: '3px' }}>Дата добавления</label>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                            </div>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '10px', color: '#888', display: 'block', marginBottom: '3px' }}>Остаток</label>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <input type="number" placeholder="от" value={stockMin} onChange={e => setStockMin(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                                <input type="number" placeholder="до" value={stockMax} onChange={e => setStockMax(e.target.value)} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#f59e0b' }}>
+                                <input type="checkbox" checked={showLowStockOnly} onChange={e => setShowLowStockOnly(e.target.checked)} style={{ width: '14px', height: '14px' }} />
+                                ⚠️ Ниже минимума
+                            </label>
+                            <button className="btn btn-secondary btn-sm" onClick={clearFilters} style={{ fontSize: '11px', marginLeft: 'auto' }}>
+                                <X size={12} /> Сбросить
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
+            {activeTab === 'products' && (<>
             {/* Категории — папки */}
             {categories.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
@@ -610,6 +778,7 @@ function Products() {
                 </div>
             )}
 
+            {viewMode === 'table' && (
             <div className="card">
                 {loading ? (
                     <div className="loading-container">
@@ -626,23 +795,17 @@ function Products() {
                         <thead>
                             <tr>
                                 <th style={{ width: '32px', textAlign: 'center' }}>
-                                    <input
-                                        type="checkbox"
-                                        onChange={handleSelectAll}
-                                        checked={filteredProducts.length > 0 && selectedIds.size === filteredProducts.length}
-                                        title="Выбрать все"
-                                        style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                    />
+                                    <input type="checkbox" onChange={handleSelectAll} checked={filteredProducts.length > 0 && selectedIds.size === filteredProducts.length} title="Выбрать все" style={{ cursor: 'pointer', width: '14px', height: '14px' }} />
                                 </th>
                                 <th>№</th>
-                                <th>{t('products.code')}</th>
-                                <th>{t('products.name')}</th>
-                                <th>{t('products.category')}</th>
+                                <th onClick={() => handleSort('code')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.code')} <SortIcon field="code" /></th>
+                                <th onClick={() => handleSort('name')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.name')} <SortIcon field="name" /></th>
+                                <th onClick={() => handleSort('category_name')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.category')} <SortIcon field="category_name" /></th>
                                 <th>{t('products.unit')}</th>
-                                <th>{t('products.quantity')}</th>
-                                <th>{t('products.pricePurchase')}</th>
-                                <th>{t('products.priceSale')}</th>
-                                <th>{t('products.priceRetail', 'Розница')}</th>
+                                <th onClick={() => handleSort('quantity')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.quantity')} <SortIcon field="quantity" /></th>
+                                <th onClick={() => handleSort('price_purchase')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.pricePurchase')} <SortIcon field="price_purchase" /></th>
+                                <th onClick={() => handleSort('price_sale')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.priceSale')} <SortIcon field="price_sale" /></th>
+                                <th onClick={() => handleSort('price_retail')} style={{ cursor: 'pointer', userSelect: 'none' }}>{t('products.priceRetail', 'Розница')} <SortIcon field="price_retail" /></th>
                                 <th>{t('common.status')}</th>
                                 <th>{t('common.actions')}</th>
                             </tr>
@@ -701,18 +864,13 @@ function Products() {
                                     </td>
                                 </tr>
                             )}
-                            {filteredProducts.map((product) => (
+                            {paginatedProducts.map((product, idx) => (
                                 <React.Fragment key={product.id}>
                                 <tr style={{ lineHeight: '1.2', background: selectedIds.has(product.id) ? 'rgba(255,80,80,0.08)' : (!product.is_active ? 'rgba(255,255,255,0.03)' : undefined), opacity: product.is_active ? 1 : 0.5 }}>
                                     <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIds.has(product.id)}
-                                            onChange={() => handleSelectOne(product.id)}
-                                            style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                        />
+                                        <input type="checkbox" checked={selectedIds.has(product.id)} onChange={() => handleSelectOne(product.id)} style={{ cursor: 'pointer', width: '14px', height: '14px' }} />
                                     </td>
-                                    <td style={{ padding: '6px 8px', color: '#666', fontSize: '11px' }}>{filteredProducts.indexOf(product) + 1}</td>
+                                    <td style={{ padding: '6px 8px', color: '#666', fontSize: '11px' }}>{(currentPage - 1) * itemsPerPage + idx + 1}</td>
                                     <td style={{ padding: '6px 8px' }}><code style={{ fontSize: '11px' }}>{product.code}</code></td>
                                     <td style={{ padding: '6px 8px', maxWidth: '300px', whiteSpace: 'normal', wordBreak: 'break-word' }}><strong>{product.name}</strong></td>
                                     <td style={{ padding: '6px 8px' }}>{product.category_name || '—'}</td>
@@ -797,6 +955,136 @@ function Products() {
                     </table>
                 )}
             </div>
+            )}
+
+            {/* ── Grid/List/Icons views ── */}
+            {viewMode === 'grid' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px', marginTop: '8px' }}>
+                    {paginatedProducts.map(product => (
+                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '10px', padding: '14px', border: '1px solid rgba(255,255,255,0.06)', transition: 'transform 0.2s', cursor: 'pointer' }} onClick={() => handleEdit(product)}>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '4px' }}>{product.code}</div>
+                            <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '8px', lineHeight: 1.3 }}>{product.name}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                                <span style={{ color: '#aaa' }}>Остаток</span>
+                                <strong style={{ color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#10b981' }}>{product.quantity || 0}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                <span style={{ color: '#aaa' }}>Цена</span>
+                                <strong style={{ color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</strong>
+                            </div>
+                            {product.category_name && <div style={{ fontSize: '10px', color: '#666', marginTop: '6px' }}>📁 {product.category_name}</div>}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {viewMode === 'list' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' }}>
+                    {paginatedProducts.map((product, idx) => (
+                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 14px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '6px', fontSize: '13px' }}>
+                            <span style={{ color: '#666', width: '30px', fontSize: '11px' }}>{(currentPage-1)*itemsPerPage+idx+1}</span>
+                            <code style={{ fontSize: '11px', color: '#888', width: '80px' }}>{product.code}</code>
+                            <strong style={{ flex: 1 }}>{product.name}</strong>
+                            <span style={{ width: '60px', textAlign: 'right' }}>{product.quantity || 0}</span>
+                            <span style={{ width: '100px', textAlign: 'right', color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</span>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(product)} style={{ padding: '2px 5px' }}><Edit size={12} /></button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(product.id)} style={{ padding: '2px 5px' }}><Trash2 size={12} /></button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {viewMode === 'icons' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px', marginTop: '8px' }}>
+                    {paginatedProducts.map(product => (
+                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '12px', padding: '16px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'transform 0.2s' }} onClick={() => handleEdit(product)}>
+                            <div style={{ width: '60px', height: '60px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={28} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Пагинация ── */}
+            {filteredProducts.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', marginTop: '8px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '8px', fontSize: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ color: '#aaa' }}>Показано {Math.min((currentPage-1)*itemsPerPage+1, filteredProducts.length)}–{Math.min(currentPage*itemsPerPage, filteredProducts.length)} из <strong style={{ color: '#fff' }}>{filteredProducts.length}</strong></span>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        <button disabled={currentPage <= 1} onClick={() => setCurrentPage(p => p-1)} className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }}><ChevronLeft size={14} /></button>
+                        {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                            let page;
+                            if (totalPages <= 7) page = i + 1;
+                            else if (currentPage <= 4) page = i + 1;
+                            else if (currentPage >= totalPages - 3) page = totalPages - 6 + i;
+                            else page = currentPage - 3 + i;
+                            return (
+                                <button key={page} onClick={() => setCurrentPage(page)} style={{ padding: '4px 8px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: currentPage === page ? 700 : 400, background: currentPage === page ? 'var(--primary)' : 'transparent', color: currentPage === page ? '#fff' : '#aaa' }}>{page}</button>
+                            );
+                        })}
+                        <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p+1)} className="btn btn-secondary btn-sm" style={{ padding: '4px 8px' }}><ChevronRight size={14} /></button>
+                    </div>
+                    <select value={itemsPerPage} onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }} style={{ fontSize: '12px', padding: '4px 8px' }}>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={99999}>Все</option>
+                    </select>
+                </div>
+            )}
+            </>)}
+
+            {/* ── Вкладка «Мин. остатки» ── */}
+            {activeTab === 'lowstock' && (
+                <div className="card">
+                    <div style={{ padding: '14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                        <h3 style={{ margin: 0, fontSize: '15px' }}>⚠️ Мониторинг минимальных остатков</h3>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#aaa' }}>Товары с установленным лимитом. Настройте мин. остаток для предупреждений.</p>
+                    </div>
+                    <table style={{ fontSize: '12px' }}>
+                        <thead>
+                            <tr>
+                                <th>№</th>
+                                <th>Код</th>
+                                <th>Наименование</th>
+                                <th>Категория</th>
+                                <th>Текущий остаток</th>
+                                <th>Мин. остаток</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {products.map((product, idx) => {
+                                const qty = Number(product.quantity) || 0;
+                                const ms = Number(product.min_stock) || 0;
+                                let status, statusColor;
+                                if (ms === 0) { status = '—'; statusColor = '#666'; }
+                                else if (qty <= ms) { status = '🔴 Ниже минимума'; statusColor = '#ef4444'; }
+                                else if (qty <= ms * 1.2) { status = '🟡 На грани'; statusColor = '#f59e0b'; }
+                                else { status = '🟢 Достаточно'; statusColor = '#10b981'; }
+                                return (
+                                    <tr key={product.id} style={{ background: ms > 0 && qty <= ms ? 'rgba(239,68,68,0.06)' : undefined }}>
+                                        <td style={{ padding: '6px 8px', color: '#666' }}>{idx + 1}</td>
+                                        <td style={{ padding: '6px 8px' }}><code style={{ fontSize: '11px' }}>{product.code}</code></td>
+                                        <td style={{ padding: '6px 8px' }}><strong>{product.name}</strong></td>
+                                        <td style={{ padding: '6px 8px' }}>{product.category_name || '—'}</td>
+                                        <td style={{ padding: '6px 8px', fontWeight: 600, color: ms > 0 && qty <= ms ? '#ef4444' : '#fff' }}>{qty}</td>
+                                        <td style={{ padding: '6px 8px' }}>
+                                            <input type="number" min="0" value={ms} onChange={e => handleUpdateMinStock(product.id, parseInt(e.target.value) || 0)} onBlur={e => handleUpdateMinStock(product.id, parseInt(e.target.value) || 0)} style={{ width: '70px', fontSize: '12px', padding: '3px 6px', textAlign: 'center' }} />
+                                        </td>
+                                        <td style={{ padding: '6px 8px', color: statusColor, fontSize: '11px', fontWeight: 500 }}>{status}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {/* Modal */}
             {showModal && (
