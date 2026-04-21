@@ -275,12 +275,68 @@ router.post('/login', async (req, res) => {
                 return res.status(401).json({ error: 'Неверные учетные данные' });
             }
 
-            // ★ Проверка: пользователь должен принадлежать к лицензии, введённой клиентом
-            if (expectedLicenseId && userLicenseId && userLicenseId !== expectedLicenseId) {
-                console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
-                return res.status(401).json({ 
-                    error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
-                });
+            // ★ Проверка принадлежности пользователя к лицензии
+            if (expectedLicenseId) {
+                // license_key передан И найден в локальной БД — строгая проверка
+                if (userLicenseId && userLicenseId !== expectedLicenseId) {
+                    console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
+                    return res.status(401).json({ 
+                        error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
+                    });
+                }
+                if (!userLicenseId) {
+                    // Пользователь НЕ привязан — проверяем, это его лицензия?
+                    try {
+                        const licOwner = await pool.query(
+                            'SELECT customer_username FROM licenses WHERE id = $1',
+                            [expectedLicenseId]
+                        );
+                        const licUsername = licOwner.rows[0]?.customer_username;
+                        if (licUsername && licUsername.toLowerCase() !== username.toLowerCase()) {
+                            console.warn(`[AUTH] User "${username}" tried to use license #${expectedLicenseId} owned by "${licUsername}"`);
+                            return res.status(401).json({ 
+                                error: 'Логин не соответствует владельцу лицензии.' 
+                            });
+                        }
+                        // Автопривязка
+                        if (licUsername && licUsername.toLowerCase() === username.toLowerCase()) {
+                            try {
+                                await pool.query('UPDATE users SET license_id = $1 WHERE id = $2', [expectedLicenseId, user.id]);
+                                userLicenseId = expectedLicenseId;
+                                console.log(`[AUTH] Auto-bound user "${username}" to license #${expectedLicenseId}`);
+                            } catch (e) { /* license_id column may not exist */ }
+                        }
+                    } catch (e) {
+                        console.log('License owner check error:', e.message);
+                    }
+                }
+            } else if (license_key && !expectedLicenseId) {
+                // license_key передан, но НЕ найден в локальной БД
+                // Ключ уже проверен клиентом на центральном сервере — разрешаем вход
+                console.log(`[AUTH] License key "${license_key.substring(0,8)}..." not in local DB, trusting client validation`);
+            } else if (!license_key) {
+                // ★ license_key НЕ передан ВООБЩЕ — блокируем если пользователь лицензионный
+                if (userLicenseId) {
+                    console.warn(`[AUTH] User "${username}" has license_id=${userLicenseId} but no license_key sent`);
+                    return res.status(401).json({ 
+                        error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
+                        code: 'LICENSE_KEY_REQUIRED'
+                    });
+                }
+                // Проверить в таблице licenses
+                try {
+                    const licByUser = await pool.query(
+                        'SELECT id FROM licenses WHERE LOWER(customer_username) = LOWER($1) AND status = $2',
+                        [username, 'active']
+                    );
+                    if (licByUser.rows.length > 0) {
+                        console.warn(`[AUTH] User "${username}" is license owner but no license_key sent`);
+                        return res.status(401).json({ 
+                            error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
+                            code: 'LICENSE_KEY_REQUIRED'
+                        });
+                    }
+                } catch (e) { /* licenses table may not exist */ }
             }
 
             // Проверить статус лицензии (если привязана)

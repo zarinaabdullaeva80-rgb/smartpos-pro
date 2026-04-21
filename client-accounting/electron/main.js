@@ -34,15 +34,15 @@ const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 function log(message, ...args) {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] ${message} ${args.map(a => JSON.stringify(a)).join(' ')}\n`;
-    process.stdout.write(formatted);
-    logStream.write(formatted);
+    try { process.stdout.write(formatted); } catch (e) { /* EPIPE — pipe broken, ignore */ }
+    try { logStream.write(formatted); } catch (e) { /* ignore */ }
 }
 
 function logError(message, ...args) {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [ERROR] ${message} ${args.map(a => JSON.stringify(a)).join(' ')}\n`;
-    process.stderr.write(formatted);
-    logStream.write(formatted);
+    try { process.stderr.write(formatted); } catch (e) { /* EPIPE — pipe broken, ignore */ }
+    try { logStream.write(formatted); } catch (e) { /* ignore */ }
 }
 
 // Redirect console to our log functions
@@ -223,6 +223,31 @@ function ensureServerSetup(serverPath) {
     }
 }
 
+// Убить процесс, занимающий указанный порт (Windows)
+function killPort(port) {
+    try {
+        const { execSync } = require('child_process');
+        const result = execSync(`netstat -aon | findstr ":${port}" | findstr "LISTEN"`, { encoding: 'utf8', timeout: 5000 }).trim();
+        if (result) {
+            const lines = result.split('\n');
+            const pids = new Set();
+            lines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                const pid = parts[parts.length - 1];
+                if (pid && pid !== '0') pids.add(pid);
+            });
+            pids.forEach(pid => {
+                try {
+                    execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'pipe', timeout: 5000 });
+                    console.log(`[Server] Killed leftover process on port ${port}, PID: ${pid}`);
+                } catch (e) { /* процесс уже мёртв */ }
+            });
+        }
+    } catch (e) {
+        // Порт свободен — это нормально
+    }
+}
+
 // Start the embedded server
 function startServer() {
     // Path to server folder - in production it's bundled with the app
@@ -359,6 +384,9 @@ function startServer() {
     console.log('[Server] DATABASE_URL set:', !!serverEnv.DATABASE_URL);
 
 
+    // Убить остаточные процессы на порту (от прошлого запуска)
+    killPort(SERVER_PORT);
+
     // Start server process
     serverProcess = spawn('node', [serverEntry], {
         cwd: serverPath,
@@ -368,13 +396,16 @@ function startServer() {
         shell: false
     });
 
+    // Защита от EPIPE: если pipe закрыт — не крашимся
     serverProcess.stdout.on('data', (data) => {
-        console.log('[Server]', data.toString().trim());
+        try { console.log('[Server]', data.toString().trim()); } catch (e) { /* pipe closed */ }
     });
+    serverProcess.stdout.on('error', () => { /* ignore pipe errors */ });
 
     serverProcess.stderr.on('data', (data) => {
-        console.error('[Server Error]', data.toString().trim());
+        try { console.error('[Server Error]', data.toString().trim()); } catch (e) { /* pipe closed */ }
     });
+    serverProcess.stderr.on('error', () => { /* ignore pipe errors */ });
 
     serverProcess.on('error', (err) => {
         console.error('[Server] Failed to start:', err.message);
@@ -399,11 +430,23 @@ function startServer() {
     console.log('[Server] Server started with PID:', serverProcess.pid);
 }
 
-// Stop the server
+// Stop the server — надёжное убийство процесса (Windows не обрабатывает SIGTERM)
 function stopServer() {
     if (serverProcess) {
-        console.log('[Server] Stopping server...');
-        serverProcess.kill('SIGTERM');
+        const pid = serverProcess.pid;
+        console.log('[Server] Stopping server PID:', pid);
+        try {
+            // Windows: taskkill /T убивает всё дерево процессов
+            if (process.platform === 'win32') {
+                const { execSync } = require('child_process');
+                execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'pipe', timeout: 5000 });
+            } else {
+                serverProcess.kill('SIGTERM');
+            }
+        } catch (e) {
+            // Процесс уже мёртв — это нормально
+            console.log('[Server] Process already dead:', e.message);
+        }
         serverProcess = null;
         serverStatus = 'stopped';
         serverStartTime = null;
@@ -453,9 +496,14 @@ async function createWindow() {
         // Локальный режим: ждём пока сервер будет готов, затем загружаем через HTTP
         // Это решает проблему чёрного экрана при file:// + API на localhost:5000
         console.log('[Electron] Waiting for local server to be ready...');
-        const serverReady = await waitForServer(20, 1000);
+        const serverReady = await waitForServer();
 
         if (serverReady) {
+            // Очистить кэш чтобы всегда загружать свежие ассеты
+            try {
+                await mainWindow.webContents.session.clearCache();
+                console.log('[Electron] Cache cleared before loading');
+            } catch (e) { /* ignore */ }
             console.log('[Electron] Server ready! Loading via HTTP:', serverUrl);
             mainWindow.loadURL(serverUrl);
         } else {
@@ -667,14 +715,15 @@ ipcMain.handle('get-update-info', () => {
     return null;
 });
 
-// Ждать пока сервер будет готов (проверка /api/health)
-async function waitForServer(maxAttempts = 15, intervalMs = 1000) {
+// Ждать пока сервер будет готов (проверка /health)
+async function waitForServer(maxAttempts = 30, intervalMs = 1000) {
     const http = require('http');
     for (let i = 0; i < maxAttempts; i++) {
         try {
             const isAlive = await new Promise((resolve) => {
-                const req = http.get(`http://localhost:${SERVER_PORT}/api/health`, (res) => {
-                    resolve(res.statusCode === 200);
+                // 127.0.0.1 вместо localhost — Windows может резолвить localhost в IPv6 (::1)
+                const req = http.get(`http://127.0.0.1:${SERVER_PORT}/health`, (res) => {
+                    resolve(true); // Любой ответ = сервер жив
                 });
                 req.on('error', () => resolve(false));
                 req.setTimeout(2000, () => { req.destroy(); resolve(false); });
@@ -684,6 +733,9 @@ async function waitForServer(maxAttempts = 15, intervalMs = 1000) {
                 return true;
             }
         } catch (e) { /* retry */ }
+        if (i % 5 === 4) {
+            console.log(`[Server] Still waiting... attempt ${i + 1}/${maxAttempts}`);
+        }
         await new Promise(r => setTimeout(r, intervalMs));
     }
     console.log('[Server] Not ready after max attempts, opening window anyway');
@@ -697,6 +749,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 process.on('uncaughtException', (err) => {
+    // Игнорируем EPIPE — случается при закрытии pipe (нормально при запуске из консоли)
+    if (err.code === 'EPIPE' || err.message?.includes('EPIPE')) return;
     console.error('[App] UncaughtException (caught):', err.message);
     // НЕ крашим приложение
 });

@@ -275,12 +275,68 @@ router.post('/login', async (req, res) => {
                 return res.status(401).json({ error: 'Неверные учетные данные' });
             }
 
-            // ★ Проверка: пользователь должен принадлежать к лицензии, введённой клиентом
-            if (expectedLicenseId && userLicenseId && userLicenseId !== expectedLicenseId) {
-                console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
-                return res.status(401).json({ 
-                    error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
-                });
+            // ★ Проверка принадлежности пользователя к лицензии
+            if (expectedLicenseId) {
+                // license_key передан И найден в локальной БД — строгая проверка
+                if (userLicenseId && userLicenseId !== expectedLicenseId) {
+                    console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
+                    return res.status(401).json({ 
+                        error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
+                    });
+                }
+                if (!userLicenseId) {
+                    // Пользователь НЕ привязан — проверяем, это его лицензия?
+                    try {
+                        const licOwner = await pool.query(
+                            'SELECT customer_username FROM licenses WHERE id = $1',
+                            [expectedLicenseId]
+                        );
+                        const licUsername = licOwner.rows[0]?.customer_username;
+                        if (licUsername && licUsername.toLowerCase() !== username.toLowerCase()) {
+                            console.warn(`[AUTH] User "${username}" tried to use license #${expectedLicenseId} owned by "${licUsername}"`);
+                            return res.status(401).json({ 
+                                error: 'Логин не соответствует владельцу лицензии.' 
+                            });
+                        }
+                        // Автопривязка
+                        if (licUsername && licUsername.toLowerCase() === username.toLowerCase()) {
+                            try {
+                                await pool.query('UPDATE users SET license_id = $1 WHERE id = $2', [expectedLicenseId, user.id]);
+                                userLicenseId = expectedLicenseId;
+                                console.log(`[AUTH] Auto-bound user "${username}" to license #${expectedLicenseId}`);
+                            } catch (e) { /* license_id column may not exist */ }
+                        }
+                    } catch (e) {
+                        console.log('License owner check error:', e.message);
+                    }
+                }
+            } else if (license_key && !expectedLicenseId) {
+                // license_key передан, но НЕ найден в локальной БД
+                // Ключ уже проверен клиентом на центральном сервере — разрешаем вход
+                console.log(`[AUTH] License key "${license_key.substring(0,8)}..." not in local DB, trusting client validation`);
+            } else if (!license_key) {
+                // ★ license_key НЕ передан — блокируем если пользователь лицензионный
+                if (userLicenseId) {
+                    console.warn(`[AUTH] User "${username}" has license_id=${userLicenseId} but no license_key sent`);
+                    return res.status(401).json({ 
+                        error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
+                        code: 'LICENSE_KEY_REQUIRED'
+                    });
+                }
+                // Проверить в таблице licenses
+                try {
+                    const licByUser = await pool.query(
+                        'SELECT id FROM licenses WHERE LOWER(customer_username) = LOWER($1) AND status = $2',
+                        [username, 'active']
+                    );
+                    if (licByUser.rows.length > 0) {
+                        console.warn(`[AUTH] User "${username}" is license owner but no license_key sent`);
+                        return res.status(401).json({ 
+                            error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
+                            code: 'LICENSE_KEY_REQUIRED'
+                        });
+                    }
+                } catch (e) { /* licenses table may not exist */ }
             }
 
             // Проверить статус лицензии (если привязана)
@@ -422,6 +478,76 @@ router.post('/login', async (req, res) => {
 });
 
 // Получение текущего пользователя (с authenticate middleware)
+// ★ Отдельный endpoint для админ-панели (без проверки license_key)
+router.post('/admin-login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Логин и пароль обязательны' });
+        }
+
+        console.log('[ADMIN-LOGIN] Attempt for:', username);
+
+        // Поиск пользователя
+        let result;
+        try {
+            result = await pool.query(
+                'SELECT id, username, email, password_hash, full_name, role, is_active, organization_id FROM users WHERE LOWER(username) = LOWER($1)',
+                [username]
+            );
+        } catch (e) {
+            return res.status(500).json({ error: 'Ошибка базы данных' });
+        }
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Неверные учетные данные' });
+        }
+
+        const user = result.rows[0];
+
+        if (!user.is_active) {
+            return res.status(401).json({ error: 'Учетная запись деактивирована' });
+        }
+
+        // Проверка пароля
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) {
+            return res.status(401).json({ error: 'Неверные учетные данные' });
+        }
+
+        // ★ Проверка роли — только администраторы
+        const role = (user.role || '').toLowerCase();
+        if (role !== 'администратор' && role !== 'admin' && role !== 'superadmin') {
+            console.warn(`[ADMIN-LOGIN] Non-admin user "${username}" tried admin-login (role: ${user.role})`);
+            return res.status(403).json({ error: 'Доступ разрешён только администраторам' });
+        }
+
+        // Генерация токена (без licenseId — это админ-сессия)
+        const token = jwt.sign(
+            { userId: user.id, username: user.username, role: user.role, organization_id: user.organization_id || 1, adminMode: true },
+            process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+            { expiresIn: '24h' } // Короткий срок для админ-панели
+        );
+
+        console.log('[ADMIN-LOGIN] Success for:', username);
+
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                fullName: user.full_name,
+                role: user.role,
+                organization_id: user.organization_id || 1
+            }
+        });
+    } catch (error) {
+        console.error('[ADMIN-LOGIN] Error:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
 router.get('/me', async (req, res) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];

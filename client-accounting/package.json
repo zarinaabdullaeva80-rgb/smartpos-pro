@@ -90,7 +90,7 @@
                 "filter": ["icon.ico"]
             },
             {
-                "from": "temp-server",
+                "from": "../server",
                 "to": "server",
                 "filter": ["**/*"]
             }
