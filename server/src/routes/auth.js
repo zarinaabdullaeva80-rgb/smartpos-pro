@@ -386,6 +386,27 @@ router.post('/login', async (req, res) => {
             }
         }
 
+        // ★ Авто-привязка organization_id при первом логине (если отсутствует)
+        if (!user.organization_id && userLicenseId) {
+            try {
+                // Найти организацию привязанную к лицензии
+                const orgLookup = await pool.query(
+                    `SELECT o.id FROM organizations o
+                     JOIN licenses l ON (l.organization_id = o.id OR o.license_key = l.license_key)
+                     WHERE l.id = $1 LIMIT 1`,
+                    [userLicenseId]
+                );
+                if (orgLookup.rows.length > 0) {
+                    user.organization_id = orgLookup.rows[0].id;
+                    await pool.query('UPDATE users SET organization_id = $1 WHERE id = $2',
+                        [user.organization_id, user.id]);
+                    console.log(`[AUTH] Auto-bound user "${user.username}" → organization_id=${user.organization_id}`);
+                }
+            } catch (orgErr) {
+                console.log('[AUTH] Org auto-bind error:', orgErr.message);
+            }
+        }
+
         // Обновление времени последнего входа
         try {
             await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
@@ -413,7 +434,7 @@ router.post('/login', async (req, res) => {
 
         // Генерация токена
         const token = jwt.sign(
-            { userId: user.id, username: user.username, role: primaryRole, licenseId: userLicenseId, organization_id: user.organization_id || 1 },
+            { userId: user.id, username: user.username, role: primaryRole, licenseId: userLicenseId, organization_id: user.organization_id || null },
             process.env.JWT_SECRET || 'your-secret-key-change-in-production',
             { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
         );
@@ -464,7 +485,7 @@ router.post('/login', async (req, res) => {
                 role: primaryRole,
                 roles: userRoles,
                 license_id: userLicenseId,
-                organization_id: user.organization_id || 1,
+                organization_id: user.organization_id || null,
                 user_type: user.user_type || 'employee',
                 is_first_login: isFirstTimeLicenseLogin
             },
@@ -524,7 +545,7 @@ router.post('/admin-login', async (req, res) => {
 
         // Генерация токена (без licenseId — это админ-сессия)
         const token = jwt.sign(
-            { userId: user.id, username: user.username, role: user.role, organization_id: user.organization_id || 1, adminMode: true },
+            { userId: user.id, username: user.username, role: user.role, organization_id: user.organization_id || null, adminMode: true },
             process.env.JWT_SECRET || 'your-secret-key-change-in-production',
             { expiresIn: '24h' } // Короткий срок для админ-панели
         );
@@ -539,7 +560,7 @@ router.post('/admin-login', async (req, res) => {
                 email: user.email,
                 fullName: user.full_name,
                 role: user.role,
-                organization_id: user.organization_id || 1
+                organization_id: user.organization_id || null
             }
         });
     } catch (error) {
@@ -585,7 +606,7 @@ router.get('/me', async (req, res) => {
             license_id: user.license_id,
             shop_id: user.shop_id,
             user_type: user.user_type,
-            organization_id: user.organization_id || 1
+            organization_id: user.organization_id || null
         });
     } catch (error) {
         res.status(401).json({ error: 'Недействительный токен' });

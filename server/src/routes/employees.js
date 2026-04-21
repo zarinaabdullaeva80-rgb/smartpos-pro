@@ -160,7 +160,7 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
 
         // Create employee — license_id is the real tenant key
         const licenseId = req.user.license_id;
-        const effectiveOrgId = getOrgId(req) || req.user.organization_id || 1;
+        const effectiveOrgId = getOrgId(req) || req.user.organization_id;
         const result = await pool.query(
             `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, license_id)
              VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $8)

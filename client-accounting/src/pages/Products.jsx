@@ -565,15 +565,19 @@ function Products() {
                         <Filter size={14} /> Фильтры
                     </button>
 
-                    {/* Переключатель режимов отображения */}
-                    <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '6px', padding: '2px' }}>
+                    {/* Переключатель режимов отображения (8 режимов) */}
+                    <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '6px', padding: '2px', flexWrap: 'wrap' }}>
                         {[
+                            { mode: 'icons-huge', icon: '🖼️', title: 'Огромные значки' },
+                            { mode: 'icons-large', icon: '🔲', title: 'Крупные значки' },
+                            { mode: 'icons', icon: <Grid3X3 size={14} />, title: 'Обычные значки' },
+                            { mode: 'icons-small', icon: '▪️', title: 'Мелкие значки' },
+                            { mode: 'list', icon: <List size={14} />, title: 'Список' },
                             { mode: 'table', icon: <Table2 size={14} />, title: 'Таблица' },
                             { mode: 'grid', icon: <LayoutGrid size={14} />, title: 'Плитка' },
-                            { mode: 'list', icon: <List size={14} />, title: 'Список' },
-                            { mode: 'icons', icon: <Grid3X3 size={14} />, title: 'Значки' },
+                            { mode: 'content', icon: <Eye size={14} />, title: 'Содержимое' },
                         ].map(v => (
-                            <button key={v.mode} onClick={() => setViewMode(v.mode)} title={v.title} style={{ padding: '5px 8px', border: 'none', borderRadius: '4px', cursor: 'pointer', background: viewMode === v.mode ? 'var(--primary)' : 'transparent', color: viewMode === v.mode ? '#fff' : 'var(--text-secondary, #aaa)', transition: 'all 0.2s', display: 'flex', alignItems: 'center' }}>
+                            <button key={v.mode} onClick={() => setViewMode(v.mode)} title={v.title} style={{ padding: '5px 8px', border: 'none', borderRadius: '4px', cursor: 'pointer', background: viewMode === v.mode ? 'var(--primary)' : 'transparent', color: viewMode === v.mode ? '#fff' : 'var(--text-secondary, #aaa)', transition: 'all 0.2s', display: 'flex', alignItems: 'center', fontSize: '12px' }}>
                                 {v.icon}
                             </button>
                         ))}
@@ -1006,6 +1010,106 @@ function Products() {
                             <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
                             <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
                             <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Огромные значки (256px) ── */}
+            {viewMode === 'icons-huge' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px', marginTop: '8px' }}>
+                    {paginatedProducts.map(product => (
+                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '16px', padding: '24px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.3s ease' }} onClick={() => handleEdit(product)}
+                             onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(99,102,241,0.2)'; }}
+                             onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
+                            <div style={{ width: '120px', height: '120px', borderRadius: '20px', background: 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.25))', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={56} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '6px', lineHeight: 1.3 }}>{product.name}</div>
+                            <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>{product.code}</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, color: '#f59e0b', marginBottom: '4px' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '12px', marginTop: '8px' }}>
+                                <span style={{ color: '#aaa' }}>Ост: <strong style={{ color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#10b981' }}>{product.quantity || 0}</strong></span>
+                                {product.category_name && <span style={{ color: '#666' }}>📁 {product.category_name}</span>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Крупные значки (128px) ── */}
+            {viewMode === 'icons-large' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px', marginTop: '8px' }}>
+                    {paginatedProducts.map(product => (
+                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '14px', padding: '18px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s ease' }} onClick={() => handleEdit(product)}
+                             onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
+                             onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}>
+                            <div style={{ width: '80px', height: '80px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={38} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Мелкие значки (32px) ── */}
+            {viewMode === 'icons-small' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
+                    {paginatedProducts.map(product => (
+                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.15s', minWidth: '180px', maxWidth: '260px' }} onClick={() => handleEdit(product)}
+                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.12)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
+                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-secondary, #1e1e2e)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)'; }}>
+                            <div style={{ width: '24px', height: '24px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Package size={12} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{product.name}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Содержимое (детальный список) ── */}
+            {viewMode === 'content' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                    {paginatedProducts.map((product, idx) => (
+                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => handleEdit(product)}
+                             onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
+                             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}>
+                            {/* Иконка */}
+                            <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <Package size={24} style={{ color: 'var(--primary)' }} />
+                            </div>
+                            {/* Основная инфо */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                    <strong style={{ fontSize: '14px' }}>{product.name}</strong>
+                                    <code style={{ fontSize: '10px', color: '#666', background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: '3px' }}>{product.code}</code>
+                                </div>
+                                <div style={{ display: 'flex', gap: '14px', fontSize: '11px', color: '#888', flexWrap: 'wrap' }}>
+                                    {product.category_name && <span>📁 {product.category_name}</span>}
+                                    {product.barcode && <span>🏷️ {product.barcode}</span>}
+                                    <span>📦 {product.unit}</span>
+                                    {product.description && <span style={{ opacity: 0.7, maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📝 {product.description}</span>}
+                                </div>
+                            </div>
+                            {/* Цены */}
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <div style={{ fontSize: '15px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
+                                <div style={{ fontSize: '11px', color: '#666' }}>Закуп: {formatCurrency(product.price_purchase)}</div>
+                            </div>
+                            {/* Остаток */}
+                            <div style={{ textAlign: 'center', flexShrink: 0, minWidth: '60px' }}>
+                                <div style={{ fontSize: '16px', fontWeight: 700, color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#10b981' }}>{product.quantity || 0}</div>
+                                <div style={{ fontSize: '10px', color: '#666' }}>остаток</div>
+                            </div>
+                            {/* Действия */}
+                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                                <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); handleEdit(product); }} style={{ padding: '4px 6px' }}><Edit size={12} /></button>
+                                <button className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); handleDelete(product.id); }} style={{ padding: '4px 6px' }}><Trash2 size={12} /></button>
+                            </div>
                         </div>
                     ))}
                 </div>

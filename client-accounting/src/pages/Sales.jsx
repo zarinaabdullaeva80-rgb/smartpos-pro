@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI } from '../services/api';
 import api from '../services/api';
-import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus, Scan, Volume2, AlertCircle } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import ReceiptPrinter from '../components/ReceiptPrinter';
 import QRPaymentModal from '../components/QRPaymentModal';
@@ -34,6 +34,16 @@ function Sales() {
     const [returnItems, setReturnItems] = useState([{ product_id: '', quantity: 1, price: 0 }]);
     const [returnReason, setReturnReason] = useState('');
     const [returnNotes, setReturnNotes] = useState('');
+
+    // ── Режим сканера ──
+    const [showScannerMode, setShowScannerMode] = useState(false);
+    const [scanBuffer, setScanBuffer] = useState('');
+    const [scanHistory, setScanHistory] = useState([]);
+    const [scannerItems, setScannerItems] = useState([]);
+    const [scannerSound, setScannerSound] = useState(true);
+    const [lastScanResult, setLastScanResult] = useState(null); // { success, message, product }
+    const scanTimerRef = useRef(null);
+    const scanInputRef = useRef(null);
 
     const [formData, setFormData] = useState({
         documentNumber: '',
@@ -397,6 +407,19 @@ function Sales() {
                     <button className="btn btn-warning" onClick={() => setShowReturnModal(true)} style={{ color: '#fff' }}>
                         <RotateCcw size={20} />
                         {t('sales.return', 'Возврат')}
+                    </button>
+                    <button
+                        className="btn"
+                        onClick={() => {
+                            setShowScannerMode(true);
+                            setScannerItems([]);
+                            setScanHistory([]);
+                            setLastScanResult(null);
+                        }}
+                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', fontWeight: 600 }}
+                    >
+                        <Scan size={20} />
+                        Продажа по сканеру
                     </button>
                     <button className="btn btn-primary" onClick={handleCreateNew}>
                         <Plus size={20} />
@@ -791,6 +814,235 @@ function Sales() {
                             <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleStandaloneReturn}>
                                 <RotateCcw size={16} /> Оформить возврат
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ══════════════ Режим «Продажа по сканеру» ══════════════ */}
+            {showScannerMode && (
+                <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={() => setShowScannerMode(false)}>
+                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+                        {/* Шапка */}
+                        <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Scan size={22} color="#fff" />
+                                </div>
+                                <div>
+                                    <h2 style={{ margin: 0, fontSize: '18px' }}>Продажа по сканеру</h2>
+                                    <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>Сканируйте штрих-коды товаров (USB/COM)</p>
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <button
+                                    onClick={() => setScannerSound(!scannerSound)}
+                                    className={`btn btn-sm ${scannerSound ? 'btn-success' : 'btn-secondary'}`}
+                                    title={scannerSound ? 'Звук вкл' : 'Звук выкл'}
+                                    style={{ padding: '6px 10px' }}
+                                >
+                                    <Volume2 size={14} />
+                                </button>
+                                <button onClick={() => setShowScannerMode(false)} className="btn btn-secondary btn-sm" style={{ padding: '6px 10px' }}>
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Поле ввода штрих-кода */}
+                        <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                <div style={{ flex: 1, position: 'relative' }}>
+                                    <input
+                                        ref={scanInputRef}
+                                        type="text"
+                                        value={scanBuffer}
+                                        onChange={e => setScanBuffer(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' && scanBuffer.trim()) {
+                                                // Поиск товара по штрих-коду
+                                                const barcode = scanBuffer.trim();
+                                                const product = products.find(p =>
+                                                    p.barcode === barcode || p.code === barcode || p.id === parseInt(barcode)
+                                                );
+                                                if (product) {
+                                                    // Добавить или увеличить количество
+                                                    setScannerItems(prev => {
+                                                        const existing = prev.findIndex(i => i.productId === product.id);
+                                                        if (existing >= 0) {
+                                                            const updated = [...prev];
+                                                            updated[existing].quantity += 1;
+                                                            return updated;
+                                                        }
+                                                        return [...prev, {
+                                                            productId: product.id,
+                                                            productName: product.name,
+                                                            barcode: product.barcode,
+                                                            quantity: 1,
+                                                            price: product.price_sale || 0
+                                                        }];
+                                                    });
+                                                    setLastScanResult({ success: true, message: `✅ ${product.name}`, product });
+                                                    setScanHistory(prev => [{ barcode, name: product.name, time: new Date(), success: true }, ...prev.slice(0, 19)]);
+                                                    if (scannerSound) {
+                                                        try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVtZS4wMCA=').play().catch(() => {}); } catch(e) {}
+                                                        // Simple beep via Web Audio API
+                                                        try {
+                                                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                                                            const osc = ctx.createOscillator();
+                                                            osc.type = 'sine';
+                                                            osc.frequency.value = 1200;
+                                                            osc.connect(ctx.destination);
+                                                            osc.start();
+                                                            setTimeout(() => { osc.stop(); ctx.close(); }, 150);
+                                                        } catch(e) {}
+                                                    }
+                                                } else {
+                                                    setLastScanResult({ success: false, message: `❌ Товар с кодом "${barcode}" не найден` });
+                                                    setScanHistory(prev => [{ barcode, name: 'Не найден', time: new Date(), success: false }, ...prev.slice(0, 19)]);
+                                                    if (scannerSound) {
+                                                        try {
+                                                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                                                            const osc = ctx.createOscillator();
+                                                            osc.type = 'square';
+                                                            osc.frequency.value = 400;
+                                                            osc.connect(ctx.destination);
+                                                            osc.start();
+                                                            setTimeout(() => { osc.stop(); ctx.close(); }, 300);
+                                                        } catch(e) {}
+                                                    }
+                                                }
+                                                setScanBuffer('');
+                                                e.preventDefault();
+                                            }
+                                        }}
+                                        placeholder="Наведите сканер или введите штрих-код..."
+                                        autoFocus
+                                        style={{ fontSize: '18px', padding: '12px 16px', fontFamily: 'monospace', letterSpacing: '2px', background: 'var(--bg-primary, #0f0f23)', border: '2px solid rgba(16,185,129,0.4)', borderRadius: '10px' }}
+                                    />
+                                    {lastScanResult && (
+                                        <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: lastScanResult.success ? '#10b981' : '#ef4444', fontWeight: 600, animation: 'fadeIn 0.2s' }}>
+                                            {lastScanResult.message}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Таблица товаров */}
+                        <div style={{ flex: 1, overflow: 'auto', padding: '0 20px' }}>
+                            {scannerItems.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>
+                                    <Scan size={64} style={{ opacity: 0.2, marginBottom: '16px' }} />
+                                    <h3 style={{ color: '#888', fontWeight: 500 }}>Ожидание сканирования...</h3>
+                                    <p style={{ fontSize: '13px', color: '#666' }}>Подключите USB-сканер или введите штрих-код вручную</p>
+                                    <div style={{ marginTop: '20px', padding: '12px 20px', background: 'rgba(16,185,129,0.08)', borderRadius: '10px', display: 'inline-block', fontSize: '12px', color: '#10b981' }}>
+                                        💡 USB HID-сканеры работают автоматически (эмуляция клавиатуры)<br />
+                                        🔌 COM-порт сканеры: настройте в Настройки → Оборудование
+                                    </div>
+                                </div>
+                            ) : (
+                                <table style={{ fontSize: '13px', marginTop: '12px' }}>
+                                    <thead>
+                                        <tr>
+                                            <th style={{ padding: '8px 12px' }}>Товар</th>
+                                            <th style={{ padding: '8px 12px', width: '100px' }}>Штрих-код</th>
+                                            <th style={{ padding: '8px 12px', width: '100px', textAlign: 'center' }}>Кол-во</th>
+                                            <th style={{ padding: '8px 12px', width: '120px', textAlign: 'right' }}>Цена</th>
+                                            <th style={{ padding: '8px 12px', width: '120px', textAlign: 'right' }}>Сумма</th>
+                                            <th style={{ padding: '8px 12px', width: '40px' }}></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {scannerItems.map((item, idx) => (
+                                            <tr key={item.productId} style={{ animation: 'fadeIn 0.3s' }}>
+                                                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{item.productName}</td>
+                                                <td style={{ padding: '8px 12px' }}><code style={{ fontSize: '11px', color: '#888' }}>{item.barcode || '—'}</code></td>
+                                                <td style={{ padding: '8px 12px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                                        <button type="button" onClick={() => {
+                                                            setScannerItems(prev => {
+                                                                if (prev[idx].quantity <= 1) return prev.filter((_, i) => i !== idx);
+                                                                const u = [...prev]; u[idx].quantity--; return u;
+                                                            });
+                                                        }} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Minus size={12} />
+                                                        </button>
+                                                        <strong style={{ fontSize: '15px', minWidth: '30px', textAlign: 'center' }}>{item.quantity}</strong>
+                                                        <button type="button" onClick={() => {
+                                                            setScannerItems(prev => { const u = [...prev]; u[idx].quantity++; return u; });
+                                                        }} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <Plus size={12} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>{formatCurrency(item.price)}</td>
+                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(item.quantity * item.price)}</td>
+                                                <td style={{ padding: '8px 12px' }}>
+                                                    <button onClick={() => setScannerItems(prev => prev.filter((_, i) => i !== idx))} style={{ width: '24px', height: '24px', borderRadius: '6px', border: 'none', background: '#fee2e2', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <X size={12} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+
+                        {/* Футер: итого + кнопки */}
+                        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', background: 'var(--bg-secondary, #1a1a2e)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ fontSize: '13px', color: '#888' }}>
+                                    {scannerItems.length} позиций · {scannerItems.reduce((s, i) => s + i.quantity, 0)} шт
+                                    {scanHistory.length > 0 && <span style={{ marginLeft: '12px', color: '#666' }}>Сканирований: {scanHistory.length}</span>}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>
+                                        {formatCurrency(scannerItems.reduce((s, i) => s + i.quantity * i.price, 0))}
+                                    </div>
+                                    <button
+                                        className="btn"
+                                        disabled={scannerItems.length === 0}
+                                        onClick={async () => {
+                                            // Создать продажу из сканированных товаров
+                                            const warehouseToUse = defaultWarehouseId
+                                                ? parseInt(defaultWarehouseId)
+                                                : (warehouses[0]?.id || '');
+                                            try {
+                                                const response = await salesAPI.create({
+                                                    documentNumber: `SCN-${Date.now()}`,
+                                                    documentDate: new Date().toISOString().split('T')[0],
+                                                    counterpartyId: '',
+                                                    warehouseId: warehouseToUse,
+                                                    notes: 'Продажа по сканеру',
+                                                    items: scannerItems.map(i => ({
+                                                        productId: i.productId,
+                                                        productName: i.productName,
+                                                        quantity: i.quantity,
+                                                        price: i.price
+                                                    }))
+                                                });
+                                                const saleId = response.data.sale.id;
+                                                await salesAPI.confirm(saleId);
+                                                try {
+                                                    const saleDetails = await salesAPI.getById(saleId);
+                                                    setSaleForReceipt(saleDetails.data.sale);
+                                                    setShowReceiptModal(true);
+                                                } catch (e) {}
+                                                toast.success(`✅ Продажа #${saleId} создана и проведена!`);
+                                                setShowScannerMode(false);
+                                                setRefreshTrigger(prev => prev + 1);
+                                            } catch (error) {
+                                                toast.error(error.response?.data?.error || 'Ошибка создания продажи');
+                                            }
+                                        }}
+                                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', padding: '12px 28px', fontSize: '15px', fontWeight: 700, borderRadius: '10px', cursor: scannerItems.length === 0 ? 'not-allowed' : 'pointer', opacity: scannerItems.length === 0 ? 0.5 : 1 }}
+                                    >
+                                        ✓ Оформить продажу
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

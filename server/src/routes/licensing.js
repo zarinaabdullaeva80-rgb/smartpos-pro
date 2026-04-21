@@ -497,10 +497,54 @@ router.post('/admin/licenses', authenticate, auditLog('license'), async (req, re
             VALUES ($1, 'created', $2)
         `, [result.rows[0].id, req.user.id]);
 
+        // ★ Авто-создание организации для новой лицензии
+        const licenseId = result.rows[0].id;
+        const orgCode = 'ORG-' + Date.now().toString(36).toUpperCase();
+        const orgName = company_name || customer_name || customer_username;
+        let organizationId = null;
+
+        try {
+            const orgResult = await pool.query(`
+                INSERT INTO organizations (name, code, license_key, is_active)
+                VALUES ($1, $2, $3, true) RETURNING id
+            `, [orgName, orgCode, license_key]);
+            organizationId = orgResult.rows[0].id;
+
+            // Привязать лицензию к организации
+            try {
+                await pool.query('UPDATE licenses SET organization_id = $1 WHERE id = $2', [organizationId, licenseId]);
+            } catch (e) { /* organization_id column may not exist */ }
+
+            // Создать пользователя-владельца и привязать к организации
+            await pool.query(`
+                INSERT INTO users (username, email, password_hash, full_name, role,
+                                   license_id, organization_id, user_type, is_active)
+                VALUES ($1, $2, $3, $4, 'Администратор', $5, $6, 'owner', true)
+                ON CONFLICT (username) DO UPDATE SET organization_id = $6, license_id = $5
+            `, [
+                customer_username,
+                customer_email || customer_username + '@smartpos.local',
+                customer_password_hash,
+                customer_name || customer_username,
+                licenseId, organizationId
+            ]);
+
+            // Создать склад по умолчанию
+            await pool.query(`
+                INSERT INTO warehouses (name, code, is_active, organization_id)
+                VALUES ('Основной склад', $1, true, $2)
+            `, ['WH-' + organizationId, organizationId]);
+
+            console.log(`[LICENSE] Created org #${organizationId} "${orgName}" + warehouse + owner for license #${licenseId}`);
+        } catch (orgErr) {
+            console.error('[LICENSE] Org creation error (license still created):', orgErr.message);
+        }
+
         res.json({
             success: true,
             license: result.rows[0],
-            message: `Лицензия создана. Передайте клиенту логин: ${customer_username}`
+            organization_id: organizationId,
+            message: `Лицензия создана. Организация "${orgName}" создана. Передайте клиенту логин: ${customer_username}`
         });
 
     } catch (error) {

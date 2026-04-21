@@ -152,7 +152,7 @@ router.post('/activate', async (req, res) => {
  */
 router.get('/status', authenticate, async (req, res) => {
     try {
-        const orgId = req.user.organization_id || 1;
+        const orgId = req.user.organization_id;
 
         const result = await pool.query(`
             SELECT o.name, o.code, l.plan, l.max_users, l.max_products, l.expires_at,

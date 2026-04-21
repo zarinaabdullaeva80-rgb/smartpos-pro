@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Save, Plus, Edit2, Trash2, MapPin, Building2, Receipt, RefreshCw, Server } from 'lucide-react';
+import { Save, Plus, Edit2, Trash2, MapPin, Building2, Receipt, RefreshCw, Server, Scan, Printer } from 'lucide-react';
 import ServerStatus from '../components/ServerStatus';
 import { settingsAPI } from '../services/api';
 import '../styles/Settings.css';
@@ -48,6 +48,40 @@ function Settings() {
     // Settings state
     const [taxSettings, setTaxSettings] = useState({ vat_rates: [0, 10, 20], default_vat: 20, tax_period: 'monthly' });
     const [syncSettings, setSyncSettings] = useState({ auto_sync: true, sync_interval: 300, conflict_resolution: 'server_wins' });
+
+    // Hardware settings state
+    const [hardwareSettings, setHardwareSettings] = useState(() => {
+        const saved = localStorage.getItem('hardware_settings');
+        return saved ? JSON.parse(saved) : {
+            scanner: {
+                type: 'usb', // 'usb' | 'com'
+                comPort: 'COM3',
+                baudRate: 9600,
+                dataBits: 8,
+                stopBits: 1,
+                parity: 'none',
+                autoAdd: true,
+                soundEnabled: true
+            },
+            printer: {
+                enabled: false,
+                model: 'xprinter', // 'xprinter' | 'epson' | 'atol'
+                connectionType: 'usb', // 'usb' | 'com' | 'network'
+                comPort: 'COM1',
+                baudRate: 115200,
+                networkIp: '192.168.1.100',
+                networkPort: 9100,
+                paperWidth: 80, // 58 | 80
+                autoPrint: true,
+                printCopy: 1,
+                encoding: 'cp866',
+                companyName: '',
+                companyAddress: '',
+                companyPhone: '',
+                footerText: 'Спасибо за покупку!'
+            }
+        };
+    });
 
     useEffect(() => {
         loadData();
@@ -247,6 +281,13 @@ function Settings() {
                 >
                     <Server size={18} />
                     {t('settings.serverMobile', 'Сервер и мобильные')}
+                </button>
+                <button
+                    className={`tab-button ${activeTab === 'hardware' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('hardware')}
+                >
+                    <Scan size={18} />
+                    Оборудование
                 </button>
             </div>
 
@@ -612,6 +653,325 @@ function Settings() {
                 {activeTab === 'server' && (
                     <div className="server-tab">
                         <ServerStatus />
+                    </div>
+                )}
+
+                {/* Hardware Tab — Сканеры и Принтеры */}
+                {activeTab === 'hardware' && (
+                    <div className="hardware-tab">
+                        {/* ── Сканер штрих-кодов ── */}
+                        <div className="content-section">
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Scan size={20} /> Сканер штрих-кодов
+                            </h3>
+                            <div className="form-grid">
+                                <div className="form-group">
+                                    <label>Тип подключения</label>
+                                    <select
+                                        value={hardwareSettings.scanner.type}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, type: e.target.value } }))}
+                                    >
+                                        <option value="usb">USB HID (клавиатура)</option>
+                                        <option value="com">COM-порт (RS-232)</option>
+                                    </select>
+                                </div>
+
+                                {hardwareSettings.scanner.type === 'com' && (
+                                    <>
+                                        <div className="form-group">
+                                            <label>COM-порт</label>
+                                            <select
+                                                value={hardwareSettings.scanner.comPort}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, comPort: e.target.value } }))}
+                                            >
+                                                {['COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10'].map(p => (
+                                                    <option key={p} value={p}>{p}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Скорость (бод)</label>
+                                            <select
+                                                value={hardwareSettings.scanner.baudRate}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, baudRate: parseInt(e.target.value) } }))}
+                                            >
+                                                {[4800, 9600, 19200, 38400, 57600, 115200].map(r => (
+                                                    <option key={r} value={r}>{r}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Биты данных</label>
+                                            <select
+                                                value={hardwareSettings.scanner.dataBits}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, dataBits: parseInt(e.target.value) } }))}
+                                            >
+                                                <option value={7}>7</option>
+                                                <option value={8}>8</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Стоп-биты</label>
+                                            <select
+                                                value={hardwareSettings.scanner.stopBits}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, stopBits: parseInt(e.target.value) } }))}
+                                            >
+                                                <option value={1}>1</option>
+                                                <option value={2}>2</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Чётность</label>
+                                            <select
+                                                value={hardwareSettings.scanner.parity}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, parity: e.target.value } }))}
+                                            >
+                                                <option value="none">Нет</option>
+                                                <option value="even">Чётная</option>
+                                                <option value="odd">Нечётная</option>
+                                            </select>
+                                        </div>
+                                    </>
+                                )}
+
+                                <div className="form-group">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={hardwareSettings.scanner.autoAdd}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, autoAdd: e.target.checked } }))}
+                                        />{' '}Авто-добавление в продажу
+                                    </label>
+                                </div>
+                                <div className="form-group">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={hardwareSettings.scanner.soundEnabled}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, scanner: { ...prev.scanner, soundEnabled: e.target.checked } }))}
+                                        />{' '}Звук сканирования
+                                    </label>
+                                </div>
+                            </div>
+                            {hardwareSettings.scanner.type === 'usb' && (
+                                <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.08)', borderRadius: '8px', fontSize: '12px', color: '#10b981', marginTop: '10px' }}>
+                                    💡 USB HID-сканеры работают как клавиатура — подключите и сканируйте.
+                                    Фокус должен быть на поле ввода штрих-кода.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Принтер чеков ── */}
+                        <div className="content-section" style={{ marginTop: '20px' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Printer size={20} /> Принтер чеков
+                            </h3>
+                            <div className="form-grid">
+                                <div className="form-group">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={hardwareSettings.printer.enabled}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, enabled: e.target.checked } }))}
+                                        />{' '}Принтер включён
+                                    </label>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Модель принтера</label>
+                                    <select
+                                        value={hardwareSettings.printer.model}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, model: e.target.value } }))}
+                                    >
+                                        <option value="xprinter">XPrinter (ESC/POS)</option>
+                                        <option value="epson">Epson TM (ESC/POS)</option>
+                                        <option value="atol">АТОЛ (ESC/POS)</option>
+                                        <option value="custom">Другой (ESC/POS)</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Тип подключения</label>
+                                    <select
+                                        value={hardwareSettings.printer.connectionType}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, connectionType: e.target.value } }))}
+                                    >
+                                        <option value="usb">USB</option>
+                                        <option value="com">COM-порт</option>
+                                        <option value="network">Сеть (TCP/IP)</option>
+                                    </select>
+                                </div>
+
+                                {hardwareSettings.printer.connectionType === 'com' && (
+                                    <>
+                                        <div className="form-group">
+                                            <label>COM-порт</label>
+                                            <select
+                                                value={hardwareSettings.printer.comPort}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, comPort: e.target.value } }))}
+                                            >
+                                                {['COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9','COM10'].map(p => (
+                                                    <option key={p} value={p}>{p}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Скорость (бод)</label>
+                                            <select
+                                                value={hardwareSettings.printer.baudRate}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, baudRate: parseInt(e.target.value) } }))}
+                                            >
+                                                {[9600, 19200, 38400, 57600, 115200].map(r => (
+                                                    <option key={r} value={r}>{r}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </>
+                                )}
+
+                                {hardwareSettings.printer.connectionType === 'network' && (
+                                    <>
+                                        <div className="form-group">
+                                            <label>IP-адрес</label>
+                                            <input
+                                                type="text"
+                                                value={hardwareSettings.printer.networkIp}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, networkIp: e.target.value } }))}
+                                                placeholder="192.168.1.100"
+                                            />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Порт</label>
+                                            <input
+                                                type="number"
+                                                value={hardwareSettings.printer.networkPort}
+                                                onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, networkPort: parseInt(e.target.value) } }))}
+                                                placeholder="9100"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                <div className="form-group">
+                                    <label>Ширина бумаги</label>
+                                    <select
+                                        value={hardwareSettings.printer.paperWidth}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, paperWidth: parseInt(e.target.value) } }))}
+                                    >
+                                        <option value={58}>58 мм</option>
+                                        <option value={80}>80 мм</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Кодировка</label>
+                                    <select
+                                        value={hardwareSettings.printer.encoding}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, encoding: e.target.value } }))}
+                                    >
+                                        <option value="cp866">CP866 (DOS)</option>
+                                        <option value="cp1251">CP1251 (Windows)</option>
+                                        <option value="utf8">UTF-8</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Кол-во копий</label>
+                                    <input
+                                        type="number" min="1" max="5"
+                                        value={hardwareSettings.printer.printCopy}
+                                        onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, printCopy: parseInt(e.target.value) || 1 } }))}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={hardwareSettings.printer.autoPrint}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, autoPrint: e.target.checked } }))}
+                                        />{' '}Авто-печать после продажи
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Шапка чека */}
+                            <div style={{ marginTop: '16px' }}>
+                                <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Шапка чека</h4>
+                                <div className="form-grid">
+                                    <div className="form-group">
+                                        <label>Название компании</label>
+                                        <input
+                                            type="text"
+                                            value={hardwareSettings.printer.companyName}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, companyName: e.target.value } }))}
+                                            placeholder="SmartPOS Pro"
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Адрес</label>
+                                        <input
+                                            type="text"
+                                            value={hardwareSettings.printer.companyAddress}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, companyAddress: e.target.value } }))}
+                                            placeholder="г. Душанбе, ул. ..."
+                                        />
+                                    </div>
+                                    <div className="form-group">
+                                        <label>Телефон</label>
+                                        <input
+                                            type="text"
+                                            value={hardwareSettings.printer.companyPhone}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, companyPhone: e.target.value } }))}
+                                            placeholder="+992 ..."
+                                        />
+                                    </div>
+                                    <div className="form-group full-width">
+                                        <label>Текст внизу чека</label>
+                                        <input
+                                            type="text"
+                                            value={hardwareSettings.printer.footerText}
+                                            onChange={e => setHardwareSettings(prev => ({ ...prev, printer: { ...prev.printer, footerText: e.target.value } }))}
+                                            placeholder="Спасибо за покупку!"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Кнопка сохранения */}
+                        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                            <button
+                                className="btn btn-primary"
+                                onClick={() => {
+                                    localStorage.setItem('hardware_settings', JSON.stringify(hardwareSettings));
+                                    toast.success('Настройки оборудования сохранены');
+                                }}
+                            >
+                                <Save size={18} />
+                                Сохранить настройки
+                            </button>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                    // Test beep
+                                    try {
+                                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                                        const osc = ctx.createOscillator();
+                                        osc.type = 'sine';
+                                        osc.frequency.value = 1200;
+                                        osc.connect(ctx.destination);
+                                        osc.start();
+                                        setTimeout(() => { osc.stop(); ctx.close(); }, 200);
+                                        toast.success('🔊 Звуковой тест пройден');
+                                    } catch(e) {
+                                        toast.error('Звук не поддерживается');
+                                    }
+                                }}
+                            >
+                                🔊 Тест звука
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
