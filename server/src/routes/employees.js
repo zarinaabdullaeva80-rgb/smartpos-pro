@@ -19,7 +19,7 @@ function getOrgId(req) {
 const requireClientAdmin = async (req, res, next) => {
     try {
         const result = await pool.query(
-            'SELECT user_type, organization_id, role FROM users WHERE id = $1',
+            'SELECT user_type, organization_id, role, license_id FROM users WHERE id = $1',
             [req.user.id]
         );
 
@@ -27,7 +27,7 @@ const requireClientAdmin = async (req, res, next) => {
             return res.status(401).json({ error: 'Пользователь не найден' });
         }
 
-        const { user_type, organization_id, role } = result.rows[0];
+        const { user_type, organization_id, role, license_id } = result.rows[0];
 
         // Allow: client_admin, super_admin, owner, or role 'Администратор'/'admin'
         const allowedTypes = ['client_admin', 'super_admin', 'owner'];
@@ -39,6 +39,7 @@ const requireClientAdmin = async (req, res, next) => {
 
         req.user.user_type = user_type;
         req.user.organization_id = organization_id;
+        req.user.license_id = license_id || req.user.licenseId;
         next();
     } catch (error) {
         console.error('requireClientAdmin error:', error);
@@ -54,15 +55,34 @@ router.get('/', authenticate, requireClientAdmin, async (req, res) => {
     try {
         const { search, status } = req.query;
 
-        let query = `
-            SELECT u.id, u.username, u.email, u.full_name, u.phone, u.is_active, 
-                   u.last_login, u.created_at, u.role, u.user_type
-            FROM users u
-            WHERE u.organization_id = $1
-        `;
-        const orgId = getOrgId(req);
-        const params = [orgId || req.user.organization_id];
-        let paramCount = 1;
+        // Фильтруем по license_id (реальный ключ тенанта), 
+        // с fallback на organization_id
+        const licenseId = req.user.license_id;
+        const orgId = getOrgId(req) || req.user.organization_id;
+        
+        let query;
+        let params;
+        let paramCount;
+        
+        if (licenseId) {
+            query = `
+                SELECT u.id, u.username, u.email, u.full_name, u.phone, u.is_active, 
+                       u.last_login, u.created_at, u.role, u.user_type
+                FROM users u
+                WHERE u.license_id = $1 AND u.user_type = 'employee'
+            `;
+            params = [licenseId];
+            paramCount = 1;
+        } else {
+            query = `
+                SELECT u.id, u.username, u.email, u.full_name, u.phone, u.is_active, 
+                       u.last_login, u.created_at, u.role, u.user_type
+                FROM users u
+                WHERE u.organization_id = $1
+            `;
+            params = [orgId];
+            paramCount = 1;
+        }
 
         if (search) {
             paramCount++;
@@ -138,13 +158,14 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         // Hash password
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Create employee
-        const orgId = getOrgId(req);
+        // Create employee — license_id is the real tenant key
+        const licenseId = req.user.license_id;
+        const effectiveOrgId = getOrgId(req) || req.user.organization_id || 1;
         const result = await pool.query(
             `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, license_id)
              VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $8)
              RETURNING id, username, email, full_name, phone, role, is_active, created_at`,
-            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', req.user.organization_id, orgId || req.user.organization_id || 1]
+            [username, email || `${username}@employee.local`, passwordHash, fullName, phone, role || 'Кассир', effectiveOrgId, licenseId || effectiveOrgId]
         );
 
 
