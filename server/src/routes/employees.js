@@ -212,11 +212,11 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         const { id } = req.params;
         const { email, fullName, phone, role, isActive, newPassword } = req.body;
 
-        // Verify employee belongs to this organization
-        const orgId = getOrgId(req);
+        // Verify employee belongs to this license (tenant)
+        const licenseId = req.user.license_id;
         const check = await pool.query(
-            'SELECT id FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.organization_id]
+            'SELECT id FROM users WHERE id = $1 AND license_id = $2',
+            [id, licenseId]
         );
 
         if (check.rows.length === 0) {
@@ -236,18 +236,18 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         }
 
         paramCount++;
-        query += ` WHERE id = $${paramCount} AND organization_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
-        params.push(id, orgId || req.user.organization_id);
+        query += ` WHERE id = $${paramCount} AND license_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
+        params.push(id, licenseId);
 
         const result = await pool.query(query, params);
 
         const employee = result.rows[0];
 
         // Sync update to cloud
-        if (req.user.organization_id) {
+        if (licenseId) {
             await syncEmployeeUpdate(id, {
                 email, fullName, phone, role, isActive, newPassword
-            }, req.user.organization_id);
+            }, licenseId);
         }
 
         res.json({
@@ -268,11 +268,11 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Verify employee belongs to this organization
-        const orgId = getOrgId(req);
+        // Verify employee belongs to this license (tenant)
+        const licenseId = req.user.license_id;
         const check = await pool.query(
-            'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.organization_id]
+            'SELECT id, username FROM users WHERE id = $1 AND license_id = $2',
+            [id, licenseId]
         );
 
         if (check.rows.length === 0) {
@@ -283,8 +283,8 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
         await pool.query('DELETE FROM users WHERE id = $1', [id]);
 
         // Sync delete to cloud
-        if (req.user.organization_id) {
-            await syncEmployeeDelete(username, req.user.organization_id);
+        if (licenseId) {
+            await syncEmployeeDelete(username, licenseId);
         }
 
         res.json({
@@ -304,11 +304,11 @@ router.post('/:id/reset-password', authenticate, requireClientAdmin, async (req,
     try {
         const { id } = req.params;
 
-        // Verify employee belongs to this organization
-        const orgId = getOrgId(req);
+        // Verify employee belongs to this license (tenant)
+        const licenseId = req.user.license_id;
         const check = await pool.query(
-            'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
-            [id, orgId || req.user.organization_id]
+            'SELECT id, username FROM users WHERE id = $1 AND license_id = $2',
+            [id, licenseId]
         );
 
         if (check.rows.length === 0) {
