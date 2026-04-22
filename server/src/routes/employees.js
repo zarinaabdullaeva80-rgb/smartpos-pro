@@ -214,10 +214,21 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
 
         // Verify employee belongs to this license (tenant)
         const licenseId = req.user.license_id;
-        const check = await pool.query(
-            'SELECT id FROM users WHERE id = $1 AND license_id = $2',
-            [id, licenseId]
-        );
+        const orgId = getOrgId(req) || req.user.organization_id;
+        let check;
+        if (licenseId) {
+            check = await pool.query(
+                'SELECT id FROM users WHERE id = $1 AND license_id = $2',
+                [id, licenseId]
+            );
+        } else if (orgId) {
+            check = await pool.query(
+                'SELECT id FROM users WHERE id = $1 AND organization_id = $2',
+                [id, orgId]
+            );
+        } else {
+            return res.status(403).json({ error: 'Не удалось определить организацию' });
+        }
 
         if (check.rows.length === 0) {
             return res.status(404).json({ error: 'Сотрудник не найден' });
@@ -236,8 +247,16 @@ router.put('/:id', authenticate, requireClientAdmin, async (req, res) => {
         }
 
         paramCount++;
-        query += ` WHERE id = $${paramCount} AND license_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
-        params.push(id, licenseId);
+        if (licenseId) {
+            query += ` WHERE id = $${paramCount} AND license_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
+            params.push(id, licenseId);
+        } else if (orgId) {
+            query += ` WHERE id = $${paramCount} AND organization_id = $${paramCount + 1} RETURNING id, username, email, full_name, phone, role, is_active`;
+            params.push(id, orgId);
+        } else {
+            query += ` WHERE id = $${paramCount} RETURNING id, username, email, full_name, phone, role, is_active`;
+            params.push(id);
+        }
 
         const result = await pool.query(query, params);
 
@@ -270,10 +289,21 @@ router.delete('/:id', authenticate, requireClientAdmin, async (req, res) => {
 
         // Verify employee belongs to this license (tenant)
         const licenseId = req.user.license_id;
-        const check = await pool.query(
-            'SELECT id, username FROM users WHERE id = $1 AND license_id = $2',
-            [id, licenseId]
-        );
+        const orgId = getOrgId(req) || req.user.organization_id;
+        let check;
+        if (licenseId) {
+            check = await pool.query(
+                'SELECT id, username FROM users WHERE id = $1 AND license_id = $2',
+                [id, licenseId]
+            );
+        } else if (orgId) {
+            check = await pool.query(
+                'SELECT id, username FROM users WHERE id = $1 AND organization_id = $2',
+                [id, orgId]
+            );
+        } else {
+            return res.status(403).json({ error: 'Не удалось определить организацию' });
+        }
 
         if (check.rows.length === 0) {
             return res.status(404).json({ error: 'Сотрудник не найден' });

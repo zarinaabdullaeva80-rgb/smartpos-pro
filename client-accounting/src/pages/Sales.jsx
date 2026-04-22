@@ -14,6 +14,7 @@ import { useI18n } from '../i18n';
 function Sales() {
     const toast = useToast();
     const { t } = useI18n();
+    const { handleError, handleSuccess } = useActionHandler();
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);

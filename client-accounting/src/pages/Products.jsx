@@ -338,7 +338,8 @@ function Products() {
             vatRate: product.vat_rate,
             minStock: product.min_stock || 0,
             description: product.description || '',
-            barcode: product.barcode || ''
+            barcode: product.barcode || '',
+            isActive: product.is_active !== false
         });
     };
 

@@ -1,21 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Save, Plus, Edit2, Trash2, MapPin, Building2, Receipt, RefreshCw, Server, Scan, Printer } from 'lucide-react';
 import ServerStatus from '../components/ServerStatus';
-import { settingsAPI } from '../services/api';
+import api, { settingsAPI, categoriesAPI, warehousesAPI } from '../services/api';
 import '../styles/Settings.css';
 import { useToast } from '../components/ToastProvider';
-
-
-// Создаём axios instance с автоматической авторизацией
-const api = axios.create({ baseURL: API_URL });
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
 import { useI18n } from '../i18n';
 
 function Settings() {

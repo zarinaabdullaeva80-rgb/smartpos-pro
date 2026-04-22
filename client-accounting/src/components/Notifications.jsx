@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 import { Bell, Check, CheckCheck, Settings, X } from 'lucide-react';
 import '../styles/Notifications.css';
 
@@ -50,7 +50,7 @@ function Notifications() {
 
     const loadUnreadCount = async () => {
         try {
-            const response = await axios.get(`${API_URL}/notifications/unread-count`);
+            const response = await api.get('/notifications/unread-count');
             setUnreadCount(response.data.unreadCount);
         } catch (error) {
             console.error('Error loading unread count:', error);
@@ -59,7 +59,7 @@ function Notifications() {
 
     const loadNotifications = async () => {
         try {
-            const response = await axios.get(`${API_URL}/notifications`, {
+            const response = await api.get('/notifications', {
                 params: { limit: 20 }
             });
             setNotifications(response.data.notifications);
@@ -71,7 +71,7 @@ function Notifications() {
 
     const loadSubscriptions = async () => {
         try {
-            const response = await axios.get(`${API_URL}/notifications/subscriptions`);
+            const response = await api.get('/notifications/subscriptions');
             setSubscriptions(response.data);
         } catch (error) {
             console.error('Error loading subscriptions:', error);
@@ -80,7 +80,7 @@ function Notifications() {
 
     const handleMarkAsRead = async (notificationId) => {
         try {
-            await axios.post(`${API_URL}/notifications/mark-read/${notificationId}`);
+            await api.post(`/notifications/mark-read/${notificationId}`);
             await loadNotifications();
         } catch (error) {
             console.error('Error marking as read:', error);
@@ -89,7 +89,7 @@ function Notifications() {
 
     const handleMarkAllAsRead = async () => {
         try {
-            await axios.post(`${API_URL}/notifications/mark-all-read`);
+            await api.post('/notifications/mark-all-read');
             await loadNotifications();
             setUnreadCount(0);
         } catch (error) {
@@ -99,7 +99,7 @@ function Notifications() {
 
     const handleToggleSubscription = async (channel, category, currentState) => {
         try {
-            await axios.put(`${API_URL}/notifications/subscriptions`, {
+            await api.put('/notifications/subscriptions', {
                 channel,
                 category,
                 isEnabled: !currentState
