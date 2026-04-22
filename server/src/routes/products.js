@@ -89,7 +89,7 @@ router.get('/', authenticate, async (req, res) => {
       SELECT p.id, p.code, p.name, p.category_id, p.unit, 
              p.price_purchase, p.price_sale, p.price_retail, 
              p.vat_rate, p.description, p.barcode, p.image_url, 
-             p.is_active, p.organization_id, p.min_stock, p.created_at, p.updated_at,
+             p.is_active, p.organization_id, p.min_stock, p.supplier, p.created_at, p.updated_at,
              pc.name as category_name,
              COALESCE((
                SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
@@ -438,7 +438,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         const { id } = req.params;
         const {
             code, name, categoryId, unit, pricePurchase, priceSale, priceRetail,
-            vatRate, description, barcode, imageUrl, isActive
+            vatRate, description, barcode, imageUrl, isActive, minStock, quantity, supplier
         } = req.body;
 
         const oldData = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
@@ -447,12 +447,13 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         let updateQuery = `UPDATE products SET
         code = $1, name = $2, category_id = $3, unit = $4, price_purchase = $5,
         price_sale = $6, price_retail = $7, vat_rate = $8, description = $9,
-        barcode = $10, image_url = $11, is_active = $12, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $13`;
-        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, isActive, id];
+        barcode = $10, image_url = $11, is_active = $12, min_stock = $13,
+        supplier = $14, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $15`;
+        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, isActive, minStock || 0, supplier || null, id];
 
         if (orgId) {
-            updateQuery += ' AND organization_id = $14';
+            updateQuery += ' AND organization_id = $16';
             updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
@@ -461,6 +462,29 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Товар не найден' });
+        }
+
+        // Обновление количества через inventory_movements
+        const newQuantity = parseInt(quantity);
+        if (!isNaN(newQuantity) && newQuantity >= 0) {
+            // Получаем текущий остаток
+            const currentStockRes = await pool.query(`
+                SELECT COALESCE(SUM(
+                    CASE WHEN document_type IN ('receipt','adjustment','inventory') THEN quantity
+                         WHEN document_type IN ('sale','write_off','transfer_out') THEN -quantity
+                         ELSE quantity END
+                ), 0) AS total FROM inventory_movements WHERE product_id = $1
+            `, [id]);
+            const currentQty = parseFloat(currentStockRes.rows[0]?.total || 0);
+            const diff = newQuantity - currentQty;
+
+            if (Math.abs(diff) > 0.001) {
+                await pool.query(
+                    `INSERT INTO inventory_movements (product_id, document_type, quantity, user_id, organization_id, notes, created_at)
+                     VALUES ($1, 'adjustment', $2, $3, $4, 'Корректировка из карточки товара', NOW())`,
+                    [id, diff, req.user.id, orgId || null]
+                );
+            }
         }
 
         await logAudit(req.user.id, 'UPDATE', 'products', id, oldData.rows[0], result.rows[0], req.ip);

@@ -336,7 +336,9 @@ function Products() {
             priceSale: product.price_sale,
             priceRetail: product.price_retail,
             vatRate: product.vat_rate,
+            quantity: product.quantity || 0,
             minStock: product.min_stock || 0,
+            supplier: product.supplier || '',
             description: product.description || '',
             barcode: product.barcode || '',
             isActive: product.is_active !== false
@@ -924,12 +926,16 @@ function Products() {
                                                     <div style={{ gridColumn: 'span 2' }}><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Наименование</label><input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Штрихкод</label><input type="text" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                 </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Цена закупки</label><input type="number" step="0.01" value={formData.pricePurchase} onChange={e => setFormData({...formData, pricePurchase: parseFloat(e.target.value)})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Цена продажи</label><input type="number" step="0.01" value={formData.priceSale} onChange={e => setFormData({...formData, priceSale: parseFloat(e.target.value)})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Розница</label><input type="number" step="0.01" value={formData.priceRetail} onChange={e => setFormData({...formData, priceRetail: parseFloat(e.target.value)})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>НДС %</label><input type="number" value={formData.vatRate} onChange={e => setFormData({...formData, vatRate: parseFloat(e.target.value)})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
+                                                </div>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                                                    <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Кол-во (остаток)</label><input type="number" value={formData.quantity} onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Мин. остаток</label><input type="number" value={formData.minStock} onChange={e => setFormData({...formData, minStock: parseInt(e.target.value) || 0})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
+                                                    <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Поставщик</label><input type="text" value={formData.supplier || ''} onChange={e => setFormData({...formData, supplier: e.target.value})} placeholder="Название поставщика" style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                 </div>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                                                     <div>

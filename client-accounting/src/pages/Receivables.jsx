@@ -114,7 +114,7 @@ function ReceivablesPage() {
             <html>
             <head>
                 <meta charset="UTF-8">
-                <title>{t('receivables.debitorskaya_zadolzhennost', 'Дебиторская задолженность')}</title>
+                <title>${t('receivables.debitorskaya_zadolzhennost', 'Дебиторская задолженность')}</title>
                 <style>
                     body { font-family: Arial, sans-serif; margin: 20px; }
                     h1 { color: #333; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
@@ -134,22 +134,22 @@ function ReceivablesPage() {
                 </style>
             </head>
             <body>
-                <h1>{t('receivables.debitorskaya_zadolzhennost', '📥 Дебиторская задолженность')}</h1>
+                <h1>${t('receivables.debitorskaya_zadolzhennost', '📥 Дебиторская задолженность')}</h1>
                 <p>Дата формирования: ${new Date().toLocaleDateString('ru-RU')}</p>
                 <div class="summary">
-                    <div class="summary-item"><div class="summary-value">${formatCurrency(stats.total || 0)}</div><div class="summary-label">{t('receivables.vsego', 'Всего')}</div></div>
-                    <div class="summary-item"><div class="summary-value overdue">${formatCurrency(stats.overdue || 0)}</div><div class="summary-label">{t('receivables.prosrocheno', 'Просрочено')}</div></div>
-                    <div class="summary-item"><div class="summary-value">${stats.debtors_count || 0}</div><div class="summary-label">{t('receivables.debitorov', 'Дебиторов')}</div></div>
+                    <div class="summary-item"><div class="summary-value">${formatCurrency(stats.total || 0)}</div><div class="summary-label">${t('receivables.vsego', 'Всего')}</div></div>
+                    <div class="summary-item"><div class="summary-value overdue">${formatCurrency(stats.overdue || 0)}</div><div class="summary-label">${t('receivables.prosrocheno', 'Просрочено')}</div></div>
+                    <div class="summary-item"><div class="summary-value">${stats.debtors_count || 0}</div><div class="summary-label">${t('receivables.debitorov', 'Дебиторов')}</div></div>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>{t('receivables.kontragent', 'Контрагент')}</th>
-                            <th>{t('receivables.inn', 'ИНН')}</th>
-                            <th>{t('receivables.obschiy_dolg', 'Общий долг')}</th>
-                            <th>{t('receivables.prosrocheno', 'Просрочено')}</th>
-                            <th>{t('receivables.dney', 'Дней')}</th>
-                            <th>{t('receivables.status', 'Статус')}</th>
+                            <th>${t('receivables.kontragent', 'Контрагент')}</th>
+                            <th>${t('receivables.inn', 'ИНН')}</th>
+                            <th>${t('receivables.obschiy_dolg', 'Общий долг')}</th>
+                            <th>${t('receivables.prosrocheno', 'Просрочено')}</th>
+                            <th>${t('receivables.dney', 'Дней')}</th>
+                            <th>${t('receivables.status', 'Статус')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -165,7 +165,7 @@ function ReceivablesPage() {
                         `).join('')}
                     </tbody>
                 </table>
-                <div class="footer">{t('receivables.sistema_upravleniya_biznes', 'SmartPOS Pro — Система управления бизнесом')}</div>
+                <div class="footer">${t('receivables.sistema_upravleniya_biznes', 'SmartPOS Pro — Система управления бизнесом')}</div>
             </body>
             </html>
         `;
