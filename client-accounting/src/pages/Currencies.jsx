@@ -2,9 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, TrendingUp, TrendingDown, Plus, Clock } from 'lucide-react';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import api from '../services/api';
 const CACHE_KEY = 'cbu_rates_cache';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа
 
@@ -71,9 +69,7 @@ function Currencies() {
             }
 
             // Запрашиваем с сервера
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_BASE}/currencies/rates${forceRefresh ? '?refresh=true' : ''}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            const response = await api.get(`/currencies/rates${forceRefresh ? '?refresh=true' : ''}`, {
                 timeout: 15000
             });
 

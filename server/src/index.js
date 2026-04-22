@@ -177,11 +177,25 @@ clientDistPath = fallbackPaths.find(p => p && fs.existsSync(p)) || fallbackPaths
 console.log('[Static] Serving client from:', clientDistPath, '| exists:', fs.existsSync(clientDistPath));
 
 if (fs.existsSync(clientDistPath)) {
-    app.use(express.static(clientDistPath));
+    // Статика с правильным кэшированием:
+    // - assets/ (хешированные файлы) → кэш на 1 год
+    // - index.html → без кэша (чтобы всегда загружались актуальные хеши)
+    app.use(express.static(clientDistPath, {
+        maxAge: '1y',
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.html')) {
+                res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+                res.set('Pragma', 'no-cache');
+                res.set('Expires', '0');
+            }
+        }
+    }));
     // SPA fallback: serve index.html for any non-API, non-mobile, non-admin route
     app.get(/^(?!\/api|\/socket\.io|\/uploads|\/health|\/api-docs|\/mobile|\/admin|\/assets).*$/, (req, res, next) => {
         const indexPath = path.join(clientDistPath, 'index.html');
         if (fs.existsSync(indexPath)) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Pragma', 'no-cache');
             res.sendFile(indexPath);
         } else {
             next();
