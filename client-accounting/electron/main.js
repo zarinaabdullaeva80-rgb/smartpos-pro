@@ -499,11 +499,18 @@ async function createWindow() {
         const serverReady = await waitForServer();
 
         if (serverReady) {
-            // Очистить кэш чтобы всегда загружать свежие ассеты
+            // Агрессивная очистка ВСЕХ кэшей — включая Code Cache, Service Worker
+            // Это критически важно при обновлении: старые хеши JS файлов вызывают
+            // "Failed to fetch dynamically imported module"
             try {
                 await mainWindow.webContents.session.clearCache();
-                console.log('[Electron] Cache cleared before loading');
-            } catch (e) { /* ignore */ }
+                await mainWindow.webContents.session.clearStorageData({
+                    storages: ['serviceworkers', 'cachestorage', 'shadercache', 'codecache']
+                });
+                console.log('[Electron] All caches cleared (HTTP + Code Cache + SW)');
+            } catch (e) {
+                console.log('[Electron] Cache clear partial:', e.message);
+            }
             console.log('[Electron] Server ready! Loading via HTTP:', serverUrl);
             mainWindow.loadURL(serverUrl);
         } else {
