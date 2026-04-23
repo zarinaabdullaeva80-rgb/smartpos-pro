@@ -2005,6 +2005,19 @@ router.post('/admin-cleanup', async (req, res) => {
                 // Re-enable triggers
                 await pool.query('SET session_replication_role = "origin"');
             }
+        } else if (action === 'get_stats') {
+            const tables = [
+                'organizations', 'licenses', 'users', 'products', 
+                'inventory_movements', 'warehouses', 'sales', 'purchases'
+            ];
+            for (const table of tables) {
+                try {
+                    const countRes = await pool.query(`SELECT COUNT(*) FROM "${table}"`);
+                    results[table] = parseInt(countRes.rows[0].count);
+                } catch (e) {
+                    results[table] = -1;
+                }
+            }
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
