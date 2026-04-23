@@ -1864,4 +1864,62 @@ router.post('/sync', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/license/admin-cleanup
+ * Admin endpoint to delete products and reinitialize DB tables.
+ * Protected by X-Sync-Secret.
+ */
+router.post('/admin-cleanup', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        if (secret !== CLOUD_SYNC_SECRET) {
+            return res.status(403).json({ error: 'Invalid sync secret' });
+        }
+
+        const { action, license_key } = req.body;
+        const results = {};
+
+        if (action === 'delete_products') {
+            // Delete all products for a license
+            const orgRes = await pool.query('SELECT id FROM organizations WHERE license_key = $1', [license_key]);
+            if (orgRes.rows.length > 0) {
+                const orgId = orgRes.rows[0].id;
+                // Delete related data first
+                try { await pool.query('DELETE FROM inventory_movements WHERE organization_id = $1', [orgId]); } catch(e) {}
+                try { await pool.query('DELETE FROM sale_items WHERE sale_id IN (SELECT id FROM sales WHERE organization_id = $1)', [orgId]); } catch(e) {}
+                try { await pool.query('DELETE FROM sales WHERE organization_id = $1', [orgId]); } catch(e) {}
+                const delRes = await pool.query('DELETE FROM products WHERE organization_id = $1', [orgId]);
+                results.deleted_products = delRes.rowCount;
+                // Also delete orphaned products
+                const orphanRes = await pool.query('DELETE FROM products WHERE organization_id IS NULL');
+                results.deleted_orphaned = orphanRes.rowCount;
+            }
+        } else if (action === 'delete_all_products') {
+            // Delete ALL products
+            try { await pool.query('DELETE FROM inventory_movements'); } catch(e) {}
+            try { await pool.query('DELETE FROM sale_items'); } catch(e) {}
+            try { await pool.query('DELETE FROM stock_balances'); } catch(e) {}
+            const delRes = await pool.query('DELETE FROM products');
+            results.deleted_products = delRes.rowCount;
+        } else if (action === 'init_tables') {
+            // Re-run table initialization
+            const { initDatabase } = await import('../config/initDatabase.js');
+            await initDatabase(pool);
+            results.tables_initialized = true;
+        } else if (action === 'check_tables') {
+            // Check which tables exist
+            const tablesRes = await pool.query(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
+            );
+            results.tables = tablesRes.rows.map(r => r.table_name);
+        }
+
+        console.log('[ADMIN-CLEANUP]', action, results);
+        res.json({ success: true, action, results });
+    } catch (error) {
+        console.error('[ADMIN-CLEANUP] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;
