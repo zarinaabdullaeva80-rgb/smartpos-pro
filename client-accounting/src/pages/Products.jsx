@@ -707,6 +707,18 @@ function Products() {
                 <span style={{ color: 'var(--text-secondary, #aaa)' }}>Закупка: <strong style={{ color: '#f59e0b' }}>{formatCurrency(totalValues.purchase)}</strong></span>
                 <span style={{ color: 'var(--text-secondary, #aaa)' }}>Продажа: <strong style={{ color: '#10b981' }}>{formatCurrency(totalValues.sale)}</strong></span>
                 <span style={{ color: 'var(--text-secondary, #aaa)' }}>Прибыль: <strong style={{ color: totalValues.sale - totalValues.purchase >= 0 ? '#10b981' : '#ef4444' }}>{formatCurrency(totalValues.sale - totalValues.purchase)}</strong></span>
+                <button 
+                    onClick={() => {
+                        if (selectedIds.size === filteredProducts.length) {
+                            setSelectedIds(new Set());
+                        } else {
+                            setSelectedIds(new Set(filteredProducts.map(p => p.id)));
+                        }
+                    }}
+                    style={{ marginLeft: 'auto', padding: '4px 10px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', background: selectedIds.size > 0 ? 'var(--primary)' : 'rgba(255,255,255,0.08)', color: selectedIds.size > 0 ? '#fff' : '#aaa', transition: 'all 0.2s' }}
+                >
+                    {selectedIds.size === filteredProducts.length && selectedIds.size > 0 ? <><CheckSquare size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Снять все</> : <><Square size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Выбрать все</>}
+                </button>
             </div>
 
             {/* ── Панель группового удаления ── */}
@@ -1010,13 +1022,20 @@ function Products() {
             {viewMode === 'icons' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '10px', marginTop: '8px' }}>
                     {paginatedProducts.map(product => (
-                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '12px', padding: '16px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'transform 0.2s' }} onClick={() => handleEdit(product)}>
-                            <div style={{ width: '60px', height: '60px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div key={product.id} style={{ background: selectedIds.has(product.id) ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary, #1e1e2e)', borderRadius: '12px', padding: '16px', textAlign: 'center', border: selectedIds.has(product.id) ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'transform 0.2s', position: 'relative' }}>
+                            <div onClick={e => { e.stopPropagation(); handleSelectOne(product.id); }} style={{ position: 'absolute', top: '6px', left: '6px', zIndex: 2 }}>
+                                {selectedIds.has(product.id) ? <CheckSquare size={16} style={{ color: 'var(--primary)' }} /> : <Square size={16} style={{ color: '#555' }} />}
+                            </div>
+                            <div onClick={() => handleEdit(product)} style={{ width: '60px', height: '60px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Package size={28} style={{ color: 'var(--primary)' }} />
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
                             <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
                             <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '6px' }}>
+                                <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleEdit(product); }} style={{ padding: '3px 5px' }}><Edit size={11} /></button>
+                                <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); handleDelete(product.id); }} style={{ padding: '3px 5px' }}><Trash2 size={11} /></button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -1026,10 +1045,19 @@ function Products() {
             {viewMode === 'icons-huge' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px', marginTop: '8px' }}>
                     {paginatedProducts.map(product => (
-                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '16px', padding: '24px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.3s ease' }} onClick={() => handleEdit(product)}
+                        <div key={product.id} style={{ background: selectedIds.has(product.id) ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary, #1e1e2e)', borderRadius: '16px', padding: '24px', textAlign: 'center', border: selectedIds.has(product.id) ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.3s ease', position: 'relative' }}
                              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(99,102,241,0.2)'; }}
                              onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
-                            <div style={{ width: '120px', height: '120px', borderRadius: '20px', background: 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.25))', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {/* Чекбокс выделения */}
+                            <div onClick={e => { e.stopPropagation(); handleSelectOne(product.id); }} style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 2 }}>
+                                {selectedIds.has(product.id) ? <CheckSquare size={20} style={{ color: 'var(--primary)' }} /> : <Square size={20} style={{ color: '#555' }} />}
+                            </div>
+                            {/* Кнопки действий */}
+                            <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', gap: '4px', zIndex: 2 }}>
+                                <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleEdit(product); }} style={{ padding: '4px 6px', opacity: 0.7 }}><Edit size={14} /></button>
+                                <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); handleDelete(product.id); }} style={{ padding: '4px 6px', opacity: 0.7 }}><Trash2 size={14} /></button>
+                            </div>
+                            <div onClick={() => handleEdit(product)} style={{ width: '120px', height: '120px', borderRadius: '20px', background: 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.25))', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Package size={56} style={{ color: 'var(--primary)' }} />
                             </div>
                             <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '6px', lineHeight: 1.3 }}>{product.name}</div>
@@ -1048,10 +1076,17 @@ function Products() {
             {viewMode === 'icons-large' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px', marginTop: '8px' }}>
                     {paginatedProducts.map(product => (
-                        <div key={product.id} style={{ background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '14px', padding: '18px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s ease' }} onClick={() => handleEdit(product)}
-                             onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
-                             onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}>
-                            <div style={{ width: '80px', height: '80px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div key={product.id} style={{ background: selectedIds.has(product.id) ? 'rgba(99,102,241,0.15)' : 'var(--bg-secondary, #1e1e2e)', borderRadius: '14px', padding: '18px', textAlign: 'center', border: selectedIds.has(product.id) ? '2px solid var(--primary)' : '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s ease', position: 'relative' }}
+                             onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                             onMouseLeave={e => { e.currentTarget.style.transform = ''; }}>
+                            <div onClick={e => { e.stopPropagation(); handleSelectOne(product.id); }} style={{ position: 'absolute', top: '8px', left: '8px', zIndex: 2 }}>
+                                {selectedIds.has(product.id) ? <CheckSquare size={18} style={{ color: 'var(--primary)' }} /> : <Square size={18} style={{ color: '#555' }} />}
+                            </div>
+                            <div style={{ position: 'absolute', top: '8px', right: '8px', display: 'flex', gap: '3px', zIndex: 2 }}>
+                                <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleEdit(product); }} style={{ padding: '3px 5px', opacity: 0.7 }}><Edit size={12} /></button>
+                                <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); handleDelete(product.id); }} style={{ padding: '3px 5px', opacity: 0.7 }}><Trash2 size={12} /></button>
+                            </div>
+                            <div onClick={() => handleEdit(product)} style={{ width: '80px', height: '80px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Package size={38} style={{ color: 'var(--primary)' }} />
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
@@ -1066,13 +1101,17 @@ function Products() {
             {viewMode === 'icons-small' && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
                     {paginatedProducts.map(product => (
-                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.04)', transition: 'all 0.15s', minWidth: '180px', maxWidth: '260px' }} onClick={() => handleEdit(product)}
-                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.12)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
-                             onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-secondary, #1e1e2e)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)'; }}>
-                            <div style={{ width: '24px', height: '24px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', background: selectedIds.has(product.id) ? 'rgba(99,102,241,0.2)' : 'var(--bg-secondary, #1e1e2e)', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', border: selectedIds.has(product.id) ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.04)', transition: 'all 0.15s', minWidth: '180px', maxWidth: '280px' }}
+                             onMouseEnter={e => { if (!selectedIds.has(product.id)) { e.currentTarget.style.background = 'rgba(99,102,241,0.12)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; } }}
+                             onMouseLeave={e => { if (!selectedIds.has(product.id)) { e.currentTarget.style.background = 'var(--bg-secondary, #1e1e2e)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)'; } }}>
+                            <div onClick={e => { e.stopPropagation(); handleSelectOne(product.id); }} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                                {selectedIds.has(product.id) ? <CheckSquare size={14} style={{ color: 'var(--primary)' }} /> : <Square size={14} style={{ color: '#555' }} />}
+                            </div>
+                            <div onClick={() => handleEdit(product)} style={{ width: '24px', height: '24px', borderRadius: '4px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <Package size={12} style={{ color: 'var(--primary)' }} />
                             </div>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{product.name}</span>
+                            <span onClick={() => handleEdit(product)} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{product.name}</span>
+                            <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); handleDelete(product.id); }} style={{ padding: '2px 4px', flexShrink: 0, opacity: 0.6 }}><Trash2 size={10} /></button>
                         </div>
                     ))}
                 </div>
@@ -1082,9 +1121,13 @@ function Products() {
             {viewMode === 'content' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
                     {paginatedProducts.map((product, idx) => (
-                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s' }} onClick={() => handleEdit(product)}
+                        <div key={product.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 16px', background: selectedIds.has(product.id) ? 'rgba(99,102,241,0.12)' : 'var(--bg-secondary, #1e1e2e)', borderRadius: '8px', border: selectedIds.has(product.id) ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.06)', cursor: 'pointer', transition: 'all 0.2s' }}
                              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.3)'; }}
-                             onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}>
+                             onMouseLeave={e => { if (!selectedIds.has(product.id)) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'; }}>
+                            {/* Чекбокс */}
+                            <div onClick={e => { e.stopPropagation(); handleSelectOne(product.id); }} style={{ flexShrink: 0, cursor: 'pointer' }}>
+                                {selectedIds.has(product.id) ? <CheckSquare size={18} style={{ color: 'var(--primary)' }} /> : <Square size={18} style={{ color: '#555' }} />}
+                            </div>
                             {/* Иконка */}
                             <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <Package size={24} style={{ color: 'var(--primary)' }} />
