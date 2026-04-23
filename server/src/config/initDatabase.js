@@ -840,6 +840,91 @@ async function addMissingColumns(pool) {
         'CREATE INDEX IF NOT EXISTS idx_categories_org ON product_categories(organization_id)',
         // Allow NULL in products.code (ИКПУ may be empty in import files)
         'ALTER TABLE products ALTER COLUMN code DROP NOT NULL',
+        // ============================================
+        // PRODUCTS: missing columns used in GET /api/products
+        // ============================================
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier VARCHAR(255)',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_retail DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock DECIMAL(10,2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS max_stock DECIMAL(10,2)',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(100)',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500)',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_rate DECIMAL(5,2) DEFAULT 20',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS price DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(15,2)',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_purchase DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_sale DECIMAL(15,2) DEFAULT 0',
+        // ============================================
+        // INVENTORY_MOVEMENTS: missing columns
+        // ============================================
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS document_type VARCHAR(50) DEFAULT \'adjustment\'',
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS document_id INTEGER',
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS cost_price DECIMAL(15,2)',
+        'ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS notes TEXT',
+        // ============================================
+        // SALES: missing columns for sync/mobile
+        // ============================================
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS source_device VARCHAR(100)',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS synced_to_desktop BOOLEAN DEFAULT false',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_id INTEGER',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount_percent DECIMAL(5,2) DEFAULT 0',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50)',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS shift_id INTEGER',
+        // ============================================
+        // WAREHOUSES: missing columns
+        // ============================================
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS code VARCHAR(100)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS address TEXT',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS responsible_person VARCHAR(255)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS phone VARCHAR(50)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS email VARCHAR(255)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS working_hours VARCHAR(255)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS capacity DECIMAL(15,2)',
+        'ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS license_id INTEGER',
+        // ============================================
+        // LICENSES: missing columns
+        // ============================================
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS organization_id INTEGER',
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS server_api_key VARCHAR(255)',
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS server_url VARCHAR(500)',
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS server_type VARCHAR(50)',
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS metadata JSONB',
+        'ALTER TABLE licenses ADD COLUMN IF NOT EXISTS product_name VARCHAR(255)',
+        // ============================================
+        // COUNTERPARTIES: missing columns
+        // ============================================
+        'ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS license_id INTEGER',
+        'ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS type VARCHAR(50)',
+        // ============================================
+        // SHIFTS: missing columns
+        // ============================================
+        'ALTER TABLE shifts ADD COLUMN IF NOT EXISTS license_id INTEGER',
+        // ============================================
+        // CUSTOMERS: missing columns
+        // ============================================
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points DECIMAL(10,2) DEFAULT 0',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS total_purchases DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS visit_count INTEGER DEFAULT 0',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_visit TIMESTAMP',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE',
+        'ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT',
+        // ============================================
+        // STOCK_BALANCES table (used by import/warehouse routes)
+        // ============================================
+        `CREATE TABLE IF NOT EXISTS stock_balances (
+            id SERIAL PRIMARY KEY,
+            product_id INTEGER,
+            warehouse_id INTEGER,
+            quantity DECIMAL(15,3) DEFAULT 0,
+            last_movement_date TIMESTAMP,
+            organization_id INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`,
     ];
 
     for (const q of alterQueries) {
