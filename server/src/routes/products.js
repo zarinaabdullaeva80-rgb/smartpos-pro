@@ -175,7 +175,7 @@ router.get('/', authenticate, async (req, res) => {
         }
     } catch (error) {
         console.error('Ошибка получения товаров:', error);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({ error: 'Ошибка сервера', details: error.message });
     }
 });
 
