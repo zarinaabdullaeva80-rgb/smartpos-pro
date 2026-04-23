@@ -516,7 +516,7 @@ async function startServer() {
         const PORT = process.env.PORT || 5000;
         const HOST = process.env.SERVER_HOST || '0.0.0.0';
 
-        server.listen(PORT, HOST, () => {
+        server.listen(PORT, HOST, async () => {
             // Получение всех локальных IP-адресов для удобства подключения
             const os = await import('os');
             const nets = os.networkInterfaces();
