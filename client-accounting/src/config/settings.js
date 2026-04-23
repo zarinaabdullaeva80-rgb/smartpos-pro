@@ -77,12 +77,32 @@ export function getApiUrl() {
  * который проксирует их на центральный облачный сервер Railway.
  * Это обходит проблемы CORS.
  */
-export function getLicenseServerUrl() {
+/**
+ * Получить URL сервера лицензирования
+ * Пытаемся стучаться через локальный сервер (прокси), 
+ * но если он недоступен — идем напрямую в облако Railway.
+ */
+export async function getLicenseServerUrl() {
     const customLicenseUrl = localStorage.getItem(STORAGE_KEYS.LICENSE_SERVER_URL);
     if (customLicenseUrl) return customLicenseUrl;
 
-    // Используем текущий API URL (localhost) — сервер сам проксирует на Railway
-    return getApiUrl();
+    // Проверяем, доступен ли локальный сервер
+    const apiUrl = getApiUrl();
+    const isLocalhost = apiUrl.includes('localhost') || apiUrl.includes('127.0.0.1');
+    
+    // Если мы в режиме клиента или облака, либо локальный сервер на localhost — 
+    // пробуем сначала локальный, но держим облако как основной fallback.
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(`${apiUrl.replace(/\/api\/?$/, '')}/api/health`, { signal: controller.signal });
+        if (response.ok) return apiUrl;
+    } catch (e) {
+        // Локальный сервер недоступен
+    }
+
+    // Fallback: напрямую в облако (чтобы активация работала без сервера)
+    return LICENSE_SERVER_URL;
 }
 
 /**
@@ -172,25 +192,33 @@ export async function testServerConnection(url) {
 export async function autoDiscoverServer(onProgress = null) {
     console.log('[AutoDiscover] Начинаю поиск сервера в локальной сети...');
 
-    // Приоритетные IP адреса
+    // Приоритетные IP адреса (наиболее вероятные для серверов)
     const priorityIps = [
-        '192.168.1.35',     // Основной сервер (статический IP)
+        '192.168.137.1',    // ★ Точка доступа Windows (мобильный хотспот)
+        '192.168.1.35',     // Текущий IP сервера (Ethernet)
+        '192.168.1.108',    // IP из логов (частый)
+        '192.168.1.45',     // Ещё один частый IP
         '127.0.0.1',        // localhost
+        '192.168.1.1', '192.168.0.1', '10.0.0.1', // Шлюзы
+        '192.168.1.100', '192.168.1.101', '192.168.1.102',
+        '192.168.0.100', '192.168.0.101', '192.168.0.102',
         '26.129.223.224',   // Radmin VPN
-        '192.168.1.1', '192.168.1.2', '192.168.1.100', '192.168.1.101', '192.168.1.102',
-        '192.168.0.1', '192.168.0.2', '192.168.0.100', '192.168.0.101', '192.168.0.102',
-        '10.0.0.1', '10.0.0.2', '10.0.0.100',
-        '172.16.0.1', '172.16.0.2',
     ];
 
-    // Генерация дополнительных IP
+    // Генерация дополнительных IP (включая подсеть 137 — Windows hotspot)
     const generateIps = () => {
         const ips = [...priorityIps];
+        // Стандартные подсети 0-10
         for (let subnet = 0; subnet <= 10; subnet++) {
-            for (let host = 1; host <= 254; host += 10) {
+            for (let host = 1; host <= 254; host += 5) {
                 const ip = `192.168.${subnet}.${host}`;
                 if (!ips.includes(ip)) ips.push(ip);
             }
+        }
+        // Подсеть 137 (Windows Mobile Hotspot)
+        for (let host = 1; host <= 254; host += 5) {
+            const ip = `192.168.137.${host}`;
+            if (!ips.includes(ip)) ips.push(ip);
         }
         return ips;
     };

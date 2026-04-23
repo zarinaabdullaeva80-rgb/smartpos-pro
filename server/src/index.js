@@ -169,6 +169,8 @@ const fallbackPaths = [
     path.resolve(__dirname, '..', '..', 'client-accounting', 'dist'),  // dev mode
     path.resolve(__dirname, '..', '..', 'dist'),                        // Electron production mode
     path.resolve(__dirname, '..', 'dist'),                              // adjacent dist
+    path.resolve(process.cwd(), 'client-dist'),                         // Railway: client-dist в server/
+    path.resolve(__dirname, '..', 'client-dist'),                       // Railway: альтернативный путь
     path.resolve(process.cwd(), 'dist'),                                // cwd/dist
 ];
 

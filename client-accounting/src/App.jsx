@@ -188,8 +188,9 @@ function App() {
             const token = localStorage.getItem('token');
             if (token && licenseInfo && licenseInfo.id) {
                 try {
-                    const apiUrl = localStorage.getItem('server_url') || 'http://localhost:5000';
-                    const resp = await fetch(`${apiUrl}/api/license/check-expiry`, {
+                    const apiUrl = localStorage.getItem('server_url') || 'http://localhost:5000/api';
+                    const baseUrl = apiUrl.replace(/\/api\/?$/, '');
+                    const resp = await fetch(`${baseUrl}/api/license/check-expiry`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     if (resp.ok) {

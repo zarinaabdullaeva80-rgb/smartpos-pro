@@ -181,7 +181,7 @@ function Login({ onLogin }) {
     const checkSavedLicense = async (key) => {
         try {
             // Проверяем на центральном сервере лицензирования
-            const licenseUrl = getLicenseServerUrl();
+            const licenseUrl = await getLicenseServerUrl();
             const response = await fetch(`${licenseUrl}/license/validate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -235,7 +235,7 @@ function Login({ onLogin }) {
 
         try {
             // Проверяем лицензию на центральном сервере
-            const licenseUrl = getLicenseServerUrl();
+            const licenseUrl = await getLicenseServerUrl();
             console.log('[License] Validating on:', licenseUrl);
             console.log('[License] Key:', licenseKey);
 
@@ -276,7 +276,7 @@ function Login({ onLogin }) {
             }
         } catch (err) {
             console.error('[License] Validation error:', err);
-            const licenseUrl = getLicenseServerUrl();
+            const licenseUrl = await getLicenseServerUrl();
             setError(`Ошибка подключения к серверу лицензирования (${licenseUrl}). ${err.message || ''}`);
         } finally {
             setLoading(false);
