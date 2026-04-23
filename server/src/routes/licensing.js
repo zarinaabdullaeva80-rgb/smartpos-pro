@@ -1912,6 +1912,90 @@ router.post('/admin-cleanup', async (req, res) => {
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
             );
             results.tables = tablesRes.rows.map(r => r.table_name);
+        } else if (action === 'bulk_migrate') {
+            // Bulk migrate data from local DB
+            const { tables } = req.body;
+            if (!tables || typeof tables !== 'object') {
+                return res.status(400).json({ error: 'tables object required' });
+            }
+
+            // Ensure all tables exist first
+            try {
+                const { initDatabase } = await import('../config/initDatabase.js');
+                await initDatabase(pool);
+            } catch (e) {
+                console.log('[MIGRATE] Init warning:', e.message);
+            }
+
+            for (const [tableName, rows] of Object.entries(tables)) {
+                if (!rows || !Array.isArray(rows) || rows.length === 0) {
+                    results[tableName] = { skipped: true, reason: 'empty' };
+                    continue;
+                }
+
+                // Sanitize table name
+                const safeName = tableName.replace(/[^a-z0-9_]/g, '');
+                
+                try {
+                    // Check table exists
+                    const tableCheck = await pool.query(
+                        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`,
+                        [safeName]
+                    );
+                    if (!tableCheck.rows[0].exists) {
+                        results[safeName] = { skipped: true, reason: 'table not found on server' };
+                        continue;
+                    }
+
+                    // Get remote columns
+                    const colsRes = await pool.query(
+                        `SELECT column_name FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position`,
+                        [safeName]
+                    );
+                    const remoteCols = colsRes.rows.map(r => r.column_name);
+
+                    // Delete existing data
+                    await pool.query(`DELETE FROM "${safeName}"`);
+
+                    let inserted = 0;
+                    let errors = 0;
+
+                    for (const row of rows) {
+                        // Only use columns that exist in remote table
+                        const rowCols = Object.keys(row).filter(c => remoteCols.includes(c));
+                        if (rowCols.length === 0) continue;
+
+                        const colList = rowCols.map(c => `"${c}"`).join(', ');
+                        const placeholders = rowCols.map((_, i) => `$${i + 1}`).join(', ');
+                        const values = rowCols.map(c => row[c]);
+
+                        try {
+                            await pool.query(
+                                `INSERT INTO "${safeName}" (${colList}) VALUES (${placeholders})`,
+                                values
+                            );
+                            inserted++;
+                        } catch (e) {
+                            errors++;
+                        }
+                    }
+
+                    // Reset sequence
+                    try {
+                        const maxId = await pool.query(`SELECT COALESCE(MAX(id), 0) as max_id FROM "${safeName}"`);
+                        if (maxId.rows[0].max_id > 0) {
+                            await pool.query(
+                                `SELECT setval(pg_get_serial_sequence('"${safeName}"', 'id'), $1, true)`,
+                                [maxId.rows[0].max_id]
+                            );
+                        }
+                    } catch (e) { /* no sequence */ }
+
+                    results[safeName] = { inserted, errors, total: rows.length };
+                } catch (e) {
+                    results[safeName] = { error: e.message.substring(0, 100) };
+                }
+            }
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
