@@ -93,14 +93,32 @@ router.post('/validate', async (req, res) => {
         }
 
         if (licenseResult.rows.length === 0) {
-            // Лицензия не найдена локально — проверяем на центральном сервере Railway
+            // Проверяем, не является ли ЭТОТ сервер облачным (Railway)
+            // Если да — не вызываем сам себя (это вызовет бесконечный цикл!)
+            const isCloudServer = process.env.RAILWAY_ENVIRONMENT
+                || process.env.RAILWAY_PROJECT_ID
+                || (req.get('host') || '').includes('railway.app');
+
+            if (isCloudServer) {
+                console.log('[License] Ключ не найден в облачной БД:', license_key);
+                return res.status(404).json({
+                    valid: false,
+                    error: 'Лицензионный ключ не найден. Обратитесь к администратору.'
+                });
+            }
+
+            // Локальный сервер — проверяем на центральном сервере Railway
             console.log('[License] Not found locally, checking Railway cloud server...');
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
                 const cloudResponse = await fetch('https://smartpos-pro-production.up.railway.app/api/license/validate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ license_key, device_id })
+                    body: JSON.stringify({ license_key, device_id }),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
                 const cloudData = await cloudResponse.json();
                 console.log('[License] Railway response:', cloudData);
                 return res.status(cloudResponse.status).json(cloudData);
