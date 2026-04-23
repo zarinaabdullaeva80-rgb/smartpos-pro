@@ -106,6 +106,8 @@ const COLUMN_MAPPINGS = {
         'себестоимость': 'price_purchase', 'закупочная цена': 'price_purchase', 'cost': 'price_purchase',
         'закупка': 'price_purchase', 'входная цена': 'price_purchase',
         'cost price': 'price_purchase', 'buy price': 'price_purchase',
+        'цена прихода': 'price_purchase', 'приходная цена': 'price_purchase', 'цена поступления': 'price_purchase',
+        'цена покупки': 'price_purchase', 'цена приобретения': 'price_purchase',
 
         // ── Оптовая цена ──
         'оптовая цена': 'price_retail', 'оптовая': 'price_retail', 'wholesale price': 'price_retail',
