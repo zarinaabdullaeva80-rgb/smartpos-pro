@@ -2034,6 +2034,22 @@ router.post('/admin-cleanup', async (req, res) => {
                 [table]
             );
             results.schema = schemaRes.rows;
+        } else if (action === 'list_files') {
+            const { path: dirPath } = req.body;
+            try {
+                const fs = await import('fs');
+                const path = await import('path');
+                const target = dirPath || process.cwd();
+                if (fs.existsSync(target)) {
+                    results.files = fs.readdirSync(target);
+                    results.cwd = process.cwd();
+                    results.exists = true;
+                } else {
+                    results.exists = false;
+                }
+            } catch (e) {
+                results.error = e.message;
+            }
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
