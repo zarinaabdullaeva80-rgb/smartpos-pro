@@ -2050,6 +2050,18 @@ router.post('/admin-cleanup', async (req, res) => {
             } catch (e) {
                 results.error = e.message;
             }
+        } else if (action === 'run_sql') {
+            const { sql } = req.body;
+            if (!sql) return res.status(400).json({ error: 'sql required' });
+            try {
+                const sqlResult = await pool.query(sql);
+                results.rowCount = sqlResult.rowCount;
+                results.rows = sqlResult.rows?.slice(0, 50);
+                results.success = true;
+            } catch (e) {
+                results.error = e.message;
+                results.success = false;
+            }
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
