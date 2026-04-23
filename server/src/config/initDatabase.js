@@ -17,10 +17,10 @@ export async function initDatabase(pool) {
         `);
 
         if (tableCheck.rows[0].exists) {
-            console.log('✅ Таблицы уже существуют, пропускаем инициализацию');
-            // Still run ALTER TABLE for missing columns
+            console.log('✅ Таблица users существует, проверяем остальные таблицы...');
+            // Always run CREATE TABLE IF NOT EXISTS + ALTER TABLE for missing columns
             await addMissingColumns(pool);
-            return;
+            // Don't return — continue to create any missing tables
         }
 
         console.log('📦 Создание таблиц базы данных...');
