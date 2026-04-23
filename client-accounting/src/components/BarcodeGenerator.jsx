@@ -24,9 +24,25 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
 
     // Размеры этикеток
     const labelSizes = {
+        thermal30x20: { width: '30mm', height: '20mm', name: 'Термо 30×20мм' },
+        thermal40x25: { width: '40mm', height: '25mm', name: 'Термо 40×25мм' },
+        thermal40x30: { width: '40mm', height: '30mm', name: 'Термо 40×30мм' },
+        thermal43x25: { width: '43mm', height: '25mm', name: 'Термо 43×25мм' },
+        thermal47x25: { width: '47mm', height: '25mm', name: 'Термо 47×25мм' },
         thermal57: { width: '57mm', height: '30mm', name: 'Термо 57×30мм' },
+        thermal57x40: { width: '57mm', height: '40mm', name: 'Термо 57×40мм' },
+        thermal58x30: { width: '58mm', height: '30mm', name: 'Термо 58×30мм' },
+        thermal58x40: { width: '58mm', height: '40mm', name: 'Термо 58×40мм' },
+        thermal60x40: { width: '60mm', height: '40mm', name: 'Термо 60×40мм' },
+        thermal60x60: { width: '60mm', height: '60mm', name: 'Термо 60×60мм' },
         thermal80: { width: '80mm', height: '40mm', name: 'Термо 80×40мм' },
-        a4: { width: '57mm', height: '30mm', name: 'A4 (57×30мм сетка)' }
+        thermal80x50: { width: '80mm', height: '50mm', name: 'Термо 80×50мм' },
+        thermal80x60: { width: '80mm', height: '60mm', name: 'Термо 80×60мм' },
+        thermal100x50: { width: '100mm', height: '50mm', name: 'Термо 100×50мм' },
+        thermal100x70: { width: '100mm', height: '70mm', name: 'Термо 100×70мм' },
+        thermal100x150: { width: '100mm', height: '150mm', name: 'Термо 100×150мм (доставка)' },
+        a4: { width: '57mm', height: '30mm', name: 'A4 (57×30мм сетка)' },
+        a4_landscape: { width: '70mm', height: '42mm', name: 'A4 (70×42мм сетка)' }
     };
 
     // Генерация штрихкода как Data URL

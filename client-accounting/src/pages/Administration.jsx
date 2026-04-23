@@ -105,6 +105,8 @@ function Administration() {
             }
         } catch (err) {
             console.warn('Administration: не удалось загрузить данные', err.message);
+        } finally {
+            setLoading(false);
         }
     }, [activeTab, logFilter]);
 

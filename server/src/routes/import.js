@@ -306,6 +306,62 @@ router.get('/fields/:type', authenticate, (req, res) => {
 });
 
 /**
+ * GET /api/import/template/:type - Скачать шаблон для импорта
+ */
+router.get('/template/:type', authenticate, (req, res) => {
+    const { type } = req.params;
+
+    const templates = {
+        products: {
+            filename: 'шаблон_товары.xlsx',
+            headers: ['Наименование', 'Штрих-код', 'Код товара', 'Категория', 'Единица', 
+                       'Цена продажи', 'Цена закупки', 'Оптовая цена', 'Остаток', 
+                       'Мин. остаток', 'Макс. остаток', 'НДС %', 'Описание',
+                       'Производитель', 'Страна', 'Тип товара', 'Маркировка(Да/Нет)',
+                       'Весовой(Да/Нет)', 'Кол-во в упаковке'],
+            example: ['Чай зелёный 100г', '4607001234567', 'TEA-001', 'Напитки', 'шт',
+                       '15000', '12000', '13500', '100', '10', '500', '12', 'Зелёный чай высшего сорта',
+                       'Tashkent Tea', 'Узбекистан', 'Перепродажа', 'Нет', 'Нет', '1']
+        },
+        categories: {
+            filename: 'шаблон_категории.xlsx',
+            headers: ['Название', 'Описание', 'Родительская категория'],
+            example: ['Напитки', 'Чай, кофе, соки', '']
+        },
+        customers: {
+            filename: 'шаблон_клиенты.xlsx',
+            headers: ['Имя', 'Телефон', 'Email', 'Адрес', 'ИНН', 'Примечание'],
+            example: ['ООО Ромашка', '+998901234567', 'info@romashka.uz', 'г. Ташкент, ул. Навои 1', '123456789', 'Постоянный клиент']
+        }
+    };
+
+    const tmpl = templates[type];
+    if (!tmpl) {
+        return res.status(400).json({ error: `Неизвестный тип шаблона: ${type}. Доступные: products, categories, customers` });
+    }
+
+    try {
+        const wb = XLSX.utils.book_new();
+        const wsData = [tmpl.headers, tmpl.example];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        // Установить ширину колонок
+        ws['!cols'] = tmpl.headers.map(h => ({ wch: Math.max(h.length + 2, 15) }));
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Шаблон');
+
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(tmpl.filename)}"`);
+        res.send(buf);
+    } catch (err) {
+        console.error('[Template] Error generating template:', err);
+        res.status(500).json({ error: 'Ошибка генерации шаблона' });
+    }
+});
+
+/**
  * POST /api/import/preview - Предпросмотр файла (парсинг + автомаппинг, без записи в БД)
  */
 router.post('/preview', authenticate, upload.single('file'), async (req, res) => {

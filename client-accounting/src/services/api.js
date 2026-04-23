@@ -1226,6 +1226,27 @@ export const documentsAPI = {
     sign: (id, data) => api.post(`/documents/${id}/sign`, data)
 };
 
+// EDS (Electronic Digital Signature) API
+export const edsAPI = {
+    getCertificates: () => withFallback(
+        () => api.get('/eds/certificates'),
+        () => ({ certificates: [] })
+    ),
+    uploadCertificate: (formData) => api.post('/eds/certificates/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    deleteCertificate: (id) => api.delete(`/eds/certificates/${id}`),
+    getSignatures: () => withFallback(
+        () => api.get('/eds/signatures'),
+        () => ({ signatures: [] })
+    ),
+    signDocument: (formData) => api.post('/eds/sign', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    verifySignature: (id) => api.get(`/eds/signatures/${id}/verify`),
+    downloadSigned: (id) => api.get(`/eds/signatures/${id}/download`, { responseType: 'blob' })
+};
+
 // System API
 export const systemAPI = {
     getInfo: () => withFallback(

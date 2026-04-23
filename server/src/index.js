@@ -95,6 +95,7 @@ import emailCampaignsRoutes from './routes/emailCampaigns.js';
 import payrollRoutes from './routes/payroll.js';
 import inventoryRoutes from './routes/inventory.js';
 import currenciesRoutes from './routes/currencies.js';
+import edsRoutes from './routes/eds.js';
 
 import { apiLogger } from './middleware/apiLogger.js';
 import { initRedis } from './services/redis.js';
@@ -396,6 +397,7 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/currencies', currenciesRoutes);
+app.use('/api/eds', edsRoutes);
 
 
 
