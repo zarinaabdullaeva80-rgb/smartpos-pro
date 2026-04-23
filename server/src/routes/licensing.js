@@ -2018,6 +2018,12 @@ router.post('/admin-cleanup', async (req, res) => {
                     results[table] = -1;
                 }
             }
+        } else if (action === 'get_logs') {
+            const logsRes = await pool.query('SELECT * FROM api_logs ORDER BY created_at DESC LIMIT 50');
+            results.logs = logsRes.rows;
+        } else if (action === 'get_errors') {
+            const errRes = await pool.query('SELECT * FROM error_logs ORDER BY created_at DESC LIMIT 50');
+            results.errors = errRes.rows;
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
