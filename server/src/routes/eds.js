@@ -199,33 +199,16 @@ router.post('/sign', authenticate, upload.single('document'), async (req, res) =
     try {
         if (!req.file) return res.status(400).json({ error: 'Документ не загружен' });
 
-        const { certificate_id } = req.body;
+        const { certificate_id, pkcs7, signer_name, signer_tin, signer_pinfl, serial_number } = req.body;
         const orgId = req.user?.organization_id || null;
         const userId = req.user?.userId;
-
-        // Проверяем сертификат
-        let certInfo = null;
-        if (certificate_id) {
-            const certRes = await pool.query('SELECT * FROM eds_certificates WHERE id = $1', [certificate_id]);
-            if (certRes.rows.length === 0) {
-                return res.status(404).json({ error: 'Сертификат не найден' });
-            }
-            certInfo = certRes.rows[0];
-            if (certInfo.status !== 'active') {
-                return res.status(400).json({ error: 'Сертификат неактивен' });
-            }
-            if (certInfo.valid_to && new Date(certInfo.valid_to) < new Date()) {
-                return res.status(400).json({ error: 'Сертификат истёк' });
-            }
-        }
 
         // Вычисляем хэш документа
         const fileBuffer = fs.readFileSync(req.file.path);
         const documentHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-        // Создаём цифровую подпись (HMAC-SHA512 с thumbprint сертификата как ключ)
-        const signKey = certInfo?.thumbprint || crypto.randomBytes(32).toString('hex');
-        const signature = crypto.createHmac('sha512', signKey).update(documentHash).digest('hex');
+        // Используем PKCS#7 от E-IMZO или генерируем свою подпись
+        const signatureData = pkcs7 || crypto.createHmac('sha512', crypto.randomBytes(32).toString('hex')).update(documentHash).digest('hex');
 
         // Сохраняем подпись
         const result = await pool.query(
@@ -238,8 +221,8 @@ router.post('/sign', authenticate, upload.single('document'), async (req, res) =
                 req.file.originalname,
                 path.extname(req.file.originalname).replace('.', '').toUpperCase(),
                 documentHash,
-                signature,
-                certInfo?.owner || req.user?.username || 'Неизвестный',
+                signatureData,
+                signer_name || req.user?.username || 'Неизвестный',
                 certificate_id || null,
                 req.file.path,
                 orgId,
