@@ -319,7 +319,8 @@ try {
 }
 
 // Body parsing middleware
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Логирование запросов
@@ -514,14 +515,36 @@ async function startServer() {
 
         const PORT = process.env.PORT || 5000;
         const HOST = process.env.SERVER_HOST || '0.0.0.0';
+
         server.listen(PORT, HOST, () => {
-            console.log('='.repeat(50));
-            console.log(`🚀 Сервер запущен на ${HOST}:${PORT}`);
-            console.log(`📊 API доступно по адресу: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/api`);
-            console.log(`🔌 WebSocket сервер активен`);
-            if (HOST === '0.0.0.0') {
-                console.log('\n🌐 Слушаем на всех интерфейсах (доступно в сети)');
+            // Получение всех локальных IP-адресов для удобства подключения
+            const os = await import('os');
+            const nets = os.networkInterfaces();
+            const addresses = [];
+            for (const name of Object.keys(nets)) {
+                for (const net of nets[name]) {
+                    if (net.family === 'IPv4' && !net.internal) {
+                        addresses.push(net.address);
+                    }
+                }
             }
+
+            console.log('='.repeat(50));
+            console.log(`🚀 SmartPOS Pro Server запущен!`);
+            console.log(`📡 Локальный доступ: http://localhost:${PORT}`);
+            
+            if (addresses.length > 0) {
+                console.log(`\n🌐 Доступ в WiFi сети:`);
+                addresses.forEach(ip => {
+                    console.log(`   👉 http://${ip}:${PORT}`);
+                    console.log(`   🔗 API: http://${ip}:${PORT}/api`);
+                });
+                console.log(`\n💡 Введите один из этих адресов в мобильном приложении или на другом ПК.`);
+            } else {
+                console.log(`\n⚠️ Внешние IP-адреса не найдены. Проверьте подключение к WiFi.`);
+            }
+            
+            console.log(`\n🔌 WebSocket сервер активен`);
             console.log('='.repeat(50));
         });
     } catch (error) {
