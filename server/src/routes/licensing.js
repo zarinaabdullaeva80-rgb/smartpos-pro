@@ -5,6 +5,41 @@ import { auditLog } from '../middleware/audit.js';
 
 const router = express.Router();
 
+// ★ Секрет для синхронизации между локальным сервером и Railway
+const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+const CLOUD_SERVER_URL = process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app';
+
+/**
+ * Синхронизация лицензии на облачный сервер Railway
+ * Вызывается автоматически после создания лицензии на локальном сервере
+ */
+async function syncToCloud(licenseData) {
+    // Не синхронизировать если МЫ и есть облако
+    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+    if (isCloud) return { skipped: true, reason: 'already cloud' };
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${CLOUD_SERVER_URL}/api/license/sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Sync-Secret': CLOUD_SYNC_SECRET
+            },
+            body: JSON.stringify(licenseData),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        console.log('[SYNC] Cloud response:', result);
+        return result;
+    } catch (error) {
+        console.error('[SYNC] Cloud sync failed (non-blocking):', error.message);
+        return { error: error.message };
+    }
+}
+
 /**
  * GET /api/license/resolve?key=XXXX-XXXX-XXXX-XXXX
  * Публичный endpoint (без аутентификации) — резолв лицензионного ключа в URL сервера.
@@ -558,10 +593,38 @@ router.post('/admin/licenses', authenticate, auditLog('license'), async (req, re
             console.error('[LICENSE] Org creation error (license still created):', orgErr.message);
         }
 
+        // ★ Автоматическая синхронизация на Railway Cloud
+        let syncResult = null;
+        try {
+            syncResult = await syncToCloud({
+                license_key,
+                customer_name,
+                customer_email,
+                customer_phone,
+                customer_username,
+                customer_password_hash,
+                company_name: company_name || customer_name || customer_username,
+                license_type,
+                max_devices,
+                max_users,
+                max_pos_terminals,
+                expires_at,
+                trial_days,
+                features,
+                server_type,
+                server_url,
+                server_api_key
+            });
+            console.log('[LICENSE] Cloud sync result:', syncResult?.success ? '✅ OK' : '⚠️ ' + (syncResult?.error || 'unknown'));
+        } catch (syncErr) {
+            console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
+        }
+
         res.json({
             success: true,
             license: result.rows[0],
             organization_id: organizationId,
+            cloud_synced: syncResult?.success || false,
             message: `Лицензия создана. Организация "${orgName}" создана. Передайте клиенту логин: ${customer_username}`
         });
 
@@ -1670,6 +1733,123 @@ router.delete('/all/cleanup', authenticate, async (req, res) => {
         res.json({ success: true, message: `Удалено ${result.rowCount} лицензий` });
     } catch (error) {
         console.error('Error cleaning up licenses:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/license/sync
+ * Принимает данные лицензии от локального сервера и создаёт всё необходимое:
+ * лицензию, организацию, склад, пользователя-владельца.
+ * Защищён секретным ключом (X-Sync-Secret header).
+ */
+router.post('/sync', async (req, res) => {
+    try {
+        // Проверка секрета
+        const secret = req.headers['x-sync-secret'];
+        if (secret !== CLOUD_SYNC_SECRET) {
+            return res.status(403).json({ error: 'Invalid sync secret' });
+        }
+
+        const {
+            license_key, customer_name, customer_email, customer_phone,
+            customer_username, customer_password_hash,
+            company_name, license_type, max_devices = 3, max_users = 5,
+            max_pos_terminals = 1, expires_at, trial_days = 0,
+            features = {}, server_type = 'cloud', server_url, server_api_key
+        } = req.body;
+
+        if (!license_key || !customer_username) {
+            return res.status(400).json({ error: 'license_key and customer_username required' });
+        }
+
+        console.log(`[SYNC] Receiving license: ${license_key} for ${customer_username}`);
+
+        // 1. Создать/обновить лицензию
+        const licResult = await pool.query(`
+            INSERT INTO licenses (
+                license_key, customer_name, customer_email, customer_phone,
+                customer_username, customer_password_hash,
+                company_name, license_type, max_devices, max_users,
+                max_pos_terminals, expires_at, trial_days, features, status,
+                server_type, server_url, server_api_key, is_active
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15,$16,$17,true)
+            ON CONFLICT (license_key) DO UPDATE SET
+                customer_name = EXCLUDED.customer_name,
+                customer_username = EXCLUDED.customer_username,
+                customer_password_hash = EXCLUDED.customer_password_hash,
+                company_name = EXCLUDED.company_name,
+                license_type = EXCLUDED.license_type,
+                max_devices = EXCLUDED.max_devices,
+                max_users = EXCLUDED.max_users,
+                expires_at = EXCLUDED.expires_at,
+                features = EXCLUDED.features,
+                updated_at = NOW()
+            RETURNING id
+        `, [
+            license_key, customer_name, customer_email, customer_phone,
+            customer_username, customer_password_hash,
+            company_name, license_type, max_devices, max_users,
+            max_pos_terminals, expires_at, trial_days, JSON.stringify(features),
+            server_type, server_url, server_api_key
+        ]);
+        const licenseId = licResult.rows[0].id;
+
+        // 2. Создать/обновить организацию
+        const orgName = company_name || customer_name || customer_username;
+        const orgCode = 'ORG-' + license_key.replace(/-/g, '').substring(0, 8);
+        const orgResult = await pool.query(`
+            INSERT INTO organizations (name, code, license_key, is_active)
+            VALUES ($1, $2, $3, true)
+            ON CONFLICT (license_key) DO UPDATE SET
+                name = EXCLUDED.name,
+                is_active = true
+            RETURNING id
+        `, [orgName, orgCode, license_key]);
+        const organizationId = orgResult.rows[0].id;
+
+        // 3. Привязать лицензию к организации
+        try {
+            await pool.query('UPDATE licenses SET organization_id = $1 WHERE id = $2', [organizationId, licenseId]);
+        } catch (e) { /* column may not exist */ }
+
+        // 4. Создать/обновить пользователя-владельца
+        await pool.query(`
+            INSERT INTO users (username, email, password_hash, full_name, role,
+                               license_id, organization_id, user_type, is_active)
+            VALUES ($1, $2, $3, $4, 'Администратор', $5, $6, 'owner', true)
+            ON CONFLICT (username) DO UPDATE SET
+                password_hash = EXCLUDED.password_hash,
+                organization_id = EXCLUDED.organization_id,
+                license_id = EXCLUDED.license_id,
+                is_active = true
+        `, [
+            customer_username,
+            customer_email || customer_username + '@smartpos.local',
+            customer_password_hash,
+            customer_name || customer_username,
+            licenseId, organizationId
+        ]);
+
+        // 5. Создать склад по умолчанию (если ещё нет)
+        await pool.query(`
+            INSERT INTO warehouses (name, code, is_active, organization_id)
+            VALUES ('Основной склад', $1, true, $2)
+            ON CONFLICT DO NOTHING
+        `, ['WH-' + organizationId, organizationId]);
+
+        console.log(`[SYNC] ✅ License ${license_key} synced: org=#${organizationId}, user=${customer_username}`);
+
+        res.json({
+            success: true,
+            license_id: licenseId,
+            organization_id: organizationId,
+            message: `Лицензия ${license_key} синхронизирована`
+        });
+
+    } catch (error) {
+        console.error('[SYNC] Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
