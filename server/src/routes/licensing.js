@@ -2024,6 +2024,16 @@ router.post('/admin-cleanup', async (req, res) => {
         } else if (action === 'get_errors') {
             const errRes = await pool.query('SELECT * FROM error_logs ORDER BY created_at DESC LIMIT 50');
             results.errors = errRes.rows;
+        } else if (action === 'get_schema') {
+            const { table } = req.body;
+            if (!table) return res.status(400).json({ error: 'table required' });
+            const schemaRes = await pool.query(
+                `SELECT column_name, data_type, is_nullable, column_default 
+                 FROM information_schema.columns 
+                 WHERE table_name = $1`,
+                [table]
+            );
+            results.schema = schemaRes.rows;
         }
 
         console.log('[ADMIN-CLEANUP]', action, results);
