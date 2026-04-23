@@ -981,8 +981,60 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                 }
 
                 if (existingId) {
-                    // ── UPDATE существующего товара: ТОЛЬКО обновляем остаток ──
-                    // Данные товара (цена, название, категория) не перезаписываем
+                    // ── UPDATE существующего товара: обновляем цены и остаток ──
+
+                    // Обновляем цены и основные данные если они указаны в файле
+                    const updateFields = [];
+                    const updateValues = [];
+                    let updateParamCount = 1;
+
+                    if (priceSale > 0) {
+                        updateFields.push(`price_sale = $${updateParamCount}`);
+                        updateValues.push(priceSale);
+                        updateParamCount++;
+                    }
+                    if (pricePurchase > 0) {
+                        updateFields.push(`price_purchase = $${updateParamCount}`);
+                        updateValues.push(pricePurchase);
+                        updateParamCount++;
+                    }
+                    if (priceRetail > 0) {
+                        updateFields.push(`price_retail = $${updateParamCount}`);
+                        updateValues.push(priceRetail);
+                        updateParamCount++;
+                    }
+                    if (priceMain > 0) {
+                        updateFields.push(`price = $${updateParamCount}`);
+                        updateValues.push(priceMain);
+                        updateParamCount++;
+                    }
+                    if (categoryId) {
+                        updateFields.push(`category_id = $${updateParamCount}`);
+                        updateValues.push(categoryId);
+                        updateParamCount++;
+                    }
+                    if (mapped.unit && mapped.unit !== 'шт') {
+                        updateFields.push(`unit = $${updateParamCount}`);
+                        updateValues.push(unit);
+                        updateParamCount++;
+                    }
+                    if (description) {
+                        updateFields.push(`description = $${updateParamCount}`);
+                        updateValues.push(description);
+                        updateParamCount++;
+                    }
+
+                    // Всегда обновляем is_active и updated_at
+                    updateFields.push('is_active = true');
+                    updateFields.push('updated_at = NOW()');
+
+                    if (updateFields.length > 0) {
+                        updateValues.push(existingId);
+                        await pool.query(
+                            `UPDATE products SET ${updateFields.join(', ')} WHERE id = $${updateParamCount}`,
+                            updateValues
+                        );
+                    }
 
                     if (quantity > 0) {
                         // Считаем текущий остаток
@@ -1009,8 +1061,6 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                         }
                     }
 
-                    // Помечаем товар как активный если он был деактивирован
-                    await pool.query('UPDATE products SET is_active = true, updated_at = NOW() WHERE id = $1', [existingId]);
                     updated++;
                 } else {
                     // ── INSERT нового товара ──

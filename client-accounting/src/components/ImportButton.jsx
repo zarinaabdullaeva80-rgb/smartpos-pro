@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Upload, AlertCircle, CheckCircle, X, FileSpreadsheet, Loader } from 'lucide-react';
+import { getApiUrl } from '../config/settings';
 
 /**
  * ImportButton - Импорт данных из Excel файла с живыми логами
@@ -80,7 +81,7 @@ function ImportButton({ onImport, buttonText = 'Импорт', endpoint = '/impo
             formData.append('file', file);
 
             const token = localStorage.getItem('token');
-            const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+            const API_BASE = getApiUrl();
 
             addLog(`📡 Отправка на сервер: ${endpoint}`, 'info');
 

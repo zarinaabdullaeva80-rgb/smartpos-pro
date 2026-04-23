@@ -312,8 +312,25 @@ router.post('/login', async (req, res) => {
                 }
             } else if (license_key && !expectedLicenseId) {
                 // license_key передан, но НЕ найден в локальной БД
-                // Ключ уже проверен клиентом на центральном сервере — разрешаем вход
-                console.log(`[AUTH] License key "${license_key.substring(0,8)}..." not in local DB, trusting client validation`);
+                // Проверяем, не привязан ли пользователь к ДРУГОЙ организации
+                if (user.organization_id) {
+                    // У пользователя есть organization_id — проверяем, совпадает ли с лицензией
+                    try {
+                        const orgCheck = await pool.query(
+                            `SELECT id FROM organizations WHERE id = $1 AND (license_key = $2 OR id IN (SELECT organization_id FROM licenses WHERE license_key = $2))`,
+                            [user.organization_id, license_key]
+                        );
+                        if (orgCheck.rows.length === 0) {
+                            console.warn(`[AUTH] Cross-tenant blocked: user "${username}" (org=${user.organization_id}) tried license_key "${license_key.substring(0,8)}..."`);
+                            return res.status(401).json({ 
+                                error: 'Этот логин привязан к другой организации. Проверьте лицензионный ключ.' 
+                            });
+                        }
+                    } catch (e) {
+                        console.log('[AUTH] Org check error:', e.message);
+                    }
+                }
+                console.log(`[AUTH] License key "${license_key.substring(0,8)}..." not in local DB, user org check passed`);
             } else if (!license_key) {
                 // ★ license_key НЕ передан — блокируем если пользователь лицензионный
                 if (userLicenseId) {

@@ -207,13 +207,15 @@ export async function autoDiscoverServer() {
 
     // Точные IP сервера — проверяем первыми (мгновенно)
     const knownServerIps = [
+        '192.168.137.1',   // ★ Точка доступа Windows (мобильный хотспот)
+        '192.168.1.35',    // Текущий IP сервера (Ethernet)
+        '192.168.1.108',   // IP из десктопного приложения
+        '192.168.1.45',    // Ещё один частый IP
         '192.168.1.97',    // Текущий IP сервера
-        '192.168.1.45',    // Основной WiFi сервер
-        '192.168.137.1',   // Точка доступа Windows
         '26.129.223.224',  // Radmin VPN
-        '192.168.1.1', '192.168.1.100', '192.168.1.101', '192.168.1.102',
-        '192.168.0.1', '192.168.0.100', '192.168.0.101',
-        '10.0.0.1', '10.0.0.100',
+        '192.168.1.1', '192.168.0.1', '10.0.0.1', // Шлюзы
+        '192.168.1.100', '192.168.1.101', '192.168.1.102',
+        '192.168.0.100', '192.168.0.101', '192.168.0.102',
     ];
 
     const checkServer = async (ip) => {
@@ -243,8 +245,14 @@ export async function autoDiscoverServer() {
     const knownFound = knownResults.find(r => r !== null);
     if (knownFound) return knownFound;
 
-    // Шаг 2: Сканирование 192.168.1.x полностью (самая частая подсеть)
+    // Шаг 2: Сканирование подсетей
     const scanIps = [];
+    // 192.168.137.x (Windows Mobile Hotspot) — полностью
+    for (let host = 2; host <= 254; host++) {
+        const ip = `192.168.137.${host}`;
+        if (!knownServerIps.includes(ip)) scanIps.push(ip);
+    }
+    // 192.168.1.x полностью (самая частая подсеть)
     for (let host = 1; host <= 254; host++) {
         const ip = `192.168.1.${host}`;
         if (!knownServerIps.includes(ip)) scanIps.push(ip);
@@ -256,8 +264,8 @@ export async function autoDiscoverServer() {
             if (!knownServerIps.includes(ip)) scanIps.push(ip);
         }
     }
-    for (let i = 0; i < scanIps.length; i += 30) {
-        const batch = scanIps.slice(i, i + 30);
+    for (let i = 0; i < scanIps.length; i += 40) {
+        const batch = scanIps.slice(i, i + 40);
         const results = await Promise.all(batch.map(checkServer));
         const found = results.find(r => r !== null);
         if (found) return found;
