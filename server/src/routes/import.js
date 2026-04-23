@@ -490,6 +490,7 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                                 description = COALESCE($7, description),
                                 min_stock = COALESCE($8, min_stock),
                                 is_active = true,
+                                organization_id = COALESCE($10, organization_id),
                                 updated_at = NOW()
                             WHERE id = $9
                             RETURNING id
@@ -502,7 +503,8 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
                             mapped.price_purchase ? parseFloat(mapped.price_purchase) : null,
                             mapped.description || null,
                             mapped.min_stock ? parseInt(mapped.min_stock) : null,
-                            existingProduct.id
+                            existingProduct.id,
+                            orgId
                         ]);
                         const productId = updateRes.rows[0].id;
                         
