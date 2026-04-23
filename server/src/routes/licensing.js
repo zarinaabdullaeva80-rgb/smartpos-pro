@@ -1739,13 +1739,11 @@ router.delete('/all/cleanup', authenticate, async (req, res) => {
 
 /**
  * POST /api/license/sync
- * Принимает данные лицензии от локального сервера и создаёт всё необходимое:
- * лицензию, организацию, склад, пользователя-владельца.
- * Защищён секретным ключом (X-Sync-Secret header).
+ * Sync license data from local server to Railway cloud.
+ * Protected by X-Sync-Secret header.
  */
 router.post('/sync', async (req, res) => {
     try {
-        // Проверка секрета
         const secret = req.headers['x-sync-secret'];
         if (secret !== CLOUD_SYNC_SECRET) {
             return res.status(403).json({ error: 'Invalid sync secret' });
@@ -1763,9 +1761,31 @@ router.post('/sync', async (req, res) => {
             return res.status(400).json({ error: 'license_key and customer_username required' });
         }
 
-        console.log(`[SYNC] Receiving license: ${license_key} for ${customer_username}`);\r\n\r\n        // 0. Авто-создание таблиц если не существуют (для первого вызова на Railway)\r\n        try {\r\n            await pool.query(`\r\n                CREATE TABLE IF NOT EXISTS organizations (\r\n                    id SERIAL PRIMARY KEY,\r\n                    name VARCHAR(255) NOT NULL,\r\n                    code VARCHAR(100) NOT NULL UNIQUE,\r\n                    license_key VARCHAR(255) UNIQUE,\r\n                    license_expires_at TIMESTAMP,\r\n                    settings JSONB DEFAULT '{}'::jsonb,\r\n                    is_active BOOLEAN DEFAULT true,\r\n                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\r\n                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\r\n                )\r\n            `);\r\n            await pool.query(`\r\n                CREATE TABLE IF NOT EXISTS warehouses (\r\n                    id SERIAL PRIMARY KEY,\r\n                    name VARCHAR(255) NOT NULL,\r\n                    code VARCHAR(100),\r\n                    is_active BOOLEAN DEFAULT true,\r\n                    organization_id INTEGER,\r\n                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\r\n                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\r\n                )\r\n            `);\r\n            // Ensure organization_id columns exist\r\n            for (const tbl of ['licenses', 'users', 'products']) {\r\n                try { await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS organization_id INTEGER`); } catch(e) {}\r\n            }\r\n        } catch (e) {\r\n            console.log('[SYNC] Table setup note:', e.message);\r\n        }
+        console.log('[SYNC] Receiving license:', license_key, 'for', customer_username);
 
-        // 1. Создать/обновить лицензию
+        // 0. Auto-create tables if they don't exist
+        try {
+            await pool.query(`CREATE TABLE IF NOT EXISTS organizations (
+                id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL,
+                code VARCHAR(100) NOT NULL UNIQUE, license_key VARCHAR(255) UNIQUE,
+                license_expires_at TIMESTAMP, settings JSONB DEFAULT '{}',
+                is_active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+            await pool.query(`CREATE TABLE IF NOT EXISTS warehouses (
+                id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL,
+                code VARCHAR(100), is_active BOOLEAN DEFAULT true,
+                organization_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+            for (const tbl of ['licenses', 'users', 'products']) {
+                try { await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS organization_id INTEGER`); } catch(e) {}
+            }
+        } catch (e) {
+            console.log('[SYNC] Table setup:', e.message);
+        }
+
+        // 1. Upsert license
         const licResult = await pool.query(`
             INSERT INTO licenses (
                 license_key, customer_name, customer_email, customer_phone,
@@ -1773,8 +1793,7 @@ router.post('/sync', async (req, res) => {
                 company_name, license_type, max_devices, max_users,
                 max_pos_terminals, expires_at, trial_days, features, status,
                 server_type, server_url, server_api_key, is_active
-            )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15,$16,$17,true)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15,$16,$17,true)
             ON CONFLICT (license_key) DO UPDATE SET
                 customer_name = EXCLUDED.customer_name,
                 customer_username = EXCLUDED.customer_username,
@@ -1786,8 +1805,7 @@ router.post('/sync', async (req, res) => {
                 expires_at = EXCLUDED.expires_at,
                 features = EXCLUDED.features,
                 updated_at = NOW()
-            RETURNING id
-        `, [
+            RETURNING id`, [
             license_key, customer_name, customer_email, customer_phone,
             customer_username, customer_password_hash,
             company_name, license_type, max_devices, max_users,
@@ -1796,35 +1814,29 @@ router.post('/sync', async (req, res) => {
         ]);
         const licenseId = licResult.rows[0].id;
 
-        // 2. Создать/обновить организацию
+        // 2. Upsert organization
         const orgName = company_name || customer_name || customer_username;
         const orgCode = 'ORG-' + license_key.replace(/-/g, '').substring(0, 8);
         const orgResult = await pool.query(`
             INSERT INTO organizations (name, code, license_key, is_active)
             VALUES ($1, $2, $3, true)
-            ON CONFLICT (license_key) DO UPDATE SET
-                name = EXCLUDED.name,
-                is_active = true
-            RETURNING id
-        `, [orgName, orgCode, license_key]);
+            ON CONFLICT (license_key) DO UPDATE SET name = EXCLUDED.name, is_active = true
+            RETURNING id`, [orgName, orgCode, license_key]);
         const organizationId = orgResult.rows[0].id;
 
-        // 3. Привязать лицензию к организации
-        try {
-            await pool.query('UPDATE licenses SET organization_id = $1 WHERE id = $2', [organizationId, licenseId]);
-        } catch (e) { /* column may not exist */ }
+        // 3. Link license to organization
+        try { await pool.query('UPDATE licenses SET organization_id = $1 WHERE id = $2', [organizationId, licenseId]); } catch(e) {}
 
-        // 4. Создать/обновить пользователя-владельца
+        // 4. Upsert owner user
         await pool.query(`
             INSERT INTO users (username, email, password_hash, full_name, role,
                                license_id, organization_id, user_type, is_active)
-            VALUES ($1, $2, $3, $4, 'Администратор', $5, $6, 'owner', true)
+            VALUES ($1, $2, $3, $4, '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440', $5, $6, 'owner', true)
             ON CONFLICT (username) DO UPDATE SET
                 password_hash = EXCLUDED.password_hash,
                 organization_id = EXCLUDED.organization_id,
                 license_id = EXCLUDED.license_id,
-                is_active = true
-        `, [
+                is_active = true`, [
             customer_username,
             customer_email || customer_username + '@smartpos.local',
             customer_password_hash,
@@ -1832,22 +1844,20 @@ router.post('/sync', async (req, res) => {
             licenseId, organizationId
         ]);
 
-        // 5. Создать склад по умолчанию (если ещё нет)
+        // 5. Default warehouse
         await pool.query(`
             INSERT INTO warehouses (name, code, is_active, organization_id)
-            VALUES ('Основной склад', $1, true, $2)
-            ON CONFLICT DO NOTHING
-        `, ['WH-' + organizationId, organizationId]);
+            VALUES ('\u041e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u0441\u043a\u043b\u0430\u0434', $1, true, $2)
+            ON CONFLICT DO NOTHING`, ['WH-' + organizationId, organizationId]);
 
-        console.log(`[SYNC] ✅ License ${license_key} synced: org=#${organizationId}, user=${customer_username}`);
+        // 6. Fix orphaned products
+        try {
+            const fx = await pool.query('UPDATE products SET organization_id = $1 WHERE organization_id IS NULL', [organizationId]);
+            if (fx.rowCount > 0) console.log('[SYNC] Fixed', fx.rowCount, 'orphaned products');
+        } catch(e) {}
 
-        res.json({
-            success: true,
-            license_id: licenseId,
-            organization_id: organizationId,
-            message: `Лицензия ${license_key} синхронизирована`
-        });
-
+        console.log('[SYNC] Done:', license_key, 'org=' + organizationId, 'user=' + customer_username);
+        res.json({ success: true, license_id: licenseId, organization_id: organizationId, message: 'Synced' });
     } catch (error) {
         console.error('[SYNC] Error:', error);
         res.status(500).json({ error: error.message });
