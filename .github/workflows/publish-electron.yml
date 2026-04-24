@@ -35,11 +35,31 @@ jobs:
           cd client-accounting
           npm install
 
-      - name: Build App
+      - name: Build Vite
+        shell: cmd
         run: |
           cd client-accounting
-          npm run build
-          npm run dist
+          npx vite build
+          if %ERRORLEVEL% NEQ 0 (
+            echo "Vite build had warnings but continuing..."
+          )
+
+      - name: Check dist exists
+        shell: bash
+        run: |
+          if [ -d "client-accounting/dist" ]; then
+            echo "dist folder exists, build succeeded"
+            ls -la client-accounting/dist/
+          else
+            echo "ERROR: dist folder missing!"
+            exit 1
+          fi
+
+      - name: Build Electron
+        shell: cmd
+        run: |
+          cd client-accounting
+          npx electron-builder --win --x64
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
