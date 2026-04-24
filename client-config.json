@@ -1,6 +1,6 @@
 {
     "_comment": "SmartPOS Pro — конфигурация клиента. Настройте под конкретного клиента и сохраните.",
-    "client_name": "Название магазина",
+    "client_name": "SmartPOS Store",
     "client_id": "",
     
     "variants": {
@@ -13,7 +13,7 @@
     "server": {
         "_comment": "Режим работы: local (свой сервер), remote (удалённый), cloud (облако)",
         "mode": "local",
-        "address": "192.168.1.100",
+        "address": "192.168.1.35",
         "port": 5000,
         "remote_url": ""
     },

@@ -740,11 +740,13 @@ export async function initDatabase(pool) {
                     const adminRoleResult = await pool.query('SELECT id FROM roles WHERE code = $1', ['admin']);
                     if (adminRoleResult.rows.length > 0) {
                         await pool.query(
-                            'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                            'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING',
                             [adminResult.rows[0].id, adminRoleResult.rows[0].id]
                         );
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) {
+                    console.error('  ⚠️ Error assigning admin role:', e.message);
+                }
                 console.log('  ✓ default admin user (admin/admin) [super_admin]');
             }
         }
@@ -779,6 +781,9 @@ export async function initDatabase(pool) {
 
     } catch (error) {
         console.error('❌ Ошибка инициализации базы данных:', error.message);
+        if (error.detail) console.error('   Детали:', error.detail);
+        if (error.hint) console.error('   Подсказка:', error.hint);
+        if (error.where) console.error('   Контекст:', error.where);
         throw error;
     }
 }
@@ -971,11 +976,13 @@ async function addMissingColumns(pool) {
                     const adminRoleResult = await pool.query('SELECT id FROM roles WHERE code = $1', ['admin']);
                     if (adminRoleResult.rows.length > 0) {
                         await pool.query(
-                            'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                            'INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT (user_id, role_id) DO NOTHING',
                             [adminResult.rows[0].id, adminRoleResult.rows[0].id]
                         );
                     }
-                } catch (e) { /* ignore */ }
+                } catch (e) {
+                    console.error('  ⚠️ Error assigning admin role (addMissingColumns):', e.message);
+                }
                 console.log('  ✓ default admin user created (admin/admin)');
             }
         }

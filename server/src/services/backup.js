@@ -9,10 +9,12 @@ import fs from 'fs';
 import path from 'path';
 
 const execAsync = promisify(exec);
+const existsAsync = promisify(fs.exists);
 
 class BackupService {
     constructor() {
         this.backupDir = process.env.BACKUP_DIR || path.join(process.cwd(), 'backups');
+        this.pgBinPath = process.env.PG_BIN_PATH || '';
 
         // Настройки хранения (1 год)
         this.retentionConfig = {
@@ -26,6 +28,39 @@ class BackupService {
         this.lastBackupTime = null;
         this.schedulerInterval = null;
     }
+
+    /**
+     * Получить путь к утилитам PostgreSQL
+     */
+    async getPgBinaryPath(binaryName) {
+        if (this.pgBinPath) {
+            const fullPath = path.join(this.pgBinPath, binaryName + (process.platform === 'win32' ? '.exe' : ''));
+            if (fs.existsSync(fullPath)) return `"${fullPath}"`;
+        }
+
+        if (process.platform === 'win32') {
+            const standardPaths = [
+                'C:\\Program Files\\PostgreSQL\\18\\bin',
+                'C:\\Program Files\\PostgreSQL\\17\\bin',
+                'C:\\Program Files\\PostgreSQL\\16\\bin',
+                'C:\\Program Files\\PostgreSQL\\15\\bin',
+                'C:\\Program Files\\PostgreSQL\\14\\bin',
+                'C:\\Program Files (x86)\\PostgreSQL\\18\\bin'
+            ];
+
+            for (const p of standardPaths) {
+                const fullPath = path.join(p, binaryName + '.exe');
+                if (fs.existsSync(fullPath)) {
+                    console.log(`🔍 Найдена утилита ${binaryName} по пути: ${fullPath}`);
+                    return `"${fullPath}"`;
+                }
+            }
+        }
+
+        // Если не нашли или не Windows - надеемся на PATH
+        return binaryName;
+    }
+
 
     /**
      * Инициализация директорий бэкапов
@@ -131,7 +166,8 @@ class BackupService {
 
             process.env.PGPASSWORD = url.password;
 
-            const command = `pg_dump -h ${url.hostname} -p ${url.port || 5432} -U ${url.username} -d ${url.pathname.slice(1)} -F p -f "${filepath}"`;
+            const pgDump = await this.getPgBinaryPath('pg_dump');
+            const command = `${pgDump} -h ${url.hostname} -p ${url.port || 5432} -U ${url.username} -d ${url.pathname.slice(1)} -F p -f "${filepath}"`;
 
             await execAsync(command);
 
@@ -210,7 +246,8 @@ class BackupService {
 
             process.env.PGPASSWORD = url.password;
 
-            const command = `psql -h ${url.hostname} -p ${url.port || 5432} -U ${url.username} -d ${url.pathname.slice(1)} -f "${sqlFile}"`;
+            const psql = await this.getPgBinaryPath('psql');
+            const command = `${psql} -h ${url.hostname} -p ${url.port || 5432} -U ${url.username} -d ${url.pathname.slice(1)} -f "${sqlFile}"`;
 
             await execAsync(command);
 

@@ -8,6 +8,10 @@ import path from 'path';
 import pool from './config/database.js';
 import { initDatabase } from './config/initDatabase.js';
 import { initGoogleSheets, syncAllData } from './services/googleSheets.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Logging setup for production debugging
 const logFile = process.env.LOG_PATH || path.resolve(process.cwd(), 'server.log');
@@ -419,9 +423,28 @@ app.use(globalErrorHandler);
 // Экспорт io для использования в других модулях
 export { io };
 
-// Функция для отправки обновлений клиентам
-export function notifyClients(event, data) {
-    io.emit(event, data);
+// Функция для очистки порта (Windows)
+async function tryClearPort(port) {
+    if (process.platform !== 'win32') return;
+    try {
+        console.log(`🔍 Проверка порта ${port}...`);
+        const { stdout } = await execAsync(`netstat -ano | findstr :${port}`);
+        if (stdout) {
+            const lines = stdout.split('\n');
+            for (const line of lines) {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length > 4 && parts[1].endsWith(`:${port}`)) {
+                    const pid = parts[parts.length - 1];
+                    if (pid && pid !== '0' && pid !== process.pid.toString()) {
+                        console.log(`⚠️ Порт ${port} занят процессом PID: ${pid}. Попытка завершения...`);
+                        await execAsync(`taskkill /F /PID ${pid}`).catch(() => {});
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // netstat возвращает ошибку если ничего не найдено, это нормально
+    }
 }
 
 // Инициализация базы данных и сервера
@@ -519,6 +542,9 @@ async function startServer() {
 
         const PORT = process.env.PORT || 5000;
         const HOST = process.env.SERVER_HOST || '0.0.0.0';
+
+        // Попытка очистить порт перед запуском
+        await tryClearPort(PORT);
 
         server.listen(PORT, HOST, async () => {
             // Получение всех локальных IP-адресов для удобства подключения

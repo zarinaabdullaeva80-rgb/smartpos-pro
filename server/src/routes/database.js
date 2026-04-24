@@ -96,44 +96,21 @@ router.post('/backup/auto', authenticate, authorize('admin', 'superadmin'), asyn
 // Создать бэкап
 router.post('/backup', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
     try {
-        const backupDir = path.join(process.cwd(), 'backups');
-        if (!fs.existsSync(backupDir)) {
-            fs.mkdirSync(backupDir, { recursive: true });
+        const result = await backupService.createBackup('manual');
+        
+        if (result.success) {
+            res.json({
+                success: true,
+                backup: {
+                    name: result.filename,
+                    path: path.join(backupService.backupDir, 'manual', result.filename),
+                    size: result.sizeMB,
+                    created: new Date()
+                }
+            });
+        } else {
+            throw new Error(result.error);
         }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `backup_${timestamp}.sql`;
-        const filepath = path.join(backupDir, filename);
-
-        // Получаем параметры подключения
-        const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/accounting_db';
-
-        // Парсим URL
-        const url = new URL(dbUrl);
-        const host = url.hostname;
-        const port = url.port || 5432;
-        const database = url.pathname.slice(1);
-        const user = url.username;
-        const password = url.password;
-
-        // Устанавливаем пароль в переменную окружения
-        process.env.PGPASSWORD = password;
-
-        const command = `pg_dump -h ${host} -p ${port} -U ${user} -d ${database} -f "${filepath}"`;
-
-        await execAsync(command);
-
-        const stats = fs.statSync(filepath);
-
-        res.json({
-            success: true,
-            backup: {
-                name: filename,
-                path: filepath,
-                size: formatBytes(stats.size),
-                created: new Date()
-            }
-        });
     } catch (error) {
         console.error('Backup error:', error);
         res.status(500).json({ error: 'Failed to create backup: ' + error.message });
