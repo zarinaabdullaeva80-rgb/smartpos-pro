@@ -99,6 +99,13 @@ router.get('/card/:customerId', authenticateToken, async (req, res) => {
 
         const customer = customerResult.rows[0];
 
+        // Получить настройки кэшбека
+        let cashbackPercent = 2;
+        try {
+            const settingsRes = await pool.query('SELECT cashback_percent FROM loyalty_settings WHERE id = 1');
+            if (settingsRes.rows.length > 0) cashbackPercent = settingsRes.rows[0].cashback_percent || 2;
+        } catch (e) {}
+
         // Генерировать номер карты если нет
         let cardNumber = customer.card_number;
         if (!cardNumber) {
@@ -111,10 +118,12 @@ router.get('/card/:customerId', authenticateToken, async (req, res) => {
                 number: cardNumber,
                 customerName: customer.name,
                 phone: customer.phone,
+                email: customer.email,
                 balance: parseInt(customer.total_points) || 0,
                 earnedTotal: parseInt(customer.earned_points) || 0,
                 spentTotal: parseInt(customer.spent_points) || 0,
                 level: getCustomerLevel(customer.earned_points),
+                cashbackPercent,
                 createdAt: customer.created_at
             }
         });
@@ -398,7 +407,28 @@ router.get('/transactions/:customerId', authenticateToken, async (req, res) => {
             LIMIT $2 OFFSET $3
         `, [customerId, limit, offset]);
 
-        res.json({ transactions: result.rows });
+        // Подтягиваем товары из продаж для каждой транзакции с sale_id
+        const transactions = result.rows;
+        for (const tx of transactions) {
+            if (tx.sale_id) {
+                try {
+                    const itemsRes = await pool.query(`
+                        SELECT si.quantity, si.price, p.name as product_name
+                        FROM sale_items si
+                        LEFT JOIN products p ON si.product_id = p.id
+                        WHERE si.sale_id = $1
+                        ORDER BY si.id
+                    `, [tx.sale_id]);
+                    tx.sale_items = itemsRes.rows;
+                } catch (e) {
+                    tx.sale_items = [];
+                }
+            } else {
+                tx.sale_items = [];
+            }
+        }
+
+        res.json({ transactions });
     } catch (error) {
         console.error('Get transactions error:', error);
         res.status(500).json({ error: 'Ошибка получения истории' });

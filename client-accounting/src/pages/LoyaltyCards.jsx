@@ -189,8 +189,8 @@ function LoyaltyCards() {
                 console.warn('Barcode load failed:', bErr);
             }
 
-            // Загрузить транзакции
-            const txResponse = await loyaltyAPI.getCardById(customer.id);
+            // Загрузить транзакции с товарами
+            const txResponse = await loyaltyAPI.getTransactions(customer.id);
             setTransactions(txResponse.data?.transactions || []);
         } catch (error) {
             console.error('Error loading card data:', error);
@@ -419,9 +419,28 @@ function LoyaltyCards() {
                                         </div>
                                     </div>
 
-                                    {/* Статистика */}
+                                    {/* Данные клиента на карте */}
                                     <div style={{ flex: 1 }}>
-                                        <h3 style={{ marginTop: 0 }}>{t('loyaltycards.statistika', 'Статистика')}</h3>
+                                        <h3 style={{ marginTop: 0 }}>Данные карты</h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                                            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px' }}>
+                                                <div style={{ fontSize: '11px', color: '#888' }}>ФИО</div>
+                                                <div style={{ fontWeight: 600 }}>{selectedCustomer.name}</div>
+                                            </div>
+                                            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px' }}>
+                                                <div style={{ fontSize: '11px', color: '#888' }}>Телефон</div>
+                                                <div style={{ fontWeight: 600 }}>{selectedCustomer.phone || '-'}</div>
+                                            </div>
+                                            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px' }}>
+                                                <div style={{ fontSize: '11px', color: '#888' }}>Номер карты</div>
+                                                <div style={{ fontWeight: 600, fontFamily: 'monospace' }}>{formatCardNumber(cardData.number)}</div>
+                                            </div>
+                                            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '10px' }}>
+                                                <div style={{ fontSize: '11px', color: '#888' }}>Кэшбек</div>
+                                                <div style={{ fontWeight: 600, color: '#ffd700' }}>{cardData.cashbackPercent || settings.cashback_percent || 2}%</div>
+                                            </div>
+                                        </div>
+                                        <h3>{t('loyaltycards.statistika', 'Статистика')}</h3>
                                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                                             <div style={{ background: 'var(--success-light)', padding: '16px', borderRadius: '12px', textAlign: 'center' }}>
                                                 <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--success)' }}>
@@ -478,6 +497,7 @@ function LoyaltyCards() {
                                                     <th style={{ padding: '12px', textAlign: 'right' }}>{t('loyaltycards.summa', 'Сумма')}</th>
                                                     <th style={{ padding: '12px', textAlign: 'right' }}>{t('loyaltycards.bally', 'Баллы')}</th>
                                                     <th style={{ padding: '12px', textAlign: 'left' }}>{t('loyaltycards.opisanie', 'Описание')}</th>
+                                                    <th style={{ padding: '12px', textAlign: 'left' }}>Товары</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -488,9 +508,9 @@ function LoyaltyCards() {
                                                         </td>
                                                         <td style={{ padding: '12px' }}>
                                                             {tx.type === 'earn' ? (
-                                                                <span style={{ color: '#10b981' }}>{t('loyaltycards.nachislenie', '➕ Начисление')}</span>
+                                                                <span style={{ color: '#10b981' }}>{t('loyaltycards.nachislenie', '+ Начисление')}</span>
                                                             ) : (
-                                                                <span style={{ color: '#ef4444' }}>{t('loyaltycards.spisanie', '➖ Списание')}</span>
+                                                                <span style={{ color: '#ef4444' }}>{t('loyaltycards.spisanie', '- Списание')}</span>
                                                             )}
                                                         </td>
                                                         <td style={{ padding: '12px', textAlign: 'right' }}>
@@ -503,6 +523,13 @@ function LoyaltyCards() {
                                                             {tx.points > 0 ? '+' : ''}{tx.points}
                                                         </td>
                                                         <td style={{ padding: '12px', color: '#666' }}>{tx.description}</td>
+                                                        <td style={{ padding: '12px', fontSize: '11px', color: '#888' }}>
+                                                            {tx.sale_items && tx.sale_items.length > 0 ? (
+                                                                <div>{tx.sale_items.map((si, j) => (
+                                                                    <div key={j}>{si.product_name} x{si.quantity}</div>
+                                                                ))}</div>
+                                                            ) : '-'}
+                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>

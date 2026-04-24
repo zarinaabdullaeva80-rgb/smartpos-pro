@@ -1244,7 +1244,27 @@ export const edsAPI = {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
     verifySignature: (id) => api.get(`/eds/signatures/${id}/verify`),
-    downloadSigned: (id) => api.get(`/eds/signatures/${id}/download`, { responseType: 'blob' })
+    downloadSigned: (id) => api.get(`/eds/signatures/${id}/download`, { responseType: 'blob' }),
+    // ЭДО — Документооборот между организациями
+    sendDocument: (formData) => api.post('/eds/documents/send', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
+    getOutgoing: () => withFallback(
+        () => api.get('/eds/documents/outgoing'),
+        () => ({ documents: [] })
+    ),
+    getIncoming: () => withFallback(
+        () => api.get('/eds/documents/incoming'),
+        () => ({ documents: [] })
+    ),
+    acceptDocument: (id) => api.put(`/eds/documents/${id}/accept`),
+    rejectDocument: (id, reason) => api.put(`/eds/documents/${id}/reject`, { reason }),
+    downloadDocument: (id) => api.get(`/eds/documents/${id}/download`, { responseType: 'blob' }),
+    getDocStats: () => withFallback(
+        () => api.get('/eds/documents/stats'),
+        () => ({ newIncoming: 0 })
+    ),
+    counterSignDocument: (id, data) => api.put(`/eds/documents/${id}/sign`, data)
 };
 
 // System API

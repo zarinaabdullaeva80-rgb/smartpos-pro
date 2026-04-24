@@ -1,0 +1,35 @@
+name: Build and Publish Electron App
+
+on:
+  push:
+    tags:
+      - 'v*' # Сработает когда вы создадите тег версии (например v4.2.1)
+    # Или можно настроить на каждый пуш в main, но теги надежнее для релизов
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: client-accounting/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          cd client-accounting
+          npm install
+
+      - name: Build and Publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd client-accounting
+          npm run build
+          npm run dist -- --publish always

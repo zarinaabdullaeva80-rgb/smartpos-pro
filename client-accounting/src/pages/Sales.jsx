@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI } from '../services/api';
+import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI, loyaltyAPI } from '../services/api';
 import api from '../services/api';
-import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus, Scan, Volume2, AlertCircle } from 'lucide-react';
+import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus, Scan, Volume2, AlertCircle, CreditCard } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import ReceiptPrinter from '../components/ReceiptPrinter';
 import QRPaymentModal from '../components/QRPaymentModal';
@@ -45,6 +45,15 @@ function Sales() {
     const [lastScanResult, setLastScanResult] = useState(null); // { success, message, product }
     const scanTimerRef = useRef(null);
     const scanInputRef = useRef(null);
+
+    // ── Карта лояльности ──
+    const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
+    const [loyaltySearch, setLoyaltySearch] = useState('');
+    const [loyaltyCustomer, setLoyaltyCustomer] = useState(null);
+    const [loyaltyCard, setLoyaltyCard] = useState(null);
+    const [loyaltySpendAmount, setLoyaltySpendAmount] = useState('');
+    const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+    const [loyaltyTransactions, setLoyaltyTransactions] = useState([]);
 
     const [formData, setFormData] = useState({
         documentNumber: '',
@@ -374,6 +383,65 @@ function Sales() {
         };
         const s = statuses[status] || { label: status, class: 'badge-secondary' };
         return <span className={`badge ${s.class}`}>{s.label}</span>;
+    };
+
+    // ── Карта лояльности: функции ──
+    const handleLoyaltySearch = async () => {
+        if (!loyaltySearch.trim()) return;
+        setLoyaltyLoading(true);
+        setLoyaltyCustomer(null);
+        setLoyaltyCard(null);
+        setLoyaltyTransactions([]);
+        try {
+            const res = await loyaltyAPI.getCard(loyaltySearch.trim());
+            if (res.data?.customer) {
+                setLoyaltyCustomer(res.data.customer);
+                const cardRes = await loyaltyAPI.getCardById(res.data.customer.id);
+                setLoyaltyCard(cardRes.data?.card || null);
+                const txRes = await loyaltyAPI.getTransactions(res.data.customer.id);
+                setLoyaltyTransactions(txRes.data?.transactions || []);
+            }
+        } catch (err) {
+            // Пробуем поиск по телефону через check endpoint
+            try {
+                const checkRes = await api.get(`/loyalty/check/${encodeURIComponent(loyaltySearch.trim())}`);
+                if (checkRes.data?.customer) {
+                    setLoyaltyCustomer(checkRes.data.customer);
+                    const cardRes = await loyaltyAPI.getCardById(checkRes.data.customer.id);
+                    setLoyaltyCard(cardRes.data?.card || null);
+                    const txRes = await loyaltyAPI.getTransactions(checkRes.data.customer.id);
+                    setLoyaltyTransactions(txRes.data?.transactions || []);
+                }
+            } catch (e2) {
+                toast.error('Клиент не найден');
+            }
+        } finally {
+            setLoyaltyLoading(false);
+        }
+    };
+
+    const handleLoyaltySpend = async () => {
+        const amount = parseInt(loyaltySpendAmount);
+        if (!amount || amount <= 0) {
+            toast.info('Введите сумму для списания');
+            return;
+        }
+        if (amount > (loyaltyCard?.balance || 0)) {
+            toast.error(`Недостаточно баллов! Баланс: ${loyaltyCard?.balance || 0}`);
+            return;
+        }
+        try {
+            await loyaltyAPI.spendPoints(loyaltyCustomer.id, amount, 'Списание при продаже');
+            toast.success(`Списано ${amount} баллов`);
+            setLoyaltySpendAmount('');
+            // Обновить данные карты
+            const cardRes = await loyaltyAPI.getCardById(loyaltyCustomer.id);
+            setLoyaltyCard(cardRes.data?.card || null);
+            const txRes = await loyaltyAPI.getTransactions(loyaltyCustomer.id);
+            setLoyaltyTransactions(txRes.data?.transactions || []);
+        } catch (error) {
+            toast.error(error.response?.data?.error || 'Ошибка списания');
+        }
     };
 
     return (
@@ -717,6 +785,14 @@ function Sales() {
                                             <QrCode size={14} /> QR
                                         </button>
                                     )}
+                                    <button
+                                        type="button"
+                                        className="btn"
+                                        style={{ fontSize: '13px', background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)', color: '#fff', border: 'none' }}
+                                        onClick={() => { setShowLoyaltyModal(true); setLoyaltySearch(''); setLoyaltyCustomer(null); setLoyaltyCard(null); }}
+                                    >
+                                        <CreditCard size={14} /> Карта
+                                    </button>
                                     <button type="submit" className="btn btn-primary" style={{ fontSize: '13px' }}>
                                         {editingSale ? t('common.save') : '✓ Продать'}
                                     </button>
@@ -1044,6 +1120,138 @@ function Sales() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ══════════════ Модал карты лояльности ══════════════ */}
+            {showLoyaltyModal && (
+                <div className="modal-overlay" style={{ zIndex: 10000 }} onClick={() => setShowLoyaltyModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+                        <div className="modal-header" style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(109,40,217,0.05))' }}>
+                            <h2><CreditCard size={20} style={{ marginRight: '8px' }} />Карта лояльности</h2>
+                            <button className="btn-icon" onClick={() => setShowLoyaltyModal(false)}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body">
+                            {/* Поиск */}
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                                <input
+                                    type="text"
+                                    value={loyaltySearch}
+                                    onChange={e => setLoyaltySearch(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleLoyaltySearch()}
+                                    placeholder="Телефон, имя или номер карты..."
+                                    style={{ flex: 1 }}
+                                    autoFocus
+                                />
+                                <button className="btn btn-primary" onClick={handleLoyaltySearch} disabled={loyaltyLoading}>
+                                    {loyaltyLoading ? '...' : 'Найти'}
+                                </button>
+                            </div>
+
+                            {loyaltyCard && loyaltyCustomer && (
+                                <>
+                                    {/* Карта клиента */}
+                                    <div style={{
+                                        background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)',
+                                        borderRadius: '14px', padding: '20px', color: 'white', marginBottom: '16px', position: 'relative'
+                                    }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 'bold' }}>SmartPOS <span style={{ color: '#ffd700' }}>Бонус</span></div>
+                                        <div style={{ fontSize: '14px', fontFamily: 'monospace', letterSpacing: '2px', marginTop: '12px' }}>
+                                            {loyaltyCard.number?.replace(/(.{4})/g, '$1 ').trim()}
+                                        </div>
+                                        <div style={{ fontSize: '13px', marginTop: '6px', textTransform: 'uppercase' }}>{loyaltyCustomer.name}</div>
+                                        <div style={{ fontSize: '11px', color: '#ffd700', marginTop: '4px' }}>{loyaltyCard.level}</div>
+                                        <div style={{ position: 'absolute', bottom: '16px', right: '20px', textAlign: 'right' }}>
+                                            <div style={{ fontSize: '11px', opacity: 0.7 }}>Баланс</div>
+                                            <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#4ade80' }}>
+                                                {new Intl.NumberFormat('ru-RU').format(loyaltyCard.balance)} б.
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Статистика */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                                        <div style={{ background: 'var(--success-light)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--success)' }}>{new Intl.NumberFormat('ru-RU').format(loyaltyCard.balance)}</div>
+                                            <div style={{ fontSize: '11px', color: '#666' }}>Баланс</div>
+                                        </div>
+                                        <div style={{ background: 'var(--primary-light)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--primary)' }}>{new Intl.NumberFormat('ru-RU').format(loyaltyCard.earnedTotal)}</div>
+                                            <div style={{ fontSize: '11px', color: '#666' }}>Начислено</div>
+                                        </div>
+                                        <div style={{ background: 'var(--warning-light)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--warning)' }}>{new Intl.NumberFormat('ru-RU').format(Math.abs(loyaltyCard.spentTotal))}</div>
+                                            <div style={{ fontSize: '11px', color: '#666' }}>Потрачено</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Списание */}
+                                    <div style={{ background: 'var(--bg-secondary)', padding: '14px', borderRadius: '10px', marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Списать баллы</div>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max={loyaltyCard.balance}
+                                                value={loyaltySpendAmount}
+                                                onChange={e => setLoyaltySpendAmount(e.target.value)}
+                                                placeholder={`Макс: ${loyaltyCard.balance}`}
+                                                style={{ flex: 1 }}
+                                            />
+                                            <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleLoyaltySpend}>
+                                                Списать
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* История */}
+                                    {loyaltyTransactions.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>Последние операции</div>
+                                            <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                                <table style={{ width: '100%', fontSize: '12px' }}>
+                                                    <thead>
+                                                        <tr style={{ background: 'var(--bg-secondary)' }}>
+                                                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Дата</th>
+                                                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Тип</th>
+                                                            <th style={{ padding: '6px 8px', textAlign: 'right' }}>Баллы</th>
+                                                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Товары</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {loyaltyTransactions.slice(0, 10).map((tx, i) => (
+                                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                                <td style={{ padding: '6px 8px' }}>{new Date(tx.created_at).toLocaleDateString('ru-RU')}</td>
+                                                                <td style={{ padding: '6px 8px', color: tx.points > 0 ? '#10b981' : '#ef4444' }}>
+                                                                    {tx.type === 'earn' ? '+' : '-'}
+                                                                </td>
+                                                                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: tx.points > 0 ? '#10b981' : '#ef4444' }}>
+                                                                    {tx.points > 0 ? '+' : ''}{tx.points}
+                                                                </td>
+                                                                <td style={{ padding: '6px 8px', fontSize: '11px', color: '#888' }}>
+                                                                    {tx.sale_items?.length > 0 ? tx.sale_items.map(si => si.product_name).join(', ') : tx.description}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+
+                            {!loyaltyCard && !loyaltyLoading && (
+                                <div style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
+                                    <CreditCard size={48} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                                    <p>Введите телефон или имя клиента для поиска карты лояльности</p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowLoyaltyModal(false)}>Закрыть</button>
                         </div>
                     </div>
                 </div>

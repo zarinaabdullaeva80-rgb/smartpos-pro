@@ -1,0 +1,8 @@
+version: 4.2.1
+files:
+  - url: SmartPOS-Pro-Setup-4.2.1.exe
+    sha512: NLnz4/QQfEhiV0/GjHEOw1AjhDmOjg6AI0f1kvSx0JnIbhF6piWAAqi+r2O/OE9yJE3Mk2b8G/+adOeUHFeaFQ==
+    size: 210144671
+path: SmartPOS-Pro-Setup-4.2.1.exe
+sha512: NLnz4/QQfEhiV0/GjHEOw1AjhDmOjg6AI0f1kvSx0JnIbhF6piWAAqi+r2O/OE9yJE3Mk2b8G/+adOeUHFeaFQ==
+releaseDate: '2026-04-24T07:10:05.501Z'

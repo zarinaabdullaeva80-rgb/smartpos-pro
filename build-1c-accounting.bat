@@ -34,12 +34,23 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo [4/4] Автоматическая публикация в папку сервера...
+set "UPDATES_DIR=%~dp0server\updates"
+if not exist "%UPDATES_DIR%" mkdir "%UPDATES_DIR%"
+
+:: Копируем все .exe и .blockmap из dist-electron в server/updates
+xcopy /Y /S "%~dp0client-accounting\dist-electron\*.exe" "%UPDATES_DIR%\"
+xcopy /Y /S "%~dp0client-accounting\dist-electron\*.blockmap" "%UPDATES_DIR%\"
+xcopy /Y /S "%~dp0client-accounting\dist-electron\latest.yml" "%UPDATES_DIR%\"
+
+echo.
 echo =====================================================
-echo   Готово!
-echo   Установщик находится в:
-echo   client-accounting\dist-electron\
+echo   ГОТОВО! Версия собрана и скопирована в сервер.
+echo   Путь: %UPDATES_DIR%
+echo.
+echo   Теперь просто сделайте Git Push, чтобы
+echo   обновление стало доступно всем пользователям.
 echo =====================================================
 echo.
-
-explorer "dist-electron"
 pause
+

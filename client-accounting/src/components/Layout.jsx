@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, ShoppingBag, Users2, Wallet, Warehouse, Users, FileText, Target, BarChart3, LogOut, Settings as SettingsIcon, TrendingUp, Gift, MapPin, Clock, Mail, Zap, TestTube, CreditCard, Search, X, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Globe } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, ShoppingBag, Users2, Wallet, Warehouse, Users, FileText, Target, BarChart3, LogOut, Settings as SettingsIcon, TrendingUp, Gift, MapPin, Clock, Mail, Zap, TestTube, CreditCard, Search, X, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Globe, Key } from 'lucide-react';
 import Notifications from './Notifications';
 import SyncIndicator from './SyncIndicator';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -192,7 +192,7 @@ function Layout({ onLogout }) {
                 { name: t('nav.waybills', 'Накладные'), path: '/waybills', icon: FileText },
                 { name: t('nav.contracts', 'Договоры'), path: '/contracts', icon: FileText },
                 { name: t('nav.reconciliation', 'Акт сверки'), path: '/reconciliation-act', icon: FileText },
-                { name: t('nav.digitalSignature', 'ЭЦП подписание'), path: '/digital-signature', icon: SettingsIcon },
+                { name: t('nav.digitalSignature', 'ЭЦП подписание'), path: '/digital-signature', icon: Key },
                 { name: t('nav.importExport'), path: '/import-export', icon: Package },
             ]
         },

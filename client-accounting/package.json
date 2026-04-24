@@ -1,6 +1,6 @@
 {
   "name": "smartpos-pro",
-  "version": "4.1.0",
+  "version": "4.2.1",
   "description": "SmartPOS Pro — система учёта и продаж",
   "author": "SmartPOS Team",
   "private": true,
@@ -101,7 +101,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "smartpos-pro",
+        "owner": "zarinaabdullaeva80-rgb",
         "repo": "smartpos-pro"
       }
     ],
@@ -117,6 +117,7 @@
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico",
       "deleteAppDataOnUninstall": false,
+      "differentialPackage": true,
       "license": null
     }
   }

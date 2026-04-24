@@ -206,4 +206,73 @@ function compareVersions(v1, v2) {
     return 0;
 }
 
+// === Electron Auto-Updater (Smart Dynamic Provider) ===
+const UPDATES_DIR = path.join(__dirname, '../../updates');
+if (!fs.existsSync(UPDATES_DIR)) {
+    fs.mkdirSync(UPDATES_DIR, { recursive: true });
+}
+
+// Кэш для SHA-512 (чтобы не пересчитывать при каждом запросе)
+const hashCache = new Map();
+
+// GET /api/updates/latest.yml
+router.get('/latest.yml', async (req, res) => {
+    try {
+        const ymlPath = path.join(UPDATES_DIR, 'latest.yml');
+        
+        // Если файл latest.yml уже есть (создан при сборке), отдаем его
+        if (fs.existsSync(ymlPath)) {
+            res.setHeader('Content-Type', 'text/yaml');
+            return res.sendFile(ymlPath);
+        }
+
+        // Если нет — генерируем динамически на лету!
+        const files = fs.readdirSync(UPDATES_DIR);
+        const exeFiles = files.filter(f => f.endsWith('.exe')).sort().reverse(); // Последний по имени
+
+        if (exeFiles.length === 0) {
+            return res.status(404).send('No updates found');
+        }
+
+        const latestExe = exeFiles[0];
+        // Вытаскиваем версию из имени (например "SmartPOS Pro Setup 4.2.1.exe" -> "4.2.1")
+        const versionMatch = latestExe.match(/(\d+\.\d+\.\d+)/);
+        const version = versionMatch ? versionMatch[1] : '0.0.0';
+        
+        const filePath = path.join(UPDATES_DIR, latestExe);
+        const stats = fs.statSync(filePath);
+
+        // Генерируем YAML контент
+        const yaml = [
+            `version: ${version}`,
+            `files:`,
+            `  - url: ${latestExe}`,
+            `    sha512: DUMMY_HASH_PLEASE_UPLOAD_YML_FOR_PROPER_CHECKS`,
+            `    size: ${stats.size}`,
+            `path: ${latestExe}`,
+            `sha512: DUMMY_HASH_PLEASE_UPLOAD_YML_FOR_PROPER_CHECKS`,
+            `releaseDate: ${stats.mtime.toISOString()}`
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/yaml');
+        res.send(yaml);
+        console.log(`[Updates] Generated dynamic response for version ${version}`);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+});
+
+// GET /api/updates/:filename — скачать файл (exe/blockmap/yml)
+router.get('/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(UPDATES_DIR, filename);
+    
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        res.status(404).json({ error: 'File not found' });
+    }
+});
+
 export default router;
+
