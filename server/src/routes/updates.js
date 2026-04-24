@@ -206,72 +206,115 @@ function compareVersions(v1, v2) {
     return 0;
 }
 
-// === Electron Auto-Updater (Smart Dynamic Provider) ===
+// === Electron Auto-Updater (GitHub Releases Provider) ===
+const GITHUB_REPO = 'zarinaabdullaeva80-rgb/smartpos-pro';
 const UPDATES_DIR = path.join(__dirname, '../../updates');
 if (!fs.existsSync(UPDATES_DIR)) {
     fs.mkdirSync(UPDATES_DIR, { recursive: true });
 }
 
-// Кэш для SHA-512 (чтобы не пересчитывать при каждом запросе)
-const hashCache = new Map();
+// Кэш GitHub Release данных (обновляется раз в 5 минут)
+let ghReleaseCache = null;
+let ghReleaseCacheTime = 0;
+const GH_CACHE_TTL = 5 * 60 * 1000; // 5 минут
 
-// GET /api/updates/latest.yml
+async function getLatestGitHubRelease() {
+    if (ghReleaseCache && (Date.now() - ghReleaseCacheTime < GH_CACHE_TTL)) {
+        return ghReleaseCache;
+    }
+    try {
+        const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+            headers: { 'Accept': 'application/vnd.github.v3+json' }
+        });
+        if (response.ok) {
+            ghReleaseCache = await response.json();
+            ghReleaseCacheTime = Date.now();
+            console.log(`[Updates] GitHub Release cache updated: ${ghReleaseCache.tag_name}`);
+        }
+    } catch (e) {
+        console.error('[Updates] GitHub API error:', e.message);
+    }
+    return ghReleaseCache;
+}
+
+// GET /api/updates/latest.yml — сначала GitHub Releases, потом локальный файл
 router.get('/latest.yml', async (req, res) => {
     try {
+        // 1. Пробуем GitHub Releases
+        const release = await getLatestGitHubRelease();
+        if (release) {
+            const ymlAsset = release.assets?.find(a => a.name === 'latest.yml');
+            if (ymlAsset) {
+                try {
+                    const ymlRes = await fetch(ymlAsset.browser_download_url);
+                    if (ymlRes.ok) {
+                        const ymlContent = await ymlRes.text();
+                        res.setHeader('Content-Type', 'text/yaml');
+                        return res.send(ymlContent);
+                    }
+                } catch (e) { /* fallback */ }
+            }
+        }
+
+        // 2. Fallback: локальный файл
         const ymlPath = path.join(UPDATES_DIR, 'latest.yml');
-        
-        // Если файл latest.yml уже есть (создан при сборке), отдаем его
         if (fs.existsSync(ymlPath)) {
             res.setHeader('Content-Type', 'text/yaml');
             return res.sendFile(ymlPath);
         }
 
-        // Если нет — генерируем динамически на лету!
+        // 3. Генерация из локальных .exe
         const files = fs.readdirSync(UPDATES_DIR);
-        const exeFiles = files.filter(f => f.endsWith('.exe')).sort().reverse(); // Последний по имени
-
+        const exeFiles = files.filter(f => f.endsWith('.exe')).sort().reverse();
         if (exeFiles.length === 0) {
             return res.status(404).send('No updates found');
         }
-
         const latestExe = exeFiles[0];
-        // Вытаскиваем версию из имени (например "SmartPOS Pro Setup 4.2.1.exe" -> "4.2.1")
         const versionMatch = latestExe.match(/(\d+\.\d+\.\d+)/);
         const version = versionMatch ? versionMatch[1] : '0.0.0';
-        
         const filePath = path.join(UPDATES_DIR, latestExe);
         const stats = fs.statSync(filePath);
-
-        // Генерируем YAML контент
         const yaml = [
             `version: ${version}`,
             `files:`,
             `  - url: ${latestExe}`,
-            `    sha512: DUMMY_HASH_PLEASE_UPLOAD_YML_FOR_PROPER_CHECKS`,
+            `    sha512: LOCAL_FILE`,
             `    size: ${stats.size}`,
             `path: ${latestExe}`,
-            `sha512: DUMMY_HASH_PLEASE_UPLOAD_YML_FOR_PROPER_CHECKS`,
+            `sha512: LOCAL_FILE`,
             `releaseDate: ${stats.mtime.toISOString()}`
         ].join('\n');
-
         res.setHeader('Content-Type', 'text/yaml');
         res.send(yaml);
-        console.log(`[Updates] Generated dynamic response for version ${version}`);
     } catch (error) {
         res.status(500).send(error.message);
     }
 });
 
-// GET /api/updates/:filename — скачать файл (exe/blockmap/yml)
-router.get('/:filename', (req, res) => {
+// GET /api/updates/:filename — сначала GitHub Releases, потом локально
+router.get('/:filename', async (req, res) => {
     const filename = req.params.filename;
-    const filePath = path.join(UPDATES_DIR, filename);
-    
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath);
-    } else {
-        res.status(404).json({ error: 'File not found' });
+
+    // Сначала проверяем локально
+    const localPath = path.join(UPDATES_DIR, filename);
+    if (fs.existsSync(localPath)) {
+        return res.sendFile(localPath);
     }
+
+    // Перенаправляем на GitHub Releases
+    try {
+        const release = await getLatestGitHubRelease();
+        if (release) {
+            const asset = release.assets?.find(a => a.name === filename);
+            if (asset) {
+                return res.redirect(asset.browser_download_url);
+            }
+        }
+    } catch (e) {
+        console.error('[Updates] GitHub redirect error:', e.message);
+    }
+
+    res.status(404).json({ error: 'File not found' });
 });
 
 export default router;

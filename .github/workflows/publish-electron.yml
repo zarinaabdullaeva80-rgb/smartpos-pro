@@ -2,9 +2,10 @@ name: Build and Publish Electron App
 
 on:
   push:
-    tags:
-      - 'v*' # Сработает когда вы создадите тег версии (например v4.2.1)
-    # Или можно настроить на каждый пуш в main, но теги надежнее для релизов
+    branches: [main]
+    paths:
+      - 'client-accounting/**'
+      - 'server/**'
 
 jobs:
   release:
@@ -21,15 +22,38 @@ jobs:
           cache: 'npm'
           cache-dependency-path: client-accounting/package-lock.json
 
+      - name: Get Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./client-accounting/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version $VERSION"
+
       - name: Install Dependencies
         run: |
           cd client-accounting
           npm install
 
-      - name: Build and Publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build App
         run: |
           cd client-accounting
           npm run build
-          npm run dist -- --publish always
+          npm run dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: SmartPOS Pro v${{ steps.version.outputs.version }}
+          body: |
+            ## SmartPOS Pro v${{ steps.version.outputs.version }}
+            Автоматическая сборка от ${{ github.sha }}
+          files: |
+            client-accounting/dist-electron/*.exe
+            client-accounting/dist-electron/*.blockmap
+            client-accounting/dist-electron/latest.yml
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
