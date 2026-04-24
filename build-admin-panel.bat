@@ -5,7 +5,7 @@ echo   Сборка Админ Панели (.exe)
 echo =====================================================
 echo.
 
-cd /d "%~dp0client-admin"
+cd /d "%~dp0admin-panel"
 
 echo [1/3] Установка зависимостей...
 call npm install
@@ -36,8 +36,8 @@ if %errorlevel% neq 0 (
 echo.
 echo =====================================================
 echo   Готово!
-echo   Установщик находится в:
-echo   client-admin\dist-electron\
+echo   - client-accounting\dist-electron\
+echo   - admin-panel\dist-electron\
 echo =====================================================
 echo.
 

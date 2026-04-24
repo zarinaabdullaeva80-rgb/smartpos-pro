@@ -27,6 +27,6 @@ echo   ВСЕ ГОТОВО!
 echo   
 echo   Установщики находятся в:
 echo   - client-accounting\dist-electron\
-echo   - client-admin\dist-electron\
+echo   - admin-panel\dist-electron\
 echo =====================================================
 pause
