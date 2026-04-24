@@ -46,6 +46,16 @@ function Products() {
     const [stockMin, setStockMin] = useState('');
     const [stockMax, setStockMax] = useState('');
     const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+    const [formData, setFormData] = useState({
+        code: '',
+        name: '',
+        categoryId: '',
+        unit: 'шт',
+        pricePurchase: '',
+        priceSale: '',
+        priceRetail: '',
+        vatRate: 20,
+        quantity: 0,
         minStock: 0,
         description: '',
         barcode: '',
@@ -428,6 +438,16 @@ function Products() {
     };
 
     const resetForm = () => {
+        setFormData({
+            code: '',
+            name: '',
+            categoryId: '',
+            unit: 'шт',
+            pricePurchase: '',
+            priceSale: '',
+            priceRetail: '',
+            vatRate: 20,
+            quantity: 0,
             minStock: 0,
             description: '',
             barcode: '',
