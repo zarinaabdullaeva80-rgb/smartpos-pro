@@ -1,6 +1,6 @@
 {
     "name": "smartpos-admin-panel",
-    "version": "4.1.0",
+    "version": "4.2.3",
     "description": "SmartPOS Pro — Панель администрирования",
     "author": "SmartPOS Team",
     "main": "main.js",

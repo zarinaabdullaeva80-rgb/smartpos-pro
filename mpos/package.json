@@ -1,6 +1,6 @@
 {
   "name": "androidpos",
-  "version": "3.5.0",
+  "version": "4.2.3",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
