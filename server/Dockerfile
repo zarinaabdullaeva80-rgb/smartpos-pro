@@ -2,14 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
+# Install dependencies (context is project root, Dockerfile is in server/)
+COPY server/package*.json ./
 RUN npm ci --only=production
 
-# Copy source
-COPY . .
+# Copy server source
+COPY server/ .
 
-# Environment
+# Environment (non-sensitive only; secrets come from Railway env vars at runtime)
 ENV NODE_ENV=production
 ENV PORT=5000
 ENV HOST=0.0.0.0
