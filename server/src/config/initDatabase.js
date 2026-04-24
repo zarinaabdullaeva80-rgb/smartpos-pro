@@ -683,7 +683,7 @@ export async function initDatabase(pool) {
             ('Менеджер', 'manager', true),
             ('Кассир', 'cashier', true),
             ('Бухгалтер', 'accountant', true)
-            ON CONFLICT (name) DO NOTHING
+            ON CONFLICT (code) DO NOTHING
         `);
         console.log('  ✓ default roles');
 
