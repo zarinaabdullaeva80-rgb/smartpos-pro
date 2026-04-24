@@ -6,6 +6,7 @@ on:
     paths:
       - 'client-accounting/**'
       - 'server/**'
+  workflow_dispatch:
 
 jobs:
   release:
@@ -18,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: client-accounting/package-lock.json
 
@@ -30,19 +31,20 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building version $VERSION"
 
-      - name: Install Dependencies
+      - name: Install Client Dependencies
         run: |
           cd client-accounting
-          npm install
+          npm ci
+
+      - name: Install Server Dependencies (for extraResources)
+        run: |
+          cd server
+          npm ci --omit=dev
 
       - name: Build Vite
-        shell: cmd
         run: |
           cd client-accounting
-          npx vite build
-          if %ERRORLEVEL% NEQ 0 (
-            echo "Vite build had warnings but continuing..."
-          )
+          npm run build
 
       - name: Check dist exists
         shell: bash
@@ -55,36 +57,33 @@ jobs:
             exit 1
           fi
 
-      - name: Build Electron
-        shell: cmd
+      - name: Build Electron Installer
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd client-accounting
-          echo Building Electron app...
-          npm run dist -- --win --x64 -c.publish=never
-          if %ERRORLEVEL% NEQ 0 (
-            echo "Electron builder failed, but checking for artifacts anyway..."
-          )
-          dir dist-electron
+          npx electron-builder --win --x64 --publish never
 
       - name: Validate Artifacts
-        shell: cmd
+        shell: bash
         run: |
           cd client-accounting
-          if not exist dist-electron\*.exe (
+          if ls dist-electron/*.exe 1>/dev/null 2>&1; then
+            echo "EXE artifact found"
+          else
             echo "ERROR: EXE artifact not found!"
             exit 1
-          )
-          if not exist dist-electron\latest.yml (
+          fi
+          if [ -f "dist-electron/latest.yml" ]; then
+            echo "latest.yml found"
+          else
             echo "ERROR: latest.yml not found!"
             exit 1
-          )
-          echo "Artifacts validated successfully."
+          fi
+          echo "All artifacts validated successfully."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: SmartPOS Pro v${{ steps.version.outputs.version }}
@@ -94,7 +93,7 @@ jobs:
 
             ### Новое в этой версии:
             - ✨ Стабилизация системы обновлений
-            - 🔐 Фикс сохранения статуса товаров
+            - 🔐 Улучшение многопользовательской безопасности
             - 🛠️ Оптимизация CI/CD пайплайна
           files: |
             client-accounting/dist-electron/*.exe
@@ -102,6 +101,6 @@ jobs:
             client-accounting/dist-electron/latest.yml
           draft: false
           prerelease: false
-          generate_release_notes: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
