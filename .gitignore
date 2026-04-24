@@ -86,10 +86,12 @@ mpos/gradle-build.log
 
 # Large binary files (prevent GitHub 100MB limit)
 *.exe
-!server/updates/*.exe
 *.asar
 *.msi
-!server/updates/
+*.blockmap
+server/updates/*.exe
+server/updates/*.blockmap
+server/updates/win-unpacked/
 SmartPOS-Client-Delivery/
 SmartPOS-Client-Package/
 admin-panel/dist-electron/
