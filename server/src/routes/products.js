@@ -338,6 +338,8 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             code, name, categoryId, unit, pricePurchase, priceSale, priceRetail,
             vatRate, description, barcode, imageUrl, quantity
         } = req.body;
+        const is_active = req.body.is_active !== undefined ? req.body.is_active : (req.body.isActive !== undefined ? req.body.isActive : true);
+        const minStock = req.body.minStock !== undefined ? req.body.minStock : (req.body.min_stock || 0);
 
         const orgId = getOrgId(req);
         const licenseId = req.user.organization_id || null;
@@ -360,12 +362,13 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                     name = $1, category_id = $2, unit = $3, price_purchase = $4, 
                     price_sale = $5, price_retail = $6, vat_rate = $7, 
                     description = $8, barcode = $9, image_url = $10, 
-                    organization_id = COALESCE($11, organization_id),
+                    is_active = $11, min_stock = $12,
+                    organization_id = COALESCE($13, organization_id),
                     updated_at = CURRENT_TIMESTAMP
-                WHERE code = $12`;
-            const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, licenseId, code];
+                WHERE code = $14`;
+            const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, is_active, minStock, licenseId, code];
             if (orgId) {
-                updateQuery += ' AND organization_id = $13';
+                updateQuery += ' AND organization_id = $15';
                 updateParams.push(orgId);
             }
             updateQuery += ' RETURNING *';
@@ -373,12 +376,11 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             action = 'UPDATE';
         } else {
             // Create new product
-            const minStock = req.body.minStock || 0;
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, min_stock)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, min_stock, is_active)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING *`,
-                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null, minStock]
+                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null, minStock, is_active]
             );
             action = 'CREATE';
         }
@@ -438,8 +440,10 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         const { id } = req.params;
         const {
             code, name, categoryId, unit, pricePurchase, priceSale, priceRetail,
-            vatRate, description, barcode, imageUrl, isActive, minStock, quantity, supplier
+            vatRate, description, barcode, imageUrl, quantity, supplier
         } = req.body;
+        const is_active = req.body.is_active !== undefined ? req.body.is_active : (req.body.isActive !== undefined ? req.body.isActive : true);
+        const minStock = req.body.minStock !== undefined ? req.body.minStock : (req.body.min_stock || 0);
 
         const oldData = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
 
@@ -450,7 +454,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         barcode = $10, image_url = $11, is_active = $12, min_stock = $13,
         supplier = $14, updated_at = CURRENT_TIMESTAMP
        WHERE id = $15`;
-        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, isActive, minStock || 0, supplier || null, id];
+        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, is_active, minStock, supplier || null, id];
 
         if (orgId) {
             updateQuery += ' AND organization_id = $16';

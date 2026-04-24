@@ -46,19 +46,10 @@ function Products() {
     const [stockMin, setStockMin] = useState('');
     const [stockMax, setStockMax] = useState('');
     const [showLowStockOnly, setShowLowStockOnly] = useState(false);
-    const [formData, setFormData] = useState({
-        code: '',
-        name: '',
-        categoryId: null,
-        unit: 'шт',
-        pricePurchase: 0,
-        priceSale: 0,
-        priceRetail: 0,
-        vatRate: 12,
-        quantity: 0,
         minStock: 0,
         description: '',
-        barcode: ''
+        barcode: '',
+        is_active: true
     });
     const [categories, setCategories] = useState([]);
     const [selectedCategoryId, setSelectedCategoryId] = useState(null);
@@ -312,6 +303,10 @@ function Products() {
                 setShowDraftNotice(false);
                 handleSuccess('Товар успешно создан!');
             }
+            // If we were editing this product, update local list
+            if (editingProduct) {
+                setProducts(prev => prev.map(p => p.id === editingProduct.id ? { ...p, ...formData } : p));
+            }
             setShowModal(false);
             setEditingProduct(null);
             setInlineEditId(null);
@@ -341,7 +336,7 @@ function Products() {
             supplier: product.supplier || '',
             description: product.description || '',
             barcode: product.barcode || '',
-            isActive: product.is_active !== false
+            is_active: product.is_active !== false
         });
     };
 
@@ -433,19 +428,10 @@ function Products() {
     };
 
     const resetForm = () => {
-        setFormData({
-            code: '',
-            name: '',
-            categoryId: null,
-            unit: 'шт',
-            pricePurchase: 0,
-            priceSale: 0,
-            priceRetail: 0,
-            vatRate: 12,
-            quantity: 0,
             minStock: 0,
             description: '',
-            barcode: ''
+            barcode: '',
+            is_active: true
         });
     };
 
@@ -875,9 +861,15 @@ function Products() {
                                                     </select>
                                                 </div>
                                             </div>
-                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                                                <button type="button" className="btn btn-secondary btn-sm" onClick={cancelInlineAdd} style={{ fontSize: '12px', padding: '4px 12px' }}><X size={12} /> Отмена</button>
-                                                <button type="submit" className="btn btn-success btn-sm" style={{ fontSize: '12px', padding: '4px 14px' }}><Check size={12} /> Создать товар</button>
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                                                    <input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                                                    Активен (продажа разрешена)
+                                                </label>
+                                                <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={cancelInlineAdd} style={{ fontSize: '12px', padding: '4px 12px' }}><X size={12} /> Отмена</button>
+                                                    <button type="submit" className="btn btn-success btn-sm" style={{ fontSize: '12px', padding: '4px 14px' }}><Check size={12} /> Создать товар</button>
+                                                </div>
                                             </div>
                                         </form>
                                     </td>
@@ -904,7 +896,12 @@ function Products() {
                                             onClick={async () => {
                                                 try {
                                                     const res = await api.patch(`/products/${product.id}/toggle-active`);
-                                                    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, is_active: res.data.product.is_active } : p));
+                                                    const newStatus = res.data.product.is_active;
+                                                    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, is_active: newStatus } : p));
+                                                    // Sync with formData if editing
+                                                    if (inlineEditId === product.id || (editingProduct && editingProduct.id === product.id)) {
+                                                        setFormData(prev => ({ ...prev, is_active: newStatus }));
+                                                    }
                                                     toast.success(res.data.message);
                                                 } catch (e) {
                                                     toast.error('Ошибка');
@@ -964,9 +961,15 @@ function Products() {
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                                                    <button type="button" className="btn btn-secondary btn-sm" onClick={cancelInlineEdit} style={{ fontSize: '12px', padding: '4px 12px' }}><X size={12} /> Отмена</button>
-                                                    <button type="submit" className="btn btn-primary btn-sm" style={{ fontSize: '12px', padding: '4px 12px' }}><Check size={12} /> Сохранить</button>
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                                                        <input type="checkbox" checked={formData.is_active} onChange={e => setFormData({...formData, is_active: e.target.checked})} style={{ width: '16px', height: '16px' }} />
+                                                        Активен (продажа разрешена)
+                                                    </label>
+                                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                                                        <button type="button" className="btn btn-secondary btn-sm" onClick={cancelInlineEdit} style={{ fontSize: '12px', padding: '4px 12px' }}><X size={12} /> Отмена</button>
+                                                        <button type="submit" className="btn btn-primary btn-sm" style={{ fontSize: '12px', padding: '4px 12px' }}><Check size={12} /> Сохранить</button>
+                                                    </div>
                                                 </div>
                                             </form>
                                         </td>
@@ -1460,6 +1463,18 @@ function Products() {
                                         value={formData.description}
                                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                     ></textarea>
+                                </div>
+
+                                <div className="form-group">
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_active}
+                                            onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                                            style={{ width: '20px', height: '20px' }}
+                                        />
+                                        <span>{t('products.is_active', 'Активен (доступен для продажи)')}</span>
+                                    </label>
                                 </div>
                             </div>
 

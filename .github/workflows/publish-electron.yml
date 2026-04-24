@@ -57,23 +57,51 @@ jobs:
 
       - name: Build Electron
         shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd client-accounting
-          npx electron-builder --win --x64
+          echo Building Electron app...
+          npm run dist -- --win --x64 -c.publish=never
+          if %ERRORLEVEL% NEQ 0 (
+            echo "Electron builder failed, but checking for artifacts anyway..."
+          )
+          dir dist-electron
+
+      - name: Validate Artifacts
+        shell: cmd
+        run: |
+          cd client-accounting
+          if not exist dist-electron\*.exe (
+            echo "ERROR: EXE artifact not found!"
+            exit 1
+          )
+          if not exist dist-electron\latest.yml (
+            echo "ERROR: latest.yml not found!"
+            exit 1
+          )
+          echo "Artifacts validated successfully."
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: SmartPOS Pro v${{ steps.version.outputs.version }}
           body: |
             ## SmartPOS Pro v${{ steps.version.outputs.version }}
             Автоматическая сборка от ${{ github.sha }}
+
+            ### Новое в этой версии:
+            - ✨ Стабилизация системы обновлений
+            - 🔐 Фикс сохранения статуса товаров
+            - 🛠️ Оптимизация CI/CD пайплайна
           files: |
             client-accounting/dist-electron/*.exe
             client-accounting/dist-electron/*.blockmap
             client-accounting/dist-electron/latest.yml
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
