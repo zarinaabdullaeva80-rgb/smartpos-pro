@@ -1381,6 +1381,7 @@ async function addMissingColumns(pool) {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS loyalty_settings (
                 id SERIAL PRIMARY KEY,
+                organization_id INTEGER UNIQUE,
                 points_per_currency DECIMAL(5, 2) DEFAULT 1,
                 min_purchase_amount DECIMAL(10, 2) DEFAULT 0,
                 points_to_currency_ratio DECIMAL(5, 2) DEFAULT 1,
@@ -1390,10 +1391,15 @@ async function addMissingColumns(pool) {
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         `);
+        // Add organization_id column and unique constraint if table already exists
+        try {
+            await pool.query(`ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
+            await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_settings_org ON loyalty_settings(organization_id)`);
+        } catch (e) { /* ignore */ }
         // Insert default settings if empty
         await pool.query(`
-            INSERT INTO loyalty_settings (id, points_per_currency) VALUES (1, 1)
-            ON CONFLICT (id) DO NOTHING
+            INSERT INTO loyalty_settings (organization_id, points_per_currency) VALUES (1, 1)
+            ON CONFLICT (organization_id) DO NOTHING
         `);
         console.log('  ✓ loyalty_settings table');
     } catch (e) { /* ignore */ }
