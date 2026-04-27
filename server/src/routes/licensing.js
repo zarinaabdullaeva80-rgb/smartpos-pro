@@ -41,6 +41,37 @@ async function syncToCloud(licenseData) {
 }
 
 /**
+ * Синхронизация УДАЛЕНИЯ лицензии на облачный сервер Railway
+ * Вызывается автоматически после удаления лицензии на локальном сервере
+ */
+async function deleteFromCloud(licenseKey) {
+    // Не синхронизировать если МЫ и есть облако
+    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+    if (isCloud) return { skipped: true, reason: 'already cloud' };
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(`${CLOUD_SERVER_URL}/api/license/sync-delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Sync-Secret': CLOUD_SYNC_SECRET
+            },
+            body: JSON.stringify({ license_key: licenseKey }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        console.log('[SYNC-DELETE] Cloud response:', result);
+        return result;
+    } catch (error) {
+        console.error('[SYNC-DELETE] Cloud sync-delete failed (non-blocking):', error.message);
+        return { error: error.message };
+    }
+}
+
+/**
  * GET /api/license/resolve?key=XXXX-XXXX-XXXX-XXXX
  * Публичный endpoint (без аутентификации) — резолв лицензионного ключа в URL сервера.
  * Вызывается мобильным приложением при первом запуске до логина.
@@ -418,6 +449,14 @@ router.post('/deactivate/:device_id', authenticate, async (req, res) => {
 router.get('/admin/licenses', authenticate, async (req, res) => {
     try {
         const { status, type, limit = 100 } = req.query;
+        
+        // Сначала обновляем статусы просроченных лицензий
+        try {
+            await pool.query('SELECT check_expired_licenses()');
+        } catch (e) {
+            console.error('Error running check_expired_licenses:', e.message);
+        }
+
 
         let query = `
             SELECT 
@@ -512,17 +551,20 @@ router.post('/admin/licenses', authenticate, auditLog('license'), async (req, re
         const keyResult = await pool.query('SELECT generate_license_key()');
         const license_key = keyResult.rows[0].generate_license_key;
 
-        // Вычислить срок действия
+        // Вычислить срок действия (истекает в конце последнего дня 23:59:59)
         let expires_at = null;
         if (license_type === 'trial' && trial_days > 0) {
             expires_at = new Date();
             expires_at.setDate(expires_at.getDate() + trial_days);
+            expires_at.setHours(23, 59, 59, 999);
         } else if (license_type === 'monthly') {
             expires_at = new Date();
             expires_at.setMonth(expires_at.getMonth() + 1);
+            expires_at.setHours(23, 59, 59, 999);
         } else if (license_type === 'yearly') {
             expires_at = new Date();
             expires_at.setFullYear(expires_at.getFullYear() + 1);
+            expires_at.setHours(23, 59, 59, 999);
         }
         // lifetime = null
 
@@ -1658,7 +1700,18 @@ router.delete('/:id', authenticate, async (req, res) => {
                 }
             } catch (e) {}
 
-            // 3. Удаляем основные таблицы с license_id
+                        // 3. Отвязываем аудит
+            try {
+                await client.query('UPDATE audit_log SET user_id = NULL, license_id = NULL WHERE license_id = $1', [id]);
+                await client.query('UPDATE audit_log SET user_id = NULL WHERE user_id IN (SELECT id FROM users WHERE license_id = $1 OR created_by_license_id = $1)', [id]);
+            } catch (e) {}
+
+            // 4. Удаляем роли
+            try {
+                await client.query('DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE license_id = $1 OR created_by_license_id = $1)', [id]);
+            } catch (e) {}
+
+            // 5. Удаляем основные таблицы
             const tables = [
                 'telegram_chats', 'telegram_bots',
                 'inventory_movements', 'sales', 'purchases',
@@ -1675,20 +1728,20 @@ router.delete('/:id', authenticate, async (req, res) => {
                 }
             }
 
-            // 4. Удаляем сотрудников (users привязанных к лицензии)
+            // 6. Удаляем сотрудников
             try {
-                const r = await client.query('DELETE FROM users WHERE created_by_license_id = $1 AND id != $2', [id, req.user.id]);
+                const r = await client.query('DELETE FROM users WHERE (license_id = $1 OR created_by_license_id = $1) AND id != $2', [id, req.user.id]);
                 deletedCounts.employees = r.rowCount;
             } catch (e) { deletedCounts.employees = 0; }
 
-            // 5. Обнуляем license_id у пользователей (не удаляем самого админа)
+            // 7. Удаляем организацию
             try {
-                await client.query('UPDATE users SET license_id = NULL, created_by_license_id = NULL WHERE license_id = $1', [id]);
-            } catch (e) {}
+                const r = await client.query('DELETE FROM organizations WHERE license_key = $1 OR id IN (SELECT organization_id FROM licenses WHERE id = $2)', [licInfo.license_key, id]);
+                deletedCounts.organizations = r.rowCount;
+            } catch (e) { deletedCounts.organizations = 0; }
 
-            // 6. Удаляем саму лицензию
+            // 8. Удаляем лицензию
             const result = await client.query('DELETE FROM licenses WHERE id = $1 RETURNING *', [id]);
-            deletedCounts.license = result.rowCount;
 
             await client.query('COMMIT');
 
@@ -1701,12 +1754,22 @@ router.delete('/:id', authenticate, async (req, res) => {
                 );
             } catch (e) {}
 
+            // ★ Синхронизировать удаление на облачный сервер Railway
+            let cloudDeleteResult = null;
+            try {
+                cloudDeleteResult = await deleteFromCloud(licInfo.license_key);
+                console.log('[License Delete] Cloud sync-delete:', cloudDeleteResult?.success ? '✅ OK' : '⚠️ ' + (cloudDeleteResult?.error || 'unknown'));
+            } catch (syncErr) {
+                console.warn('[License Delete] Cloud sync-delete error (non-blocking):', syncErr.message);
+            }
+
             console.log(`[License Delete] License ${id} (${licInfo.customer_name}) fully deleted. Counts:`, deletedCounts);
 
             res.json({ 
                 success: true, 
                 message: `Лицензия "${licInfo.customer_name}" и все связанные данные удалены`,
-                deleted: deletedCounts
+                deleted: deletedCounts,
+                cloud_deleted: cloudDeleteResult?.success || false
             });
         } catch (txError) {
             await client.query('ROLLBACK');
@@ -1860,6 +1923,125 @@ router.post('/sync', async (req, res) => {
         res.json({ success: true, license_id: licenseId, organization_id: organizationId, message: 'Synced' });
     } catch (error) {
         console.error('[SYNC] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/license/sync-delete
+ * Синхронизация УДАЛЕНИЯ лицензии с облачного сервера Railway.
+ * Вызывается локальным сервером при удалении лицензии через админ-панель.
+ * Каскадно удаляет лицензию, организацию, пользователей и все связанные данные.
+ * Protected by X-Sync-Secret header.
+ */
+router.post('/sync-delete', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        if (secret !== CLOUD_SYNC_SECRET) {
+            return res.status(403).json({ error: 'Invalid sync secret' });
+        }
+
+        const { license_key } = req.body;
+        if (!license_key) {
+            return res.status(400).json({ error: 'license_key required' });
+        }
+
+        console.log('[SYNC-DELETE] Deleting license from cloud:', license_key);
+
+        // Найти лицензию
+        const licResult = await pool.query('SELECT id, customer_name FROM licenses WHERE license_key = $1', [license_key]);
+        if (licResult.rows.length === 0) {
+            console.log('[SYNC-DELETE] License not found in cloud (already deleted?):', license_key);
+            return res.json({ success: true, message: 'License not found (already deleted)', already_deleted: true });
+        }
+
+        const licenseId = licResult.rows[0].id;
+        const customerName = licResult.rows[0].customer_name;
+        const deletedCounts = {};
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // 1. Удаляем позиции продаж
+            try {
+                const salesIds = await client.query('SELECT id FROM sales WHERE license_id = $1', [licenseId]);
+                if (salesIds.rows.length > 0) {
+                    const ids = salesIds.rows.map(r => r.id);
+                    try { await client.query('DELETE FROM sale_items WHERE sale_id = ANY($1::int[])', [ids]); } catch (e) {}
+                    try { await client.query('DELETE FROM sale_payment_details WHERE sale_id = ANY($1::int[])', [ids]); } catch (e) {}
+                }
+            } catch (e) {}
+
+            // 2. Удаляем позиции закупок
+            try {
+                const purchaseIds = await client.query('SELECT id FROM purchases WHERE license_id = $1', [licenseId]);
+                if (purchaseIds.rows.length > 0) {
+                    const ids = purchaseIds.rows.map(r => r.id);
+                    try { await client.query('DELETE FROM purchase_items WHERE purchase_id = ANY($1::int[])', [ids]); } catch (e) {}
+                }
+            } catch (e) {}
+
+            // 3. Отвязываем аудит
+            try {
+                await client.query('UPDATE audit_log SET user_id = NULL, license_id = NULL WHERE license_id = $1', [licenseId]);
+                await client.query('UPDATE audit_log SET user_id = NULL WHERE user_id IN (SELECT id FROM users WHERE license_id = $1)', [licenseId]);
+            } catch (e) {}
+
+            // 4. Удаляем роли
+            try {
+                await client.query('DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE license_id = $1)', [licenseId]);
+            } catch (e) {}
+
+            // 5. Удаляем основные таблицы
+            const tables = [
+                'telegram_chats', 'telegram_bots',
+                'inventory_movements', 'sales', 'purchases',
+                'customers', 'warehouses', 'products',
+                'license_activations', 'license_history'
+            ];
+
+            for (const table of tables) {
+                try {
+                    const r = await client.query(`DELETE FROM ${table} WHERE license_id = $1`, [licenseId]);
+                    deletedCounts[table] = r.rowCount;
+                } catch (e) {
+                    deletedCounts[table] = 0;
+                }
+            }
+
+            // 6. Удаляем сотрудников
+            try {
+                const r = await client.query('DELETE FROM users WHERE license_id = $1', [licenseId]);
+                deletedCounts.employees = r.rowCount;
+            } catch (e) { deletedCounts.employees = 0; }
+
+            // 7. Удаляем организацию
+            try {
+                const r = await client.query('DELETE FROM organizations WHERE license_key = $1', [license_key]);
+                deletedCounts.organizations = r.rowCount;
+            } catch (e) { deletedCounts.organizations = 0; }
+
+            // 8. Удаляем саму лицензию
+            await client.query('DELETE FROM licenses WHERE id = $1', [licenseId]);
+
+            await client.query('COMMIT');
+
+            console.log(`[SYNC-DELETE] License "${customerName}" (${license_key}) fully deleted from cloud. Counts:`, deletedCounts);
+
+            res.json({
+                success: true,
+                message: `License "${customerName}" deleted from cloud`,
+                deleted: deletedCounts
+            });
+        } catch (txError) {
+            await client.query('ROLLBACK');
+            throw txError;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('[SYNC-DELETE] Error:', error);
         res.status(500).json({ error: error.message });
     }
 });
