@@ -13,6 +13,28 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// === Sentry Error Monitoring ===
+let Sentry = null;
+if (process.env.SENTRY_DSN) {
+    try {
+        const sentryModule = await import('@sentry/node');
+        Sentry = sentryModule;
+        Sentry.init({
+            dsn: process.env.SENTRY_DSN,
+            environment: process.env.NODE_ENV || 'production',
+            release: `smartpos-pro@4.2.8`,
+            tracesSampleRate: 0.2,
+            integrations: [],
+        });
+        console.log('✅ Sentry monitoring initialized');
+    } catch (e) {
+        console.log('⚠️ Sentry init skipped:', e.message);
+    }
+} else {
+    console.log('ℹ️ SENTRY_DSN not set — errors logged to file only');
+}
+export { Sentry };
+
 // Logging setup for production debugging
 const logFile = process.env.LOG_PATH || path.resolve(process.cwd(), 'server.log');
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });

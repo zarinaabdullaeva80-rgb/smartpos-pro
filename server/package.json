@@ -9,7 +9,7 @@
     "mobile": "node serve-mobile.js",
     "dev": "nodemon src/index.js",
     "fix-schema": "node fix-schema.js",
-    "test": "jest --detectOpenHandles",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "migrate": "node src/scripts/runMigrations.js",
@@ -26,7 +26,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@sentry/node": "^10.37.0",
+    "@sentry/node": "^10.50.0",
     "bcrypt": "^6.0.0",
     "bwip-js": "^4.8.0",
     "cors": "^2.8.5",
