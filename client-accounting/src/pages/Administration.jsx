@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-    Server, Database, HardDrive, ShieldCheck, Users, Activity,
-    Eye, EyeOff, RefreshCw, Plus, Trash2, Key, UserPlus, X, Check,
-    Cpu, MemoryStick, Globe, Clock, AlertTriangle, Settings, Monitor,
-    Download, Upload, Calendar, Search, Filter, LogOut, Shield, Copy, History,
-    Pause, Play, BarChart3, Zap
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+    Users, Shield, Activity, Clock, LogOut, CheckCircle, AlertCircle, 
+    ArrowRight, History, Settings, RefreshCw, Key, Monitor, Cloud 
 } from 'lucide-react';
-import { usersAdminAPI, systemAdminAPI, backupAdminAPI, sessionsAPI, databaseAdminAPI, licenseAdminAPI } from '../services/api';
+import LicenseTimer from '../components/LicenseTimer';
+import { systemAdminAPI, usersAdminAPI, sessionsAPI, backupAdminAPI, databaseAdminAPI, licenseAdminAPI } from '../services/api';
+import { useI18n } from '../i18n';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
-import { useI18n } from '../i18n';
+
 
 function Administration() {
     const { t } = useI18n();
@@ -691,7 +690,6 @@ function Administration() {
         'revoked': { color: '#8a6aad', bg: 'rgba(138,106,173,0.12)', label: 'Отозвана', glow: '0 0 8px rgba(138,106,173,0.3)' }
     };
 
-    // License monitoring stats
     const licenseStats = {
         total: licenses.length,
         active: licenses.filter(l => l.status === 'active').length,
@@ -703,7 +701,6 @@ function Administration() {
 
     const renderLicenseMonitoring = () => (
         <div>
-            {/* Stats Cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div className="card" style={{ padding: '20px', borderLeft: '3px solid #ff0080', position: 'relative', overflow: 'hidden' }}>
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg, #ff0080, transparent)' }} />
@@ -719,9 +716,6 @@ function Administration() {
                         <span style={{ color: '#8a6aad', fontSize: '13px' }}>{t('administration.aktivnye', 'Активные')}</span>
                     </div>
                     <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#00ff88', textShadow: '0 0 10px rgba(0,255,136,0.3)' }}>{licenseStats.active}</div>
-                    <div style={{ fontSize: '11px', color: '#8a6aad', marginTop: '4px' }}>
-                        {licenseStats.total > 0 ? ((licenseStats.active / licenseStats.total) * 100).toFixed(0) : 0}% от всех
-                    </div>
                 </div>
                 <div className="card" style={{ padding: '20px', borderLeft: '3px solid #ff9500' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
@@ -736,13 +730,9 @@ function Administration() {
                         <span style={{ color: '#8a6aad', fontSize: '13px' }}>{t('administration.ustroystva', 'Устройства')}</span>
                     </div>
                     <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#f0e6ff' }}>{licenseStats.totalDevices}<span style={{ fontSize: '16px', color: '#8a6aad' }}>/{licenseStats.maxDevices}</span></div>
-                    <div style={{ height: '4px', background: 'rgba(123,47,247,0.2)', borderRadius: '2px', marginTop: '8px', overflow: 'hidden' }}>
-                        <div style={{ width: `${licenseStats.maxDevices > 0 ? (licenseStats.totalDevices / licenseStats.maxDevices) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #ff0080, #7b2ff7)', borderRadius: '2px', transition: 'width 0.5s' }} />
-                    </div>
                 </div>
             </div>
 
-            {/* Recent Activity from history */}
             <div className="card" style={{ padding: '20px' }}>
                 <h3 style={{ margin: '0 0 16px', color: '#f0e6ff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Activity size={18} color="#ff0080" /> Последняя активность
@@ -779,7 +769,6 @@ function Administration() {
 
     const renderLicenses = () => (
         <div>
-            {/* Sub-tabs */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
                 <button className={`btn btn-sm ${licenseSubTab === 'monitoring' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setLicenseSubTab('monitoring')}>
@@ -866,12 +855,11 @@ function Administration() {
                                             <span style={{ color: '#ff0080', fontWeight: 'bold' }}>{lic.active_devices || 0}</span>
                                             <span style={{ color: '#8a6aad' }}> / {lic.max_devices || 1}</span>
                                         </td>
-                                        <td style={{ padding: '12px', textAlign: 'center', fontSize: '12px', color: '#8a6aad' }}>
-                                            {lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : <span style={{ color: '#00ff88' }}>∞</span>}
+                                        <td style={{ padding: '12px' }}>
+                                            <LicenseTimer expiryDate={lic.expires_at || lic.expiry_date} />
                                         </td>
                                         <td style={{ padding: '12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                                {/* Suspend / Resume */}
                                                 {(lic.status === 'active' || lic.status === 'suspended') && (
                                                     <button className="btn btn-sm btn-secondary"
                                                         style={{ color: lic.status === 'active' ? '#ff9500' : '#00ff88' }}
@@ -880,7 +868,6 @@ function Administration() {
                                                         {lic.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
                                                     </button>
                                                 )}
-                                                {/* Delete */}
                                                 <button className="btn btn-sm btn-secondary" style={{ color: '#ff3355' }}
                                                     onClick={() => handleDeleteLicense(lic.id, lic.license_key)} title={t('administration.udalit_litsenziyu', 'Удалить лицензию')}>
                                                     <Trash2 size={14} />
@@ -900,7 +887,6 @@ function Administration() {
                     </table>
                 </div>
             ) : (
-                /* History sub-tab */
                 <div className="card" style={{ maxHeight: '600px', overflow: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead style={{ position: 'sticky', top: 0, background: '#120020', zIndex: 1 }}>
@@ -916,7 +902,7 @@ function Administration() {
                         <tbody>
                             {licenseHistory.map(h => (
                                 <tr key={h.id} style={{ borderBottom: '1px solid rgba(123,47,247,0.1)' }}>
-                                    <td style={{ padding: '10px 12px' }}>
+                                    <td style={{ padding: '12px' }}>
                                         <span style={{
                                             padding: '3px 10px', borderRadius: '10px', fontSize: '11px',
                                             background: h.action === 'created' ? 'rgba(0,255,136,0.12)' : h.action?.includes('device') ? 'rgba(0,204,255,0.12)' : 'rgba(255,149,0,0.12)',
@@ -926,29 +912,23 @@ function Administration() {
                                             {actionLabels[h.action] || h.action}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '10px 12px' }}>
-                                        <code style={{ fontSize: '11px', color: '#c9b0e8' }}>{h.license_key || '—'}</code>
+                                    <td style={{ padding: '12px' }}>
+                                        <code style={{ fontSize: '11px', color: '#8a6aad' }}>{h.license_key?.substring(0, 8)}...</code>
                                     </td>
-                                    <td style={{ padding: '10px 12px', fontSize: '13px', color: '#c9b0e8' }}>
-                                        {h.customer_name || h.company_name || '—'}
+                                    <td style={{ padding: '12px' }}>
+                                        <div style={{ fontSize: '13px', color: '#f0e6ff' }}>{h.customer_name || h.company_name || '—'}</div>
                                     </td>
-                                    <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '12px', color: '#8a6aad' }}>
-                                        {h.performed_by_username || 'Система'}
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '12px', color: '#c9b0e8' }}>{h.performed_by_name || 'Система'}</div>
                                     </td>
-                                    <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: '11px', color: '#8a6aad', fontFamily: 'monospace' }}>
-                                        {h.details ? (typeof h.details === 'string' ? h.details.slice(0, 40) : JSON.stringify(h.details).slice(0, 40)) : '—'}
+                                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                                        <div style={{ fontSize: '11px', color: '#8a6aad', maxWidth: '200px', margin: '0 auto' }}>{h.details || '—'}</div>
                                     </td>
-                                    <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: '12px', color: '#8a6aad' }}>
+                                    <td style={{ padding: '12px', textAlign: 'right', fontSize: '12px', color: '#8a6aad' }}>
                                         {new Date(h.created_at).toLocaleString('ru-RU')}
                                     </td>
                                 </tr>
                             ))}
-                            {licenseHistory.length === 0 && (
-                                <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#8a6aad' }}>
-                                    <History size={32} style={{ marginBottom: '8px', opacity: 0.3, filter: 'drop-shadow(0 0 8px rgba(123,47,247,0.3))' }} /><br />
-                                    История пуста
-                                </td></tr>
-                            )}
                         </tbody>
                     </table>
                 </div>
@@ -956,7 +936,15 @@ function Administration() {
         </div>
     );
 
-    const tabComponents = { monitoring: renderMonitoring, users: renderUsers, licenses: renderLicenses, sessions: renderSessions, backups: renderBackups, database: renderDatabase, logs: renderLogs };
+    const tabComponents = { 
+        monitoring: renderMonitoring, 
+        users: renderUsers, 
+        licenses: renderLicenses, 
+        sessions: renderSessions, 
+        backups: renderBackups, 
+        database: renderDatabase, 
+        logs: renderLogs 
+    };
 
     return (
         <div className="administration-page fade-in">
@@ -970,7 +958,6 @@ function Administration() {
                 </button>
             </div>
 
-            {/* Tab Navigation */}
             <div style={{
                 display: 'flex', gap: '4px', marginBottom: '20px', padding: '4px',
                 background: 'var(--bg-secondary)', borderRadius: '12px', overflowX: 'auto'
@@ -992,7 +979,6 @@ function Administration() {
                 })}
             </div>
 
-            {/* Tab Content */}
             {loading ? (
                 <div style={{ padding: '60px', textAlign: 'center', color: '#888' }}>
                     <RefreshCw size={32} className="spinning" style={{ marginBottom: '12px' }} />
@@ -1002,7 +988,6 @@ function Administration() {
                 tabComponents[activeTab] && tabComponents[activeTab]()
             )}
 
-            {/* Create User Modal */}
             {showUserModal && (
                 <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
                     <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
@@ -1036,9 +1021,6 @@ function Administration() {
                                     <option value="">{t('administration.vyberite_rol', 'Выберите роль')}</option>
                                     {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                 </select>
-                            </div>
-                            <div style={{ padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '13px', color: '#888' }}>
-                                💡 Пароль будет сгенерирован автоматически
                             </div>
                         </div>
                         <div className="modal-footer">

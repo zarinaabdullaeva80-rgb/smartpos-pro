@@ -12,6 +12,26 @@ let userPage = 1;
 let licenseSearch = '';
 let licensePage = 1;
 const PAGE_SIZE = 15;
+let liveTimerInterval = null;
+
+// Add pulsing animation and timer styles
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes pulse-timer {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(1.05); }
+    }
+    .pulse-warning {
+        animation: pulse-timer 2s infinite;
+        display: inline-block;
+    }
+    .timer-monospace {
+        font-family: 'Fira Code', monospace;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+    }
+`;
+document.head.appendChild(style);
 
 // Chart history
 let cpuHistory = [];
@@ -580,7 +600,15 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
                     <td><span class="badge ${l.server_type === 'self_hosted' ? 'badge-info' : 'badge-purple'}">${l.server_type === 'self_hosted' ? '🖥️ Свой' : '☁️ Облако'}</span>${l.server_url ? '<div style="font-size:10px;color:var(--text-muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(l.server_url) + '">' + escapeHtml(l.server_url) + '</div>' : ''}</td>
                     <td style="text-align:center">${l.active_devices || 0}/${l.max_devices || 1}</td>
                     <td><span class="badge ${l.status === 'active' ? 'badge-success' : l.status === 'expired' ? 'badge-danger' : 'badge-warning'}">${l.status === 'active' ? 'Активна' : l.status === 'expired' ? 'Истекла' : l.status === 'suspended' ? 'Приост.' : l.status || '—'}</span></td>
-                    <td style="font-size:11px;color:var(--text-muted)">${l.expires_at ? new Date(l.expires_at).toLocaleDateString('ru-RU') : '∞'}</td>
+                    <td style="padding: 10px 12px; min-width: 130px;">
+                        <div style="font-weight: 600; font-size: 12px; color: var(--text);">${l.expires_at ? new Date(l.expires_at).toLocaleDateString('ru-RU') : '∞'}</div>
+                        ${l.expires_at ? `
+                            <div class="license-timer-countdown timer-monospace" 
+                                 data-expiry="${l.expires_at}" 
+                                 style="font-size: 10px; margin-top: 2px;">
+                                 --:--:--
+                            </div>` : ''}
+                    </td>
                     <td style="text-align:right;white-space:nowrap">
                         <button class="btn btn-sm btn-secondary btn-edit-license" data-id="${l.id}" data-status="${l.status}" data-devices="${l.max_devices}" data-users="${l.max_users}" data-server-type="${l.server_type || 'cloud'}" data-server-url="${l.server_url || ''}" title="Редактировать">✏️</button>
                         <button class="btn btn-sm btn-secondary btn-team" data-id="${l.id}" data-name="${l.customer_name}" data-key="${l.license_key}" title="Сотрудники">👥</button>
@@ -597,6 +625,9 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
     // Bind all events
     document.getElementById('btn-create-license')?.addEventListener('click', showCreateLicenseModal);
     bindSortHeaders();
+
+    // Trigger timer update immediately
+    updateLiveTimers();
 
     document.querySelectorAll('.btn-edit-license').forEach(btn => btn.addEventListener('click', function () {
         const id = this.dataset.id;
@@ -1483,3 +1514,71 @@ window.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter') document.getElementById('login-pass').focus();
     });
 });
+
+// Start live timers globally to ensure it starts even if DOMContentLoaded already fired
+if (!window._liveTimerInterval) {
+    console.log('[Timer] Initializing global countdown timer...');
+    window._liveTimerInterval = setInterval(updateLiveTimers, 1000);
+}
+
+function updateLiveTimers() {
+    const elements = document.querySelectorAll('.license-timer-countdown');
+    if (elements.length === 0) return;
+
+    const now = new Date();
+    
+    elements.forEach(el => {
+        try {
+            const expiryStr = el.dataset.expiry;
+            if (!expiryStr) return;
+            
+            // Normalize date format if needed (replace space with T for better parsing)
+            const normalizedExpiry = expiryStr.includes(' ') && !expiryStr.includes('T') ? expiryStr.replace(' ', 'T') : expiryStr;
+            const expiry = new Date(normalizedExpiry);
+            
+            if (isNaN(expiry.getTime())) {
+                console.warn('[Timer] Invalid date:', expiryStr);
+                return;
+            }
+
+            const diff = expiry - now;
+
+            if (diff <= 0) {
+                el.innerHTML = '<span style="color:var(--danger);font-weight:bold">ИСТЕКЛА</span>';
+                const row = el.closest('tr');
+                const statusBadge = row?.querySelector('.badge');
+                if (statusBadge && statusBadge.textContent === 'Активна') {
+                    statusBadge.className = 'badge badge-danger';
+                    statusBadge.textContent = 'Истекла';
+                }
+                return;
+            }
+
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const secs = Math.floor((diff % (1000 * 60)) / 1000);
+
+            let timeStr = '';
+            if (days > 0) timeStr += days + 'д ';
+            timeStr += String(hours).padStart(2, '0') + ':' + 
+                       String(mins).padStart(2, '0') + ':' + 
+                       String(secs).padStart(2, '0');
+            
+            el.textContent = timeStr;
+            
+            if (days < 1) {
+                el.style.color = 'var(--danger)';
+                el.classList.add('pulse-warning');
+            } else if (days < 3) {
+                el.style.color = 'var(--warning)';
+                el.classList.remove('pulse-warning');
+            } else {
+                el.style.color = 'var(--success)';
+                el.classList.remove('pulse-warning');
+            }
+        } catch (err) {
+            console.error('[Timer] Error updating element:', err);
+        }
+    });
+}

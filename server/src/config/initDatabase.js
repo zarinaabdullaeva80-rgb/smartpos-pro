@@ -227,7 +227,7 @@ export async function initDatabase(pool) {
             CREATE TABLE IF NOT EXISTS sales (
                 id SERIAL PRIMARY KEY,
                 document_number VARCHAR(100) UNIQUE NOT NULL,
-                document_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                document_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 customer_id INTEGER REFERENCES counterparties(id),
                 total_amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
                 vat_amount DECIMAL(15, 2) DEFAULT 0,
@@ -268,6 +268,7 @@ export async function initDatabase(pool) {
                 payment_method_code VARCHAR(50) NOT NULL,
                 amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
                 notes TEXT,
+                organization_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -928,7 +929,8 @@ async function addMissingColumns(pool) {
             quantity DECIMAL(15,3) DEFAULT 0,
             last_movement_date TIMESTAMP,
             organization_id INTEGER,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(product_id, warehouse_id)
         )`,
     ];
 
@@ -1019,9 +1021,36 @@ async function addMissingColumns(pool) {
             $$ LANGUAGE plpgsql
         `);
         console.log('  ✓ generate_license_key() function');
+
+        // Ensure check_expired_licenses() function exists
+        await pool.query(`
+            CREATE OR REPLACE FUNCTION check_expired_licenses()
+            RETURNS void AS $$
+            BEGIN
+                -- Update status for licenses that have passed their expiration date
+                UPDATE licenses
+                SET status = 'expired', updated_at = NOW()
+                WHERE status = 'active'
+                  AND expires_at IS NOT NULL
+                  AND expires_at < NOW();
+                  
+                -- Log to history for newly expired licenses
+                -- Using a subquery for license_history if it exists
+                IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'license_history') THEN
+                    INSERT INTO license_history (license_id, action, details)
+                    SELECT id, 'expired', json_build_object('expired_at', expires_at)
+                    FROM licenses
+                    WHERE status = 'expired'
+                      AND updated_at >= NOW() - INTERVAL '1 minute';
+                END IF;
+            END;
+            $$ LANGUAGE plpgsql;
+        `);
+        console.log('  ✓ check_expired_licenses() function');
     } catch (e) {
-        console.log('  ⚠️ generate_license_key:', e.message);
+        console.log('  ⚠️ database functions:', e.message);
     }
+
 
     // Ensure license_history table exists
     try {
@@ -1046,9 +1075,13 @@ async function addMissingColumns(pool) {
                 product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
                 warehouse_id INTEGER REFERENCES warehouses(id),
                 document_type VARCHAR(50) DEFAULT 'adjustment',
+                document_id INTEGER,
                 quantity DECIMAL(15, 3) NOT NULL DEFAULT 0,
                 user_id INTEGER REFERENCES users(id),
                 license_id INTEGER,
+                organization_id INTEGER DEFAULT 1,
+                movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                cost_price DECIMAL(15, 2),
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -1056,10 +1089,27 @@ async function addMissingColumns(pool) {
         await pool.query('CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_inventory_movements_warehouse ON inventory_movements(warehouse_id)');
         await pool.query('CREATE INDEX IF NOT EXISTS idx_inventory_movements_license ON inventory_movements(license_id)');
+        // Ensure columns exist for existing databases
+        await pool.query('ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS document_id INTEGER');
+        await pool.query('ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1');
+        await pool.query('ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS movement_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+        await pool.query('ALTER TABLE inventory_movements ADD COLUMN IF NOT EXISTS cost_price DECIMAL(15, 2)');
         console.log('  ✓ inventory_movements table');
     } catch (e) {
         console.log('  ⚠️ inventory_movements:', e.message);
     }
+
+    // Ensure stock_balances has UNIQUE constraint (critical for ON CONFLICT upsert)
+    try {
+        await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_balances_product_warehouse ON stock_balances(product_id, warehouse_id)');
+        console.log('  ✓ stock_balances unique constraint');
+    } catch (e) { /* ignore - may already exist */ }
+
+    // Ensure sale_payment_details has organization_id
+    try {
+        await pool.query('ALTER TABLE sale_payment_details ADD COLUMN IF NOT EXISTS organization_id INTEGER');
+        console.log('  ✓ sale_payment_details.organization_id');
+    } catch (e) { /* ignore */ }
 
     // Ensure products table has all required columns
     const productColumns = [
@@ -1082,6 +1132,12 @@ async function addMissingColumns(pool) {
     for (const q of salesColumns) {
         try { await pool.query(q); } catch (e) { /* ignore */ }
     }
+    // Migrate document_date from DATE to TIMESTAMP for existing databases
+    try {
+        await pool.query('ALTER TABLE sales ALTER COLUMN document_date TYPE TIMESTAMP USING document_date::timestamp');
+        await pool.query('ALTER TABLE sales ALTER COLUMN document_date SET DEFAULT CURRENT_TIMESTAMP');
+        console.log('  ✓ sales.document_date upgraded to TIMESTAMP');
+    } catch (e) { /* already TIMESTAMP or error */ }
     console.log('  ✓ sales missing columns');
 
     // Ensure purchases has final_amount and license_id

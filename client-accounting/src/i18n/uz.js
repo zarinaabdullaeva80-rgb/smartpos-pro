@@ -90,6 +90,7 @@ const uz = {
     permissionsManagement: 'Huquqlarni boshqarish',
     twoFactorAuth: '2FA avtorizatsiya',
     backups: 'Zaxira nusxalar',
+    receiptSettings: 'Chek sozlamalari',
   },
 
   // === ERI (EDS) ===
@@ -295,6 +296,24 @@ const uz = {
     createFirst: 'Birinchi sotuv hujjatini yarating',
     addItem: 'Mahsulot qo\'shish',
     print: 'Chop etish',
+    loyaltyCard: 'Sodiqlik kartasi',
+    applyPoints: 'Ballarni qo\'llash',
+    loyaltyPoints: 'Sodiqlik ballari',
+  },
+
+  // === Loyallik ===
+  loyalty: {
+    title: 'Sodiqlik dasturi',
+    subtitle: 'Bonuslar va mijozlar kartalarini boshqarish',
+    card: 'Sodiqlik kartasi',
+    points: 'Ballar',
+    balance: 'Balans',
+    history: 'Amallar tarixi',
+    earn: 'To\'plash',
+    spend: 'Sarfalash',
+    cardNumber: 'Karta raqami',
+    searchCustomer: 'Mijozni qidirish',
+    applyToSale: 'Sotuvga qo\'llash',
   },
 
   // === Xaridlar ===
@@ -647,7 +666,7 @@ const uz = {
     rol: 'Роль',
     fayl: 'Файл',
     data: 'Sana',
-    srok: 'Срок',
+    srok: 'MUDDATI',
     tip: 'Turi',
     kem: 'Кем',
   },

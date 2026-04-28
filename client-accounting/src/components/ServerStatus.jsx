@@ -20,7 +20,7 @@ function ServerStatus() {
 
     const fetchServerInfo = useCallback(async () => {
         try {
-            if (serverMode === SERVER_MODES.SERVER && isElectron) {
+            if ((serverMode === SERVER_MODES.OWN) && isElectron) {
                 // Режим своего сервера
                 const info = await window.electron.getServerInfo();
                 setServerInfo(info);
@@ -37,7 +37,7 @@ function ServerStatus() {
                     connectionUrl: baseUrl,
                     apiUrl: apiUrl,
                     primaryIP: hostname,
-                    localIPs: [{ name: serverMode === SERVER_MODES.CLOUD ? 'Облако' : 'WiFi', address: hostname }],
+                    localIPs: [{ name: serverMode === SERVER_MODES.CLOUD ? 'Облако' : 'Свой сервер', address: hostname }],
                     hostname: hostname,
                     mode: serverMode,
                 });
@@ -145,13 +145,11 @@ function ServerStatus() {
 
     // Заголовок в зависимости от режима
     const getModeTitle = () => {
-        if (serverMode === SERVER_MODES.CLIENT) return `Подключён к ${serverInfo?.primaryIP || 'WiFi'}`;
-        if (serverMode === SERVER_MODES.CLOUD) return `Облачный сервер`;
-        return 'Встроенный сервер';
+        if (serverMode === SERVER_MODES.CLOUD) return 'Облачный сервер';
+        return 'Свой сервер';
     };
 
     const getModeIcon = () => {
-        if (serverMode === SERVER_MODES.CLIENT) return <Wifi size={20} />;
         if (serverMode === SERVER_MODES.CLOUD) return <Cloud size={20} />;
         return <Server size={20} />;
     };
@@ -203,7 +201,7 @@ function ServerStatus() {
                     )}
                 </div>
 
-                {isElectron && serverMode === SERVER_MODES.SERVER && (
+                {isElectron && serverMode === SERVER_MODES.OWN && (
                     <button
                         className="restart-btn"
                         onClick={handleRestart}

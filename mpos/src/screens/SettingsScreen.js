@@ -6,7 +6,8 @@ import { useI18n } from '../i18n';
 import SettingsService, { THEMES } from '../services/settings';
 import SoundManager from '../services/sounds';
 import BiometricService from '../services/biometric';
-import { APP_VERSION } from '../config/settings';
+import { APP_VERSION, getLicenseData, getLicenseKey } from '../config/settings';
+import LicenseTimer from '../components/LicenseTimer';
 
 export default function SettingsScreen({ navigation, onThemeChange }) {
     const { theme, colors, setTheme } = useTheme();
@@ -255,6 +256,36 @@ export default function SettingsScreen({ navigation, onThemeChange }) {
                     </Button>
                 </Card.Content>
             </Card>
+
+            {/* Лицензия */}
+            {getLicenseKey() && (
+                <Card style={[styles.card, dynamicStyles.card]}>
+                    <Card.Content>
+                        <Title style={dynamicStyles.text}>📋 Лицензия</Title>
+                        {getLicenseData()?.company_name && (
+                            <Paragraph style={dynamicStyles.text}>
+                                🏢 {getLicenseData().company_name}
+                            </Paragraph>
+                        )}
+                        <Paragraph style={[dynamicStyles.textSecondary, { fontSize: 12, fontFamily: 'monospace' }]}>
+                            🔑 {getLicenseKey()}
+                        </Paragraph>
+                        {getLicenseData()?.license_type && (
+                            <Paragraph style={dynamicStyles.textSecondary}>
+                                Тип: {getLicenseData().license_type}
+                            </Paragraph>
+                        )}
+                        {getLicenseData()?.expires_at && (
+                            <View style={{ marginTop: 12 }}>
+                                <Paragraph style={[dynamicStyles.textSecondary, { marginBottom: 6 }]}>
+                                    Срок действия:
+                                </Paragraph>
+                                <LicenseTimer expiryDate={getLicenseData().expires_at} />
+                            </View>
+                        )}
+                    </Card.Content>
+                </Card>
+            )}
 
             {/* О приложении */}
             <Card style={[styles.card, dynamicStyles.card]}>

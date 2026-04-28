@@ -412,7 +412,7 @@ export const LOG_CONFIG = {
 };
 
 // Версия приложения
-export const APP_VERSION = '4.1.1';
+export const APP_VERSION = '4.2.3';
 
 // Dev mode
 export const IS_DEV = false;

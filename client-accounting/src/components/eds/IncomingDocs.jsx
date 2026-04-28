@@ -87,7 +87,7 @@ export default function IncomingDocs() {
 
         setSigningId(showSignModal);
         try {
-            const keyObj = eimzoKeys.find(k => (k.serialNumber || k.VO_SERIAL_NUMBER) === selectedKey);
+            const keyObj = eimzoKeys.find(k => k.serialNumber === selectedKey);
             if (!keyObj) throw new Error('Key not found');
 
             toast.info(t('eds.enterPassword'));
@@ -101,7 +101,7 @@ export default function IncomingDocs() {
             await edsAPI.counterSignDocument(showSignModal, {
                 pkcs7,
                 signer_name: keyObj.CN || keyObj.O || '',
-                signer_tin: keyObj.TIN || keyObj.VO_TIN || ''
+                signer_tin: keyObj.TIN || keyObj.PINFL || ''
             });
 
             toast.success(t('eds.counterSignSuccess'));
@@ -235,10 +235,12 @@ export default function IncomingDocs() {
                         ) : (
                             <div>
                                 <label style={{ fontWeight: 500, fontSize: 13, marginBottom: 6, display: 'block' }}>{t('eds.selectKey')}</label>
-                                <select value={selectedKey} onChange={e => setSelectedKey(e.target.value)} className="form-input" style={{ width: '100%', marginBottom: 16 }}>
+                                <select value={selectedKey} onChange={e => setSelectedKey(e.target.value)} className="form-input" style={{ width: '100%', marginBottom: 16, fontSize: '13px' }}>
                                     <option value="">{t('eds.placeholderSelectKey')}</option>
                                     {eimzoKeys.map((k, i) => (
-                                        <option key={i} value={k.serialNumber || k.VO_SERIAL_NUMBER}>{k.CN || k.O} ({k.TIN || k.VO_TIN})</option>
+                                        <option key={i} value={k.serialNumber}>
+                                            [{k.plugin?.toUpperCase() || 'PFX'}] {k.CN || k.O} ({k.TIN || k.PINFL})
+                                        </option>
                                     ))}
                                 </select>
                                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

@@ -188,13 +188,12 @@ if (fs.existsSync(clientDistPath)) {
     // - assets/ (хешированные файлы) → кэш на 1 год
     // - index.html → без кэша (чтобы всегда загружались актуальные хеши)
     app.use(express.static(clientDistPath, {
-        maxAge: '1y',
+        maxAge: 0,
         setHeaders: (res, filePath) => {
-            if (filePath.endsWith('.html')) {
-                res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-                res.set('Pragma', 'no-cache');
-                res.set('Expires', '0');
-            }
+            // Всегда отдавать свежие файлы — избегаем проблем с кешем при обновлениях
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Pragma', 'no-cache');
+            res.set('Expires', '0');
         }
     }));
     // SPA fallback: serve index.html for any non-API, non-mobile, non-admin route
@@ -405,9 +404,19 @@ app.use('/api/eds', edsRoutes);
 
 
 
-// Health check
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check with version info
+app.get('/health', async (req, res) => {
+    try {
+        const pkgPath = path.resolve(__dirname, '..', 'package.json');
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        res.json({ 
+            status: 'ok', 
+            version: pkg.version,
+            timestamp: new Date().toISOString() 
+        });
+    } catch (e) {
+        res.json({ status: 'ok', version: 'unknown', timestamp: new Date().toISOString() });
+    }
 });
 
 

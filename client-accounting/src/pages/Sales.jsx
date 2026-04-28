@@ -61,7 +61,9 @@ function Sales() {
         counterpartyId: '',
         warehouseId: '',
         notes: '',
-        items: []
+        items: [],
+        discountPercent: 0,
+        loyaltyPointsUsed: 0
     });
 
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -132,7 +134,9 @@ function Sales() {
             counterpartyId: '',  // Optional - no default buyer
             warehouseId: warehouseToUse,
             notes: '',
-            items: []
+            items: [],
+            discountPercent: 0,
+            loyaltyPointsUsed: 0
         });
         setShowModal(true);
         console.log('[SALES] Modal should be open now');
@@ -211,8 +215,19 @@ function Sales() {
         }
     };
 
-    const calculateTotal = () => {
+    const calculateSubtotal = () => {
         return formData.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    };
+
+    const calculateDiscountAmount = () => {
+        return (calculateSubtotal() * (formData.discountPercent || 0)) / 100;
+    };
+
+    const calculateTotal = () => {
+        const subtotal = calculateSubtotal();
+        const discount = calculateDiscountAmount();
+        const pointsValue = (formData.loyaltyPointsUsed || 0) * 1; // Assuming 1 point = 1 currency unit
+        return Math.max(0, subtotal - discount - pointsValue);
     };
 
     const handleSubmit = async (e) => {
@@ -227,52 +242,44 @@ function Sales() {
         }
 
         try {
-            console.log('[SALES] Sending create request...');
-            const response = await salesAPI.create(formData);
+            console.log('[SALES] Sending create request with autoConfirm...');
+            // Send autoConfirm: true so creation + stock deduction + payment happen in single transaction
+            const response = await salesAPI.create({
+                ...formData,
+                autoConfirm: true
+            });
             console.log('[SALES] Create response:', response);
 
-            const saleId = response.data.sale.id;
             const createdSale = response.data.sale;
 
-            // Auto-confirm the sale
+            // Load full sale details for receipt
             try {
-                await salesAPI.confirm(saleId);
-                console.log('[SALES] Sale auto-confirmed:', saleId);
-
-                // Load full sale details for receipt
-                try {
-                    const saleDetails = await salesAPI.getById(saleId);
-                    setSaleForReceipt(saleDetails.data.sale);
-                    setShowReceiptModal(true);
-                } catch (loadErr) {
-                    console.error('[SALES] Error loading sale details:', loadErr);
-                    // Use basic data if can't load full details
-                    setSaleForReceipt({
-                        ...createdSale,
-                        items: formData.items.map(item => ({
-                            ...item,
-                            product_name: products.find(p => p.id === parseInt(item.productId))?.name || 'Товар'
-                        }))
-                    });
-                    setShowReceiptModal(true);
-                }
-
-                toast.success('Продажа создана и проведена успешно!');
-            } catch (confirmError) {
-                console.error('[SALES] Error confirming sale:', confirmError);
-                toast.success('Продажа создана, но не проведена. Проверьте черновики.');
+                const saleDetails = await salesAPI.getById(createdSale.id);
+                setSaleForReceipt(saleDetails.data.sale);
+                setShowReceiptModal(true);
+            } catch (loadErr) {
+                console.error('[SALES] Error loading sale details:', loadErr);
+                // Use basic data if can't load full details
+                setSaleForReceipt({
+                    ...createdSale,
+                    items: formData.items.map(item => ({
+                        ...item,
+                        product_name: products.find(p => p.id === parseInt(item.productId))?.name || 'Товар'
+                    }))
+                });
+                setShowReceiptModal(true);
             }
+
+            toast.success('Продажа создана и проведена успешно!');
 
             setShowModal(false);
             setRefreshTrigger(prev => prev + 1); // Trigger refresh
         } catch (error) {
             console.error('[SALES] Error saving:', error);
             const errorMessage = error.response?.data?.error || error.message || 'Ошибка сохранения';
-            toast.info(errorMessage);
+            toast.error('Ошибка: ' + errorMessage);
         }
     };
-
-
 
     const handleEdit = async (sale) => {
         setEditingSale(sale);
@@ -343,10 +350,7 @@ function Sales() {
             });
             toast.success('✅ Возврат успешно оформлен!');
             setShowReturnModal(false);
-            setReturnItems([{ product_id: '', quantity: 1, price: 0 }]);
-            setReturnReason('');
-            setReturnNotes('');
-            loadSales();
+            setRefreshTrigger(prev => prev + 1);
         } catch (error) {
             toast.error('❌ ' + (error.response?.data?.error || 'Ошибка оформления возврата'));
         }
@@ -393,28 +397,35 @@ function Sales() {
         setLoyaltyCard(null);
         setLoyaltyTransactions([]);
         try {
-            const res = await loyaltyAPI.getCard(loyaltySearch.trim());
-            if (res.data?.customer) {
-                setLoyaltyCustomer(res.data.customer);
-                const cardRes = await loyaltyAPI.getCardById(res.data.customer.id);
-                setLoyaltyCard(cardRes.data?.card || null);
-                const txRes = await loyaltyAPI.getTransactions(res.data.customer.id);
+            const res = await loyaltyAPI.searchCustomer(loyaltySearch.trim());
+            if (res.data && res.data.customer) {
+                const customer = res.data.customer;
+                setLoyaltyCustomer(customer);
+                
+                // Fetch full details (balance, earned, spent)
+                const cardRes = await loyaltyAPI.getCard(customer.id);
+                if (cardRes.data) {
+                    setLoyaltyCard({
+                        number: cardRes.data.card_number,
+                        balance: parseFloat(cardRes.data.total_points || 0),
+                        earnedTotal: parseFloat(cardRes.data.earned_points || 0),
+                        spentTotal: parseFloat(cardRes.data.spent_points || 0),
+                        level: cardRes.data.level || 'Standard'
+                    });
+                }
+                
+                // Fetch transactions
+                const txRes = await loyaltyAPI.getTransactions(customer.id);
                 setLoyaltyTransactions(txRes.data?.transactions || []);
+            } else {
+                toast.error('Клиент не найден');
+                setLoyaltyCustomer(null);
+                setLoyaltyCard(null);
             }
         } catch (err) {
-            // Пробуем поиск по телефону через check endpoint
-            try {
-                const checkRes = await api.get(`/loyalty/check/${encodeURIComponent(loyaltySearch.trim())}`);
-                if (checkRes.data?.customer) {
-                    setLoyaltyCustomer(checkRes.data.customer);
-                    const cardRes = await loyaltyAPI.getCardById(checkRes.data.customer.id);
-                    setLoyaltyCard(cardRes.data?.card || null);
-                    const txRes = await loyaltyAPI.getTransactions(checkRes.data.customer.id);
-                    setLoyaltyTransactions(txRes.data?.transactions || []);
-                }
-            } catch (e2) {
-                toast.error('Клиент не найден');
-            }
+            toast.error(err.response?.data?.error || 'Ошибка при поиске');
+            setLoyaltyCustomer(null);
+            setLoyaltyCard(null);
         } finally {
             setLoyaltyLoading(false);
         }
@@ -738,18 +749,65 @@ function Sales() {
                                     </div>
                                 )}
 
+                                {/* Итого и Скидка */}
+                                {formData.items.length > 0 && (
+                                    <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(123, 47, 247, 0.05)', borderRadius: '10px', border: '1px solid rgba(123, 47, 247, 0.2)' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontSize: '13px', color: 'var(--text-secondary, #c9b0e8)' }}>Скидка (%):</span>
+                                                <input 
+                                                    type="number" 
+                                                    min="0" 
+                                                    max="100" 
+                                                    value={formData.discountPercent} 
+                                                    onChange={e => setFormData({ ...formData, discountPercent: parseFloat(e.target.value) || 0 })}
+                                                    style={{ width: '60px', height: '30px', fontSize: '13px' }}
+                                                />
+                                            </div>
+                                            {loyaltyCard && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>
+                                                    <span style={{ fontSize: '13px', color: 'var(--text-secondary, #c9b0e8)' }}>Баллы:</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max={loyaltyCard.balance} 
+                                                        value={formData.loyaltyPointsUsed} 
+                                                        onChange={e => setFormData({ ...formData, loyaltyPointsUsed: parseInt(e.target.value) || 0 })}
+                                                        style={{ width: '80px', height: '30px', fontSize: '13px' }}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: 'var(--text-secondary, #c9b0e8)' }}>
+                                                <span>Подытог:</span>
+                                                <span style={{ color: 'var(--text-primary)' }}>{formatCurrency(calculateSubtotal())}</span>
+                                            </div>
+                                            {formData.discountPercent > 0 && (
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#ef4444' }}>
+                                                    <span>Скидка ({formData.discountPercent}%):</span>
+                                                    <span>-{formatCurrency(calculateDiscountAmount())}</span>
+                                                </div>
+                                            )}
+                                            {formData.loyaltyPointsUsed > 0 && (
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#8b5cf6' }}>
+                                                    <span>Списано баллов:</span>
+                                                    <span>-{formatCurrency(formData.loyaltyPointsUsed)}</span>
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid var(--border-color, rgba(123, 47, 247, 0.2))' }}>
+                                                <strong style={{ fontSize: '14px', color: 'var(--text-primary, #fff)' }}>К оплате:</strong>
+                                                <strong style={{ fontSize: '20px', color: 'var(--primary-color, #ff0080)', textShadow: '0 0 10px rgba(255, 0, 128, 0.3)' }}>{formatCurrency(calculateTotal())}</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {formData.items.length === 0 && (
                                     <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted, #94a3b8)', fontSize: '14px' }}>
                                         <Package size={32} style={{ marginBottom: '8px', opacity: 0.4 }} />
                                         <p style={{ margin: 0 }}>Найдите и выберите товар в поиске выше</p>
-                                    </div>
-                                )}
-
-                                {/* Итого */}
-                                {formData.items.length > 0 && (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', padding: '10px 14px', background: 'var(--bg-secondary, #f8fafc)', borderRadius: '8px' }}>
-                                        <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{formData.items.length} {formData.items.length === 1 ? 'позиция' : 'позиций'}</span>
-                                        <strong style={{ fontSize: '18px' }}>Итого: {formatCurrency(calculateTotal())}</strong>
                                     </div>
                                 )}
 
@@ -1200,8 +1258,20 @@ function Sales() {
                                                 placeholder={`Макс: ${loyaltyCard.balance}`}
                                                 style={{ flex: 1 }}
                                             />
+                                            <button className="btn btn-primary" onClick={() => {
+                                                const amount = parseInt(loyaltySpendAmount);
+                                                if (amount > 0 && amount <= loyaltyCard.balance) {
+                                                    setFormData(prev => ({ ...prev, loyaltyPointsUsed: amount, counterpartyId: loyaltyCustomer.id }));
+                                                    setShowLoyaltyModal(false);
+                                                    toast.success(`Баллы (${amount}) применены к продаже`);
+                                                } else {
+                                                    toast.error('Некорректная сумма баллов');
+                                                }
+                                            }}>
+                                                Применить к продаже
+                                            </button>
                                             <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleLoyaltySpend}>
-                                                Списать
+                                                Списать сейчас
                                             </button>
                                         </div>
                                     </div>
@@ -1225,7 +1295,7 @@ function Sales() {
                                                             <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                                                 <td style={{ padding: '6px 8px' }}>{new Date(tx.created_at).toLocaleDateString('ru-RU')}</td>
                                                                 <td style={{ padding: '6px 8px', color: tx.points > 0 ? '#10b981' : '#ef4444' }}>
-                                                                    {tx.type === 'earn' ? '+' : '-'}
+                                                                    {tx.transaction_type === 'earn' ? 'Начисление' : 'Списание'}
                                                                 </td>
                                                                 <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: tx.points > 0 ? '#10b981' : '#ef4444' }}>
                                                                     {tx.points > 0 ? '+' : ''}{tx.points}

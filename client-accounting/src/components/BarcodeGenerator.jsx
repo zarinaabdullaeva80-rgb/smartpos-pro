@@ -21,6 +21,11 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
     const [copies, setCopies] = useState(1);
     const [qrDataUrl, setQrDataUrl] = useState('');
     const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
+    const [storeName, setStoreName] = useState(localStorage.getItem('priceTagStoreName') || '');
+    const [showStoreName, setShowStoreName] = useState(true);
+    const [storeNamePosition, setStoreNamePosition] = useState('top');
+    const [nameFontSize, setNameFontSize] = useState(10);
+    const [priceFontSize, setPriceFontSize] = useState(14);
 
     // Размеры этикеток
     const labelSizes = {
@@ -226,6 +231,38 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
                         </div>
                     </div>
 
+                    {/* Настройки магазина и шрифтов */}
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                            <input type="checkbox" checked={showStoreName} onChange={e => setShowStoreName(e.target.checked)} />
+                            Магазин
+                        </label>
+                        <input
+                            type="text"
+                            placeholder="Название магазина"
+                            value={storeName}
+                            onChange={e => {
+                                setStoreName(e.target.value);
+                                localStorage.setItem('priceTagStoreName', e.target.value);
+                            }}
+                            style={{ width: '150px', padding: '4px 8px', fontSize: '12px' }}
+                        />
+                        <select value={storeNamePosition} onChange={e => setStoreNamePosition(e.target.value)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                            <option value="top">Сверху</option>
+                            <option value="bottom">Снизу</option>
+                        </select>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '12px' }}>Шрифт:</span>
+                            <input type="range" min="7" max="18" value={nameFontSize} onChange={e => setNameFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
+                            <span style={{ fontSize: '11px', minWidth: '28px' }}>{nameFontSize}px</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '12px' }}>Цена:</span>
+                            <input type="range" min="8" max="24" value={priceFontSize} onChange={e => setPriceFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
+                            <span style={{ fontSize: '11px', minWidth: '28px' }}>{priceFontSize}px</span>
+                        </div>
+                    </div>
+
                     {/* Предпросмотр */}
                     <div style={{
                         background: '#f5f5f5',
@@ -260,9 +297,27 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
                                         border: '1px dashed #ccc'
                                     }}
                                 >
+                                    {showStoreName && storeName && storeNamePosition === 'top' && (
+                                        <div style={{
+                                            fontSize: `${Math.max(nameFontSize - 2, 7)}px`,
+                                            fontWeight: 600,
+                                            textAlign: 'center',
+                                            maxWidth: '100%',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                            marginBottom: '2px',
+                                            color: '#333',
+                                            borderBottom: '1px solid #ddd',
+                                            paddingBottom: '1px'
+                                        }}>
+                                            {storeName}
+                                        </div>
+                                    )}
+
                                     {showName && (
                                         <div style={{
-                                            fontSize: '10px',
+                                            fontSize: `${nameFontSize}px`,
                                             fontWeight: 'bold',
                                             textAlign: 'center',
                                             maxWidth: '100%',
@@ -286,12 +341,30 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
 
                                     {showPrice && (
                                         <div style={{
-                                            fontSize: '14px',
+                                            fontSize: `${priceFontSize}px`,
                                             fontWeight: 'bold',
                                             marginTop: '3px',
                                             color: '#000'
                                         }}>
                                             {new Intl.NumberFormat('ru-RU').format(product.price_sale || product.price_retail || 0)} сум
+                                        </div>
+                                    )}
+
+                                    {showStoreName && storeName && storeNamePosition === 'bottom' && (
+                                        <div style={{
+                                            fontSize: `${Math.max(nameFontSize - 2, 7)}px`,
+                                            fontWeight: 600,
+                                            textAlign: 'center',
+                                            maxWidth: '100%',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                            marginTop: '2px',
+                                            color: '#333',
+                                            borderTop: '1px solid #ddd',
+                                            paddingTop: '1px'
+                                        }}>
+                                            {storeName}
                                         </div>
                                     )}
                                 </div>

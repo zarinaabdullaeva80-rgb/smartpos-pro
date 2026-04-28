@@ -91,7 +91,7 @@ function ReceiptSettings() {
             // Сохранить на сервер
             await api.put('/settings/receipt/config', settings);
 
-            setMessage({ type: 'success', text: '✅ Настройки чека сохранены!' });
+            setMessage({ type: 'success', text: '✅ Настройки чека сохранены! Теперь они будут использоваться при печати.' });
         } catch (error) {
             // Сохранили локально, сервер недоступен
             setMessage({ type: 'warning', text: '⚠️ Сохранено локально (сервер недоступен)' });
@@ -160,21 +160,21 @@ function ReceiptSettings() {
         const s = selectedStore ? { ...settings, ...selectedStore } : settings;
         return `
 ┌────────────────────────────┐
-│   ${s.header_org_type || 'ООО'} "${s.header_company_name || s.name || 'Компания'}"   │
-│   📍 ${s.header_address || s.address || 'Адрес не указан'}   │
-│   📞 ${s.header_phone || s.phone || ''}   │
-│   ИНН: ${s.header_inn || s.inn || ''}   │
-${s.header_website || s.website ? `│   🌐 ${s.header_website || s.website}   │\n` : ''}├────────────────────────────┤
+│   \${s.header_org_type || s.org_type || 'ООО'} "\${s.header_company_name || s.name || 'Компания'}"   │
+│   📍 \${s.header_address || s.address || 'Адрес не указан'}   │
+│   📞 \${s.header_phone || s.phone || ''}   │
+│   ИНН: \${s.header_inn || s.inn || ''}   │
+\${s.header_website || s.website ? \`│   🌐 \${s.header_website || s.website}   │\\n\` : ''}├────────────────────────────┤
 │ Чек №: 00152              │
-│ Дата: ${new Date().toLocaleDateString('ru')} ${new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}    │
-│ Кассир: ${JSON.parse(localStorage.getItem('user') || '{}').full_name || 'Кассир'}         │
-${s.kkm_serial ? `│ ККМ: ${s.kkm_serial}       │\n` : ''}├────────────────────────────┤
+│ Дата: \${new Date().toLocaleDateString('ru')} \${new Date().toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}    │
+│ Кассир: \${JSON.parse(localStorage.getItem('user') || '{}').full_name || 'Кассир'}         │
+\${s.kkm_serial ? \`│ ККМ: \${s.kkm_serial}       │\\n\` : ''}├────────────────────────────┤
 │ Товар 1           x1      │
 │         100,000 сум       │
-${settings.body_show_discount ? '│ Скидка:      -10,000 сум  │\n' : ''}├────────────────────────────┤
+\${settings.body_show_discount ? '│ Скидка:      -10,000 сум  │\\n' : ''}├────────────────────────────┤
 │ ИТОГО:        90,000 сум  │
-${settings.body_show_tax ? '│ в т.ч. НДС:   13,500 сум  │\n' : ''}├────────────────────────────┤
-${settings.footer_qr_enabled ? '│      [██████QR██████]      │\n' : ''}│   ${settings.footer_text?.split('\n')[0] || 'Спасибо за покупку!'}   │
+\${settings.body_show_tax ? '│ в т.ч. НДС:   13,500 сум  │\\n' : ''}├────────────────────────────┤
+\${settings.footer_qr_enabled ? '│      [██████QR██████]      │\\n' : ''}│   \${settings.footer_text?.split('\\n')[0] || 'Спасибо за покупку!'}   │
 └────────────────────────────┘
         `;
     };
@@ -196,7 +196,7 @@ ${settings.footer_qr_enabled ? '│      [██████QR██████
             </div>
 
             {message && (
-                <div className={`alert alert-${message.type}`} style={{ marginBottom: '16px' }}>
+                <div className={`alert alert-\${message.type}`} style={{ marginBottom: '16px' }}>
                     {message.text}
                 </div>
             )}
@@ -204,13 +204,13 @@ ${settings.footer_qr_enabled ? '│      [██████QR██████
             {/* Tabs */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
                 <button
-                    className={`btn ${activeTab === 'general' ? 'btn-primary' : 'btn-secondary'}`}
+                    className={`btn \${activeTab === 'general' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setActiveTab('general')}
                 >
                     <FileText size={16} /> Общие настройки
                 </button>
                 <button
-                    className={`btn ${activeTab === 'stores' ? 'btn-primary' : 'btn-secondary'}`}
+                    className={`btn \${activeTab === 'stores' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => setActiveTab('stores')}
                 >
                     <Store size={16} /> Торговые точки ({stores.length})

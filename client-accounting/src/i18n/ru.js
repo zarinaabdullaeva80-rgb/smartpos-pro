@@ -90,6 +90,7 @@ const ru = {
     permissionsManagement: 'Управление правами',
     twoFactorAuth: '2FA авторизация',
     backups: 'Резервные копии',
+    receiptSettings: 'Настройка чеков',
   },
 
   // === ЭЦП (EDS) ===
@@ -295,6 +296,24 @@ const ru = {
     createFirst: 'Создайте первый документ продажи',
     addItem: 'Добавить товар',
     print: 'Печать',
+    loyaltyCard: 'Карта лояльности',
+    applyPoints: 'Применить баллы',
+    loyaltyPoints: 'Баллы лояльности',
+  },
+
+  // === Лояльность ===
+  loyalty: {
+    title: 'Программа лояльности',
+    subtitle: 'Управление бонусами и картами клиентов',
+    card: 'Карта лояльности',
+    points: 'Баллы',
+    balance: 'Баланс',
+    history: 'История операций',
+    earn: 'Начисление',
+    spend: 'Списание',
+    cardNumber: 'Номер карты',
+    searchCustomer: 'Поиск клиента',
+    applyToSale: 'Применить к продаже',
   },
 
   // === Закупки ===
@@ -647,7 +666,7 @@ const ru = {
     rol: 'Роль',
     fayl: 'Файл',
     data: 'Дата',
-    srok: 'Срок',
+    srok: 'ИСТЕКАЕТ',
     tip: 'Тип',
     kem: 'Кем',
   },

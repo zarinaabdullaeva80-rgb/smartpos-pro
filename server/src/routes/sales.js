@@ -124,8 +124,23 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
     try {
         await client.query('BEGIN');
 
-        const { documentNumber, documentDate, counterpartyId, warehouseId, items, discountPercent, notes, autoConfirm, payment_methods } = req.body;
+        const { 
+            documentNumber, 
+            documentDate, 
+            counterpartyId, 
+            warehouseId, 
+            items, 
+            discountPercent, 
+            loyaltyPointsUsed,
+            notes, 
+            autoConfirm, 
+            payment_methods 
+        } = req.body;
         const orgId = req.user.organization_id;
+
+        // Получаем настройки лояльности
+        const settingsRes = await client.query('SELECT * FROM loyalty_settings WHERE organization_id = $1', [orgId]);
+        const loyaltySettings = settingsRes.rows[0] || { cashback_percent: 2, points_to_currency: 1, enabled: true };
 
         // Расчет сумм
         let totalAmount = 0;
@@ -141,7 +156,12 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         }
 
         const discountAmount = (totalAmount * (discountPercent || 0)) / 100;
-        const finalAmount = totalAmount - discountAmount;
+        const amountAfterDiscount = totalAmount - discountAmount;
+        
+        // Логика баллов
+        const pointsToCurrency = loyaltySettings.points_to_currency || 1;
+        const pointsValue = (loyaltyPointsUsed || 0) * pointsToCurrency;
+        const finalAmount = Math.max(0, amountAfterDiscount - pointsValue);
 
         // Валидация payment_methods
         if (payment_methods && payment_methods.length > 0) {
@@ -164,14 +184,38 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             if (!finalWarehouseId) throw new Error('Нет доступных складов');
         }
 
+        // Расчет начисления баллов (кэшбек)
+        let pointsEarned = 0;
+        if (loyaltySettings.enabled && finalAmount > 0) {
+            pointsEarned = Math.floor(finalAmount * (loyaltySettings.cashback_percent || 0) / 100);
+        }
+
         // Создание документа продажи
         const saleResult = await client.query(
-            `INSERT INTO sales (document_number, document_date, customer_id, warehouse_id, 
-                total_amount, discount_percent, discount_amount, final_amount, user_id, notes, status, organization_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            `INSERT INTO sales (
+                document_number, document_date, customer_id, warehouse_id, 
+                total_amount, discount_percent, discount_amount, 
+                loyalty_points_used, loyalty_points_earned,
+                final_amount, user_id, notes, status, organization_id
+            )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              RETURNING *`,
-            [documentNumber || `SALE-${Date.now()}`, documentDate || new Date(), counterpartyId || null, finalWarehouseId, 
-             totalAmount, discountPercent || 0, discountAmount, finalAmount, req.user.id, notes, status, orgId]
+            [
+                documentNumber || `SALE-${Date.now()}`, 
+                documentDate || new Date(), 
+                counterpartyId || null, 
+                finalWarehouseId, 
+                totalAmount, 
+                discountPercent || 0, 
+                discountAmount, 
+                loyaltyPointsUsed || 0,
+                pointsEarned,
+                finalAmount, 
+                req.user.id, 
+                notes, 
+                status, 
+                orgId
+            ]
         );
 
         const sale = saleResult.rows[0];
@@ -180,18 +224,46 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         for (const item of items) {
             const itemTotal = item.quantity * item.price;
             await client.query(
-                `INSERT INTO sale_items (sale_id, product_id, quantity, price, total_price)
-                 VALUES ($1, $2, $3, $4, $5)`,
-                [sale.id, item.productId, item.quantity, item.price, itemTotal]
+                `INSERT INTO sale_items (sale_id, product_id, quantity, price, total_price, organization_id)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [sale.id, item.productId, item.quantity, item.price, itemTotal, orgId]
             );
 
             if (autoConfirm) {
                 await client.query(
                     `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, user_id, organization_id)
                      VALUES ($1, $2, 'sale', $3, $4, $5, $6)`,
-                    [item.productId, finalWarehouseId, sale.id, -item.quantity, req.user.id, orgId]
+                    [item.productId, finalWarehouseId, sale.id, item.quantity, req.user.id, orgId]
                 );
                 await updateStockBalance(client, item.productId, finalWarehouseId, -item.quantity);
+            }
+        }
+
+        // Обработка баллов в БД (если авто-подтверждение)
+        if (autoConfirm && counterpartyId) {
+            // Списание
+            if (loyaltyPointsUsed > 0) {
+                await client.query(
+                    `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) - $1 WHERE id = $2 AND organization_id = $3`,
+                    [loyaltyPointsUsed, counterpartyId, orgId]
+                );
+                await client.query(
+                    `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
+                     VALUES ($1, 'spend', $2, $3, $4, $5, $6)`,
+                    [counterpartyId, -loyaltyPointsUsed, sale.id, 'Списание при продаже', req.user.id, orgId]
+                );
+            }
+            // Начисление
+            if (pointsEarned > 0) {
+                await client.query(
+                    `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + $1 WHERE id = $2 AND organization_id = $3`,
+                    [pointsEarned, counterpartyId, orgId]
+                );
+                await client.query(
+                    `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
+                     VALUES ($1, 'earn', $2, $3, $4, $5, $6)`,
+                    [counterpartyId, pointsEarned, sale.id, 'Начисление за покупку', req.user.id, orgId]
+                );
             }
         }
 
@@ -207,7 +279,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         }
 
         await client.query('COMMIT');
-        await logAudit(req.user.id, 'CREATE', 'sales', sale.id, orgId, null, sale, req.ip);
+        await logAudit(req.user.id, 'CREATE', 'sales', sale.id, null, sale, req.ip, orgId);
 
         res.status(201).json({ success: true, sale });
     } catch (error) {
@@ -218,6 +290,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         client.release();
     }
 });
+
 
 // Обновление статуса (Проведение/Отмена)
 router.post('/:id/confirm', authenticate, authorize('Администратор', 'Продавец', 'Кассир', 'Продавец-кассир'), async (req, res) => {
@@ -240,15 +313,45 @@ router.post('/:id/confirm', authenticate, authorize('Администратор'
             await client.query(
                 `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, user_id, organization_id)
                  VALUES ($1, $2, 'sale', $3, $4, $5, $6)`,
-                [item.product_id, sale.warehouse_id, id, -item.quantity, req.user.id, orgId]
+                [item.product_id, sale.warehouse_id, id, item.quantity, req.user.id, orgId]
             );
             await updateStockBalance(client, item.product_id, sale.warehouse_id, -item.quantity);
         }
 
         await client.query('UPDATE sales SET status = $1, updated_at = NOW() WHERE id = $2', ['confirmed', id]);
 
+        // Loyalty points processing for manual confirmation
+        if (sale.customer_id) {
+            const used = parseFloat(sale.loyalty_points_used || 0);
+            const earned = parseFloat(sale.loyalty_points_earned || 0);
+
+            if (used > 0) {
+                await client.query(
+                    `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) - $1 WHERE id = $2 AND organization_id = $3`,
+                    [used, sale.customer_id, orgId]
+                );
+                await client.query(
+                    `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
+                     VALUES ($1, 'spend', $2, $3, $4, $5, $6)`,
+                    [sale.customer_id, -used, id, 'Списание при продаже (подтверждение)', req.user.id, orgId]
+                );
+            }
+
+            if (earned > 0) {
+                await client.query(
+                    `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + $1 WHERE id = $2 AND organization_id = $3`,
+                    [earned, sale.customer_id, orgId]
+                );
+                await client.query(
+                    `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
+                     VALUES ($1, 'earn', $2, $3, $4, $5, $6)`,
+                    [sale.customer_id, earned, id, 'Начисление за покупку (подтверждение)', req.user.id, orgId]
+                );
+            }
+        }
+
         await client.query('COMMIT');
-        await logAudit(req.user.id, 'CONFIRM', 'sales', id, orgId, null, null, req.ip);
+        await logAudit(req.user.id, 'CONFIRM', 'sales', id, null, null, req.ip, orgId);
 
         res.json({ success: true });
     } catch (error) {
@@ -272,7 +375,7 @@ router.delete('/:id', authenticate, authorize('Администратор'), asy
         await pool.query('DELETE FROM sale_items WHERE sale_id = $1', [id]);
         await pool.query('DELETE FROM sales WHERE id = $1', [id]);
 
-        await logAudit(req.user.id, 'DELETE', 'sales', id, orgId, null, null, req.ip);
+        await logAudit(req.user.id, 'DELETE', 'sales', id, null, null, req.ip, orgId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });

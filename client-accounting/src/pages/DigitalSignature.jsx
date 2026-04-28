@@ -64,7 +64,7 @@ function DigitalSignature() {
 
     // Callback для PKCS#7 подписания из SendDocModal
     const handleSignPkcs7 = async (keySerial, hashHex) => {
-        const keyObj = eimzoKeys.find(k => (k.serialNumber || k.VO_SERIAL_NUMBER) === keySerial);
+        const keyObj = eimzoKeys.find(k => k.serialNumber === keySerial);
         if (!keyObj) return null;
         toast.info(t('eds.enterPassword'));
         const keyId = await EImzoService.loadKey(keyObj);
@@ -262,7 +262,19 @@ function DigitalSignature() {
                                     </div>
                                     <div style={{ flex: 1 }}>
                                         <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{info.title}</div>
-                                        {info.subtitle && <div style={{ fontSize: '12px', color: '#888' }}>{info.subtitle}</div>}
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                                            <span style={{ 
+                                                background: 'var(--bg-secondary)', 
+                                                border: '1px solid var(--border-color)',
+                                                padding: '1px 6px', 
+                                                borderRadius: '4px', 
+                                                fontSize: '10px',
+                                                color: 'var(--text-secondary)'
+                                            }}>
+                                                {info.storageType}
+                                            </span>
+                                            {info.subtitle && <div style={{ fontSize: '12px', color: '#888' }}>{info.subtitle}</div>}
+                                        </div>
                                     </div>
                                     <span style={{
                                         background: isExpired ? '#fee2e2' : '#dcfce7',

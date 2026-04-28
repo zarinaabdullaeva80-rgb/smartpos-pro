@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
-import { LogIn, Eye, EyeOff, Key, Server, Settings, CheckCircle, AlertCircle, Info, Wifi, WifiOff, Search, Cloud, Monitor, RefreshCw, Lock, Unlock } from 'lucide-react';
+import { 
+    Monitor, Lock, Unlock, Key, Settings, Wifi, WifiOff, RefreshCw, 
+    AlertCircle, CheckCircle, Eye, EyeOff, Info, LogIn, Server, Search, Cloud, Clock 
+} from 'lucide-react';
+import LicenseTimer from '../components/LicenseTimer';
 import { getServerMode, setServerMode, setApiUrl, getApiUrl, getLicenseServerUrl, autoDiscoverServer, testServerConnection, SERVER_MODES } from '../config/settings';
 import { useI18n } from '../i18n';
 import '../styles/Login.css';
@@ -82,20 +86,20 @@ function Login({ onLogin }) {
             console.log('[Server] Not available:', err.message);
         }
 
-        // Попробовать автопоиск на localhost:5000
+        // Попробовать автопоиск на 127.0.0.1:5000
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 3000);
-            const response = await fetch('http://localhost:5000/api/health', {
+            const response = await fetch('http://127.0.0.1:5000/api/health', {
                 method: 'GET',
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
 
             if (response.ok) {
-                console.log('[Server] Auto-discovered at localhost:5000');
-                setApiUrl('http://localhost:5000/api');
-                setServerUrl('http://localhost:5000/api');
+                console.log('[Server] Auto-discovered at 127.0.0.1:5000');
+                setApiUrl('http://127.0.0.1:5000/api');
+                setServerUrl('http://127.0.0.1:5000/api');
                 setServerConnected(true);
                 setConnectionStatus('connected');
                 setServerChecking(false);
@@ -193,7 +197,7 @@ function Login({ onLogin }) {
                 setLicenseValid(true);
                 setMode('login');
                 setError('');
-                setSuccess('Подключение успешно!');
+                setSuccess('Лицензия подтверждена');
                 // Автонастройка сервера по лицензии
                 if (data.license.server_url) {
                     const savedServerUrl = localStorage.getItem('server_url');
@@ -336,17 +340,27 @@ function Login({ onLogin }) {
     // Сохранить настройки сервера
     const saveServerSettings = async () => {
         setServerMode(srvMode);
-        if (srvMode !== SERVER_MODES.SERVER && serverUrl) {
-            setApiUrl(serverUrl);
-        } else if (srvMode === SERVER_MODES.SERVER) {
-            setApiUrl('http://localhost:5000/api');
+        if (srvMode === SERVER_MODES.OWN) {
+            // Свой сервер: используем локальный адрес или введённый пользователем
+            const ownUrl = serverUrl || 'http://127.0.0.1:5000/api';
+            setApiUrl(ownUrl);
+        } else if (srvMode === SERVER_MODES.CLOUD) {
+            // Облако: используем введённый URL облачного сервера
+            if (serverUrl) {
+                setApiUrl(serverUrl);
+            }
         }
         // Уведомить Electron о смене режима
         if (window.electron?.setServerMode) {
             window.electron.setServerMode(srvMode);
         }
         setSuccess('Настройки сохранены');
-        setTimeout(() => { setSuccess(''); setMode('login'); }, 1000);
+        // Перепроверить подключение с новыми настройками
+        setTimeout(async () => {
+            setSuccess('');
+            await checkServerConnection();
+            setMode('login');
+        }, 800);
     };
 
     // Автопоиск сервера WiFi
@@ -384,7 +398,7 @@ function Login({ onLogin }) {
         const result = await testServerConnection(serverUrl);
         if (result.ok) {
             setConnectionStatus('connected');
-            setSuccess('Подключение успешно!');
+            setSuccess('Сервер доступен');
         } else {
             setConnectionStatus('error');
             setError(`Ошибка подключения: ${result.error}`);
@@ -407,7 +421,10 @@ function Login({ onLogin }) {
         <div className="login-container">
             <div className="login-card glass">
                 <div className="login-header">
-                    <img src="./smartpos-logo.png" alt="SmartPOS Pro" style={{ maxWidth: '280px', height: 'auto', marginBottom: '0.5rem' }} />
+                    <div className="login-icon">
+                        <Monitor size={42} strokeWidth={1.5} />
+                    </div>
+                    <h1>SmartPOS Pro</h1>
                     <p>{mode === 'license' ? 'Активация лицензии' : mode === 'settings' ? 'Подключение к серверу' : 'Войдите в систему'}</p>
                 </div>
 
@@ -416,7 +433,11 @@ function Login({ onLogin }) {
                     <button
                         type="button"
                         className={`btn btn-sm ${mode === 'login' ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => (isMobile || licenseValid) ? setMode('login') : (setError('Сначала активируйте лицензию'), setMode('license'))}
+                        onClick={() => {
+                            setError('');
+                            setSuccess('');
+                            (isMobile || licenseValid) ? setMode('login') : (setError('Сначала активируйте лицензию'), setMode('license'));
+                        }}
                         style={{ flex: 1, opacity: (isMobile || licenseValid) ? 1 : 0.5 }}
                     >
                         {(isMobile || licenseValid) ? <Unlock size={16} /> : <Lock size={16} />} {t('auth.loginBtn', 'Вход')}
@@ -425,7 +446,11 @@ function Login({ onLogin }) {
                         <button
                             type="button"
                             className={`btn btn-sm ${mode === 'license' ? 'btn-primary' : 'btn-secondary'}`}
-                            onClick={() => setMode('license')}
+                            onClick={() => {
+                                setError('');
+                                setSuccess('');
+                                setMode('license');
+                            }}
                             style={{ flex: 1 }}
                         >
                             <Key size={16} /> Лицензия {licenseValid && <CheckCircle size={12} color="#22c55e" />}
@@ -434,7 +459,11 @@ function Login({ onLogin }) {
                     <button
                         type="button"
                         className={`btn btn-sm ${mode === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => setMode('settings')}
+                        onClick={() => {
+                            setError('');
+                            setSuccess('');
+                            setMode('settings');
+                        }}
                         style={{ flex: 1 }}
                     >
                         <Settings size={16} /> Сервер
@@ -543,15 +572,28 @@ function Login({ onLogin }) {
                                 marginBottom: '1rem',
                                 fontSize: '0.875rem'
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                                    <Info size={16} color="var(--color-primary)" />
-                                    <strong>Лицензия: {licenseInfo.type}</strong>
-                                </div>
-                                {licenseInfo.expires_at && (
-                                    <div style={{ color: 'var(--color-text-muted)' }}>
-                                        Действует до: {new Date(licenseInfo.expires_at).toLocaleDateString('ru-RU')}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                                            <Info size={16} color="var(--color-primary)" />
+                                            <strong>Лицензия: {licenseInfo.type}</strong>
+                                        </div>
+                                        {licenseInfo.expires_at && (
+                                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
+                                                Действует до: {new Date(licenseInfo.expires_at).toLocaleDateString('ru-RU')}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                    {licenseInfo.expires_at && (
+                                        <div style={{ transform: 'scale(0.85)', transformOrigin: 'right center' }}>
+                                            <LicenseTimer 
+                                                expiryDate={licenseInfo.expires_at} 
+                                                showDate={false} 
+                                                showTime={false} 
+                                            />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -621,124 +663,140 @@ function Login({ onLogin }) {
                 {/* Настройки сервера */}
                 {mode === 'settings' && (
                     <div className="login-form">
-                        {/* Выбор режима */}
-                        <label style={{ marginBottom: '0.5rem', display: 'block', fontWeight: 600 }}>{t('login.rezhim_podklyucheniya', 'Режим подключения')}</label>
-                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                        {/* Выбор режима — 2 плитки */}
+                        <label style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 600, fontSize: '1rem' }}>
+                            {t('login.rezhim_podklyucheniya', 'Режим подключения')}
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                            {/* Плитка: Свой сервер */}
                             <button
                                 type="button"
-                                className={`btn btn-sm ${srvMode === SERVER_MODES.SERVER ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setSrvMode(SERVER_MODES.SERVER)}
-                                style={{ flex: 1, flexDirection: 'column', padding: '0.75rem 0.5rem', fontSize: '0.8rem' }}
+                                onClick={() => {
+                                    setSrvMode(SERVER_MODES.OWN);
+                                    setError('');
+                                    setSuccess('');
+                                    setConnectionStatus(null);
+                                    setServerUrl('http://127.0.0.1:5000/api');
+                                }}
+                                style={{
+                                    padding: '1rem 0.75rem',
+                                    borderRadius: '12px',
+                                    border: srvMode === SERVER_MODES.OWN ? '2px solid var(--color-primary)' : '2px solid rgba(255,255,255,0.1)',
+                                    backgroundColor: srvMode === SERVER_MODES.OWN ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.03)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease',
+                                    color: srvMode === SERVER_MODES.OWN ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                }}
                             >
-                                <Monitor size={20} />
-                                <span>{t('login.svoy_server', 'Свой сервер')}</span>
+                                <Monitor size={28} />
+                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Свой сервер</span>
+                                <span style={{ fontSize: '0.7rem', opacity: 0.7, textAlign: 'center', lineHeight: 1.3 }}>
+                                    Данные на вашем ПК.{'\n'}WiFi + мобильный интернет
+                                </span>
                             </button>
+
+                            {/* Плитка: Облако */}
                             <button
                                 type="button"
-                                className={`btn btn-sm ${srvMode === SERVER_MODES.CLIENT ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setSrvMode(SERVER_MODES.CLIENT)}
-                                style={{ flex: 1, flexDirection: 'column', padding: '0.75rem 0.5rem', fontSize: '0.8rem' }}
+                                onClick={() => {
+                                    setSrvMode(SERVER_MODES.CLOUD);
+                                    setError('');
+                                    setSuccess('');
+                                    setConnectionStatus(null);
+                                    setServerUrl('');
+                                }}
+                                style={{
+                                    padding: '1rem 0.75rem',
+                                    borderRadius: '12px',
+                                    border: srvMode === SERVER_MODES.CLOUD ? '2px solid #3b82f6' : '2px solid rgba(255,255,255,0.1)',
+                                    backgroundColor: srvMode === SERVER_MODES.CLOUD ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease',
+                                    color: srvMode === SERVER_MODES.CLOUD ? '#3b82f6' : 'var(--color-text-muted)',
+                                }}
                             >
-                                <Wifi size={20} />
-                                <span>{t('login.klient', 'WiFi клиент')}</span>
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${srvMode === SERVER_MODES.CLOUD ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setSrvMode(SERVER_MODES.CLOUD)}
-                                style={{ flex: 1, flexDirection: 'column', padding: '0.75rem 0.5rem', fontSize: '0.8rem' }}
-                            >
-                                <Cloud size={20} />
-                                <span>{t('login.oblako', 'Облако')}</span>
-                            </button>
-                            <button
-                                type="button"
-                                className={`btn btn-sm ${srvMode === SERVER_MODES.HYBRID ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setSrvMode(SERVER_MODES.HYBRID)}
-                                style={{ flex: 1, flexDirection: 'column', padding: '0.75rem 0.5rem', fontSize: '0.8rem' }}
-                            >
-                                <RefreshCw size={20} />
-                                <span>{t('login.gibrid', 'Гибрид')}</span>
+                                <Cloud size={28} />
+                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Облако</span>
+                                <span style={{ fontSize: '0.7rem', opacity: 0.7, textAlign: 'center', lineHeight: 1.3 }}>
+                                    Данные в облаке + копия{'\n'}на вашем ПК
+                                </span>
                             </button>
                         </div>
 
-                        {/* Свой сервер */}
-                        {(srvMode === SERVER_MODES.SERVER || srvMode === SERVER_MODES.HYBRID) && (
-                            <div style={{ padding: '0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                    <CheckCircle size={16} color="#22c55e" />
-                                    <span>{t('login.server_zapuskaetsya_avtomaticheski_na_etom', 'Сервер запускается автоматически на этом ПК (порт 5000)')}</span>
-                                </div>
-                                {srvMode === SERVER_MODES.HYBRID && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-                                        <Cloud size={14} />
-                                        <span>{t('login.sinhronizatsiya_dannyh_s_oblachnym_server', '+ синхронизация данных с облачным сервером')}</span>
+                        {/* ===== Панель: Свой сервер ===== */}
+                        {srvMode === SERVER_MODES.OWN && (
+                            <>
+                                <div style={{ padding: '0.75rem', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderRadius: '10px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                        <CheckCircle size={16} color="#22c55e" />
+                                        <span style={{ fontWeight: 600 }}>Сервер на вашем ПК (порт 5000)</span>
                                     </div>
-                                )}
-                                <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: 'rgba(59, 130, 246, 0.08)', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                                        • Все данные хранятся на вашем компьютере<br/>
+                                        • Сотрудники подключаются по WiFi или через интернет<br/>
+                                        • При сбое связи данные сохраняются локально
+                                    </div>
+                                </div>
+
+                                {/* Информация для мобильных */}
+                                <div style={{ padding: '0.5rem 0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.08)', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                                     📱 Для подключения мобильных устройств:<br/>
                                     {serverInfo?.connectionUrl ? (
                                         <>
-                                            Адрес для мобильного: <strong style={{ color: 'var(--color-primary)', fontSize: '0.9rem', userSelect: 'all' }}>{serverInfo.connectionUrl}</strong>
+                                            Адрес: <strong style={{ color: 'var(--color-primary)', fontSize: '0.9rem', userSelect: 'all' }}>{serverInfo.connectionUrl}</strong>
                                         </>
                                     ) : (
-                                        'Откройте SmartPOS Pro на телефоне → Настройки сервера → введите IP этого ПК:5000'
+                                        'Введите IP этого ПК:5000 в мобильном приложении'
                                     )}
                                 </div>
-                            </div>
-                        )}
 
-                        {/* WiFi клиент */}
-                        {srvMode === SERVER_MODES.CLIENT && (
-                            <>
-                                <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '8px', marginBottom: '0.75rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                    <Info size={14} style={{ marginRight: '0.25rem' }} />
-                                    Подключение к серверу в локальной WiFi сети
-                                </div>
-
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary w-full"
-                                    onClick={handleAutoDiscover}
-                                    disabled={discovering}
-                                    style={{ marginBottom: '0.75rem' }}
-                                >
-                                    {discovering ? (
-                                        <>
-                                            <RefreshCw size={18} className="spin" />
-                                            Поиск... ({discoverProgress.scanned}/{discoverProgress.total || '?'})
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Search size={18} />
-                                            🔍 Найти сервер в WiFi сети
-                                        </>
-                                    )}
-                                </button>
-
+                                {/* Ручной ввод адреса или WiFi поиск */}
                                 <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                                    <label>{t('login.ili_vvedite_adres_vruchnuyu', 'Или введите адрес вручную')}</label>
+                                    <label style={{ fontSize: '0.85rem' }}>Адрес сервера (автоматически или вручную)</label>
                                     <input
                                         type="text"
                                         value={serverUrl}
                                         onChange={(e) => setServerUrl(e.target.value)}
-                                        placeholder="http://192.168.1.45:5000/api"
+                                        placeholder="http://127.0.0.1:5000/api"
                                     />
                                 </div>
 
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary w-full"
-                                    onClick={handleTestConnection}
-                                    disabled={testing}
-                                    style={{ marginBottom: '0.75rem' }}
-                                >
-                                    {testing ? (
-                                        <><RefreshCw size={16} className="spin" /> {t('login.proverka', 'Проверка...')}</>
-                                    ) : (
-                                        <><Wifi size={16} /> {t('login.proverit_podklyuchenie', 'Проверить подключение')}</>
-                                    )}
-                                </button>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={handleAutoDiscover}
+                                        disabled={discovering}
+                                        style={{ flex: 1, fontSize: '0.8rem' }}
+                                    >
+                                        {discovering ? (
+                                            <><RefreshCw size={14} className="spin" /> Поиск... ({discoverProgress.scanned}/{discoverProgress.total || '?'})</>
+                                        ) : (
+                                            <><Search size={14} /> 🔍 Найти в WiFi</>
+                                        )}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={handleTestConnection}
+                                        disabled={testing}
+                                        style={{ flex: 1, fontSize: '0.8rem' }}
+                                    >
+                                        {testing ? (
+                                            <><RefreshCw size={14} className="spin" /> Проверка...</>
+                                        ) : (
+                                            <><Wifi size={14} /> Проверить</>
+                                        )}
+                                    </button>
+                                </div>
 
                                 {connectionStatus && (
                                     <div style={{
@@ -750,22 +808,34 @@ function Login({ onLogin }) {
                                         color: connectionStatus === 'connected' ? '#22c55e' : '#ef4444',
                                     }}>
                                         {connectionStatus === 'connected' ? <CheckCircle size={16} /> : <WifiOff size={16} />}
-                                        {connectionStatus === 'connected' ? 'Подключено' : 'Нет подключения'}
+                                        {connectionStatus === 'connected' ? '✅ Сервер доступен' : '❌ Нет подключения'}
                                     </div>
                                 )}
                             </>
                         )}
 
-                        {/* Облако */}
+                        {/* ===== Панель: Облако ===== */}
                         {srvMode === SERVER_MODES.CLOUD && (
                             <>
+                                <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '10px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                        <Cloud size={16} color="#3b82f6" />
+                                        <span style={{ fontWeight: 600 }}>Облачный сервер Railway</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                                        • Данные в облаке + резервная копия на вашем ПК<br/>
+                                        • Работает с любого устройства через интернет<br/>
+                                        • При отсутствии интернета — работа через мобильную сеть
+                                    </div>
+                                </div>
+
                                 <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                                    <label>{t('login.oblachnogo_servera', 'URL облачного сервера')}</label>
+                                    <label style={{ fontSize: '0.85rem' }}>URL облачного сервера</label>
                                     <input
                                         type="url"
                                         value={serverUrl}
                                         onChange={(e) => setServerUrl(e.target.value)}
-                                        placeholder="https://your-cloud-server.com/api"
+                                        placeholder="https://your-server.up.railway.app/api"
                                     />
                                 </div>
 
@@ -777,9 +847,9 @@ function Login({ onLogin }) {
                                     style={{ marginBottom: '0.75rem' }}
                                 >
                                     {testing ? (
-                                        <><RefreshCw size={16} className="spin" /> {t('login.proverka', 'Проверка...')}</>
+                                        <><RefreshCw size={16} className="spin" /> Проверка...</>
                                     ) : (
-                                        <><Cloud size={16} /> {t('login.proverit_podklyuchenie', 'Проверить подключение')}</>
+                                        <><Cloud size={16} /> Проверить подключение</>
                                     )}
                                 </button>
 
@@ -793,7 +863,7 @@ function Login({ onLogin }) {
                                         color: connectionStatus === 'connected' ? '#22c55e' : '#ef4444',
                                     }}>
                                         {connectionStatus === 'connected' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-                                        {connectionStatus === 'connected' ? 'Подключено' : 'Нет подключения'}
+                                        {connectionStatus === 'connected' ? '✅ Облако доступно' : '❌ Нет подключения'}
                                     </div>
                                 )}
                             </>
@@ -803,6 +873,7 @@ function Login({ onLogin }) {
                             type="button"
                             className="btn btn-primary w-full"
                             onClick={saveServerSettings}
+                            style={{ marginTop: '0.5rem' }}
                         >
                             <Server size={20} />
                             Сохранить настройки

@@ -115,6 +115,9 @@ function _getX500Val(s, field) {
 // ═══════════════════════════════════════════
 // Публичное API
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+// Публичное API
+// ═══════════════════════════════════════════
 const EImzoService = {
 
     /** Статус подключения */
@@ -162,52 +165,98 @@ const EImzoService = {
         }
     },
 
-    /** Получить список всех ключей ЭЦП */
-    listKeys: () => {
-        return new Promise((resolve, reject) => {
-            _callFunction(
-                { plugin: 'pfx', name: 'list_all_certificates' },
-                (event, data) => {
-                    if (data.success) {
-                        const keys = (data.certificates || []).map((el, idx) => {
-                            let alias = (el.alias || '').toUpperCase();
-                            alias = alias.replace('1.2.860.3.16.1.1=', 'INN=');
-                            alias = alias.replace('1.2.860.3.16.1.2=', 'PINFL=');
-
-                            return {
-                                id: idx,
-                                disk: el.disk,
-                                path: el.path,
-                                name: el.name,
-                                alias: el.alias,
-                                serialNumber: _getX500Val(alias, 'SERIALNUMBER'),
-                                validFrom: _getX500Val(alias, 'VALIDFROM'),
-                                validTo: _getX500Val(alias, 'VALIDTO'),
-                                CN: _getX500Val(alias, 'CN'),
-                                TIN: _getX500Val(alias, 'INN') || _getX500Val(alias, 'UID'),
-                                UID: _getX500Val(alias, 'UID'),
-                                PINFL: _getX500Val(alias, 'PINFL'),
-                                O: _getX500Val(alias, 'O'),
-                                T: _getX500Val(alias, 'T'),
-                                type: 'pfx'
-                            };
-                        }).filter(k => k.TIN || k.PINFL);
-
-                        resolve(keys);
-                    } else {
-                        reject(new Error(data.reason || 'Ошибка получения ключей'));
-                    }
-                },
-                (err) => reject(new Error(err || 'Ошибка соединения'))
-            );
+    /** Показать меню E-IMZO */
+    showMenu: () => {
+        return new Promise((resolve) => {
+            _callFunction({ plugin: 'app', name: 'show_menu' }, resolve, resolve);
         });
+    },
+
+    /** Получить версию JVM */
+    getJvmVersion: () => {
+        return new Promise((resolve) => {
+            _callFunction({ plugin: 'app', name: 'get_jvm_version' }, (e, d) => resolve(d), () => resolve(null));
+        });
+    },
+
+    /** Получить список всех ключей ЭЦП (агрегированный из разных плагинов) */
+    listKeys: async () => {
+        const plugins = [
+            { id: 'pfx', method: 'list_all_certificates' },
+            { id: 'ytks', method: 'list_all_certificates' },
+            { id: 'baikey', method: 'list_tokens' },
+            { id: 'uzgrd', method: 'list_tokens' },
+            { id: 'idcard', method: 'list_readers' }
+        ];
+
+        const allKeys = [];
+        const seenSerials = new Set();
+
+        for (const plugin of plugins) {
+            try {
+                const data = await new Promise((resolve, reject) => {
+                    _callFunction(
+                        { plugin: plugin.id, name: plugin.method },
+                        (event, res) => resolve(res),
+                        (err) => reject(err)
+                    );
+                });
+
+                if (data.success) {
+                    const certs = data.certificates || data.tokens || data.readers || [];
+                    certs.forEach((el, idx) => {
+                        let alias = (el.alias || '').toUpperCase();
+                        alias = alias.replace('1.2.860.3.16.1.1=', 'INN=');
+                        alias = alias.replace('1.2.860.3.16.1.2=', 'PINFL=');
+
+                        const serial = _getX500Val(alias, 'SERIALNUMBER');
+                        
+                        // Избегаем дубликатов (иногда один и тот же ключ виден в разных плагинах)
+                        if (serial && seenSerials.has(serial)) return;
+                        if (serial) seenSerials.add(serial);
+
+                        allKeys.push({
+                            id: `${plugin.id}_${idx}`,
+                            plugin: plugin.id,
+                            disk: el.disk,
+                            path: el.path,
+                            name: el.name,
+                            alias: el.alias,
+                            serialNumber: serial,
+                            validFrom: _getX500Val(alias, 'VALIDFROM'),
+                            validTo: _getX500Val(alias, 'VALIDTO'),
+                            CN: _getX500Val(alias, 'CN'),
+                            TIN: _getX500Val(alias, 'INN') || _getX500Val(alias, 'UID'),
+                            UID: _getX500Val(alias, 'UID'),
+                            PINFL: _getX500Val(alias, 'PINFL'),
+                            O: _getX500Val(alias, 'O'),
+                            T: _getX500Val(alias, 'T'),
+                            type: plugin.id // Сохраняем тип плагина для load_key
+                        });
+                    });
+                }
+            } catch (e) {
+                console.warn(`[E-IMZO] Failed to list keys for plugin ${plugin.id}:`, e);
+            }
+        }
+
+        // Фильтруем только те, у которых есть ИНН или ПИНФЛ (валидные подписи)
+        return allKeys.filter(k => k.TIN || k.PINFL);
     },
 
     /** Загрузить ключ (получить keyId для подписания) */
     loadKey: (keyObj) => {
         return new Promise((resolve, reject) => {
+            const plugin = keyObj.plugin || 'pfx';
+            const args = [keyObj.disk, keyObj.path, keyObj.name, keyObj.alias];
+            
+            // Для YTKS может потребоваться серийный номер
+            if (plugin === 'ytks' && keyObj.serialNumber) {
+                args.push(keyObj.serialNumber);
+            }
+
             _callFunction(
-                { plugin: 'pfx', name: 'load_key', arguments: [keyObj.disk, keyObj.path, keyObj.name, keyObj.alias] },
+                { plugin, name: 'load_key', arguments: args },
                 (event, data) => {
                     if (data.success) {
                         resolve(data.keyId);
@@ -263,6 +312,26 @@ const EImzoService = {
         });
     },
 
+    /** Подписать хэш (SHA-256 или другой) */
+    signHash: (keyId, hashHex, detached = true) => {
+        return new Promise((resolve, reject) => {
+            // Hex → Base64
+            const hash64 = btoa(hashHex.match(/\w{2}/g).map(a => String.fromCharCode(parseInt(a, 16))).join(''));
+            
+            _callFunction(
+                { plugin: 'pkcs7', name: 'create_pkcs7', arguments: [hash64, keyId, detached ? 'yes' : 'no'] },
+                (event, data) => {
+                    if (data.success) {
+                        resolve(data.pkcs7_64);
+                    } else {
+                        reject(new Error(data.reason || 'Ошибка подписания хэша'));
+                    }
+                },
+                (err) => reject(new Error(err || 'Ошибка'))
+            );
+        });
+    },
+
     /** Форматирование информации о ключе для отображения */
     formatKeyInfo: (key) => {
         const parts = [];
@@ -270,6 +339,16 @@ const EImzoService = {
         if (key.O) parts.push(key.O);
         if (key.TIN) parts.push(`ИНН: ${key.TIN}`);
         if (key.PINFL) parts.push(`ПИНФЛ: ${key.PINFL}`);
+        
+        let storageType = 'PFX';
+        switch(key.plugin) {
+            case 'ytks': storageType = 'YTKS'; break;
+            case 'baikey': storageType = 'BAIK-Token'; break;
+            case 'uzgrd': storageType = 'UZGUARD'; break;
+            case 'idcard': storageType = 'ID-Card'; break;
+            case 'ckc': storageType = 'CKC'; break;
+        }
+
         return {
             title: key.CN || key.name || 'Ключ ЭЦП',
             subtitle: key.O || '',
@@ -278,7 +357,8 @@ const EImzoService = {
             validFrom: key.validFrom || '',
             validTo: key.validTo || '',
             serialNumber: key.serialNumber || '',
-            fullInfo: parts.join(' | ')
+            fullInfo: parts.join(' | '),
+            storageType: storageType
         };
     }
 };

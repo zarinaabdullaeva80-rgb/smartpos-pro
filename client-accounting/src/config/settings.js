@@ -2,7 +2,7 @@
  * Конфигурация десктоп-клиента SmartPOS Pro
  * 
  * Централизованное управление подключением к серверу.
- * Поддерживает 3 режима: server (свой), client (WiFi), cloud (облако).
+ * Поддерживает 2 режима: own (свой сервер), cloud (облако Railway).
  * 
  * Аналог mobile-pos/src/config/settings.js
  */
@@ -11,18 +11,20 @@
 // Константы
 // ============================================================
 
-const DEFAULT_SERVER_URL = 'http://localhost:5000/api';
+const DEFAULT_SERVER_URL = 'http://127.0.0.1:5000/api';
 const DEFAULT_PORT = 5000;
 
 // Центральный сервер лицензирования (Railway cloud)
 const LICENSE_SERVER_URL = 'https://smartpos-pro-production.up.railway.app/api';
 
-// Режимы работы
+// Режимы работы (упрощённые: 2 вместо 4)
 export const SERVER_MODES = {
-    SERVER: 'server',  // Electron запускает встроенный сервер
-    CLIENT: 'client',  // Подключение к серверу в WiFi сети
-    CLOUD: 'cloud',    // Подключение к облачному серверу
-    HYBRID: 'hybrid',  // Локальный сервер + синхронизация с облаком
+    OWN: 'own',        // Свой сервер клиента (локальный + WiFi + мобильный интернет сотрудников)
+    CLOUD: 'cloud',    // Облако Railway (+ локальная копия на ПК)
+    // Обратная совместимость со старыми значениями
+    SERVER: 'own',     // alias → own
+    CLIENT: 'own',     // alias → own (WiFi клиент теперь часть "Свой сервер")
+    HYBRID: 'own',     // alias → own (гибрид теперь встроен в "Свой сервер")
 };
 
 // Ключи localStorage
@@ -44,15 +46,21 @@ let dynamicApiUrl = null;
  * Получить текущий режим сервера
  */
 export function getServerMode() {
-    return localStorage.getItem(STORAGE_KEYS.SERVER_MODE) || SERVER_MODES.SERVER;
+    const saved = localStorage.getItem(STORAGE_KEYS.SERVER_MODE);
+    // Миграция старых значений на новые
+    if (saved === 'server' || saved === 'client' || saved === 'hybrid') return SERVER_MODES.OWN;
+    if (saved === 'cloud') return SERVER_MODES.CLOUD;
+    return saved || SERVER_MODES.OWN;
 }
 
 /**
  * Установить режим сервера
  */
 export function setServerMode(mode) {
-    if (!Object.values(SERVER_MODES).includes(mode)) {
-        console.error('[Settings] Invalid server mode:', mode);
+    // Принимаем только 'own' и 'cloud'
+    const validModes = [SERVER_MODES.OWN, SERVER_MODES.CLOUD];
+    if (!validModes.includes(mode)) {
+        console.error('[Settings] Invalid server mode:', mode, '— expected own or cloud');
         return;
     }
     localStorage.setItem(STORAGE_KEYS.SERVER_MODE, mode);
@@ -172,13 +180,24 @@ export async function testServerConnection(url) {
         });
 
         clearTimeout(timeoutId);
-
         if (response.ok) {
             const data = await response.json();
             return { ok: true, data };
         }
+        
+        // Fallback: если localhost не сработал, пробуем 127.0.0.1 (актуально для Windows IPv6)
+        if (cleanUrl.includes('localhost')) {
+            const fallbackUrl = cleanUrl.replace('localhost', '127.0.0.1');
+            return testServerConnection(fallbackUrl);
+        }
+
         return { ok: false, error: `HTTP ${response.status}` };
     } catch (e) {
+        // Fallback при сетевой ошибке (Connection Refused и т.д.)
+        if (url.includes('localhost')) {
+            const fallbackUrl = url.replace('localhost', '127.0.0.1');
+            return testServerConnection(fallbackUrl);
+        }
         return { ok: false, error: e.name === 'AbortError' ? 'Таймаут подключения' : e.message };
     }
 }
@@ -198,7 +217,8 @@ export async function autoDiscoverServer(onProgress = null) {
         '192.168.1.35',     // Текущий IP сервера (Ethernet)
         '192.168.1.108',    // IP из логов (частый)
         '192.168.1.45',     // Ещё один частый IP
-        '127.0.0.1',        // localhost
+        '127.0.0.1',        // localhost (IPv4)
+        'localhost',        // localhost (Hostname)
         '192.168.1.1', '192.168.0.1', '10.0.0.1', // Шлюзы
         '192.168.1.100', '192.168.1.101', '192.168.1.102',
         '192.168.0.100', '192.168.0.101', '192.168.0.102',

@@ -27,7 +27,8 @@ let healthCheckInterval = null;
 // Проверка доступности сервера
 const checkServerAvailability = async () => {
     try {
-        await axios.get(API_URL.replace('/api', '/health'), { timeout: 3000 });
+        const currentApiUrl = getApiUrl();
+        await axios.get(currentApiUrl.replace('/api', '/health'), { timeout: 3000 });
         const wasOffline = isOfflineMode;
         isOfflineMode = false;
         if (wasOffline) {
@@ -918,8 +919,8 @@ export const loyaltyAPI = {
     getProgram: () => api.get('/loyalty/program'),
     getCards: (params) => api.get('/loyalty/cards', { params }),
     createCard: (data) => api.post('/loyalty/cards', data),
-    getCardById: (id) => api.get(`/loyalty/cards/${id}`),
     getCard: (customerId) => api.get(`/loyalty/card/${customerId}`),
+    searchCustomer: (query) => api.get(`/loyalty/check/${query}`),
     addPoints: (cardId, points, reason) => api.post(`/loyalty/cards/${cardId}/points`, { points, reason }),
     earn: (data) => api.post('/loyalty/earn', data),
     spendPoints: (customerId, points, description) => api.post('/loyalty/spend', { customerId, points, description }),

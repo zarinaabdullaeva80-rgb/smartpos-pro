@@ -286,9 +286,11 @@ function ReceiptPrinter({ sale, onClose, isOpen, autoPrint = false }) {
         showKKM: true
     });
 
-    // Загрузка настроек из localStorage при монтировании
+    // Загрузка настроек из localStorage и сервера при монтировании
     React.useEffect(() => {
-        // Загрузить настройки чека
+        let loaded = false;
+
+        // Загрузить настройки чека из localStorage
         const savedReceiptSettings = localStorage.getItem('receiptSettings');
         if (savedReceiptSettings) {
             try {
@@ -302,13 +304,14 @@ function ReceiptPrinter({ sale, onClose, isOpen, autoPrint = false }) {
                     phone: parsed.header_phone || '',
                     website: parsed.header_website || '',
                     kkmSerial: parsed.kkm_serial || '',
-                    logo: parsed.header_logo || null
+                    logo: parsed.header_logo_url || null // Используем logo_url если есть
                 });
                 setReceiptSettings({
                     promoText: parsed.footer_text || '',
                     showQR: parsed.footer_qr_enabled !== false,
                     showKKM: !!parsed.kkm_serial
                 });
+                loaded = true;
             } catch (e) { }
         }
 
@@ -329,8 +332,44 @@ function ReceiptPrinter({ sale, onClose, isOpen, autoPrint = false }) {
                         website: defaultStore.website || prev.website,
                         kkmSerial: defaultStore.kkm_serial || prev.kkmSerial
                     }));
+                    loaded = true;
                 }
             } catch (e) { }
+        }
+
+        // Если localStorage пуст — загрузить с сервера
+        if (!loaded) {
+            const token = localStorage.getItem('token');
+            if (token) {
+                const apiUrl = localStorage.getItem('serverUrl') || window.__API_URL__ || '';
+                const baseUrl = apiUrl || (window.location.origin + '/api');
+                fetch(`${baseUrl}/settings/receipt/config`, {
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && (data.header_company_name || data.header_address)) {
+                            setCompanyInfo({
+                                orgType: data.header_org_type || 'ООО',
+                                name: data.header_company_name || '',
+                                address: data.header_address || '',
+                                inn: data.header_inn || '',
+                                phone: data.header_phone || '',
+                                website: data.header_website || '',
+                                kkmSerial: data.kkm_serial || '',
+                                logo: data.header_logo_url || null
+                            });
+                            setReceiptSettings({
+                                promoText: data.footer_text || '',
+                                showQR: data.footer_qr_enabled !== false,
+                                showKKM: !!data.kkm_serial
+                            });
+                            // Cache in localStorage for future use
+                            localStorage.setItem('receiptSettings', JSON.stringify(data));
+                        }
+                    })
+                    .catch(() => { /* server unavailable, use defaults */ });
+            }
         }
     }, []);
 

@@ -205,6 +205,7 @@ function Layout({ onLogout }) {
                 { name: t('nav.admin'), path: '/administration', icon: SettingsIcon, allowedRoles: ['Администратор', 'client_admin', 'super_admin'] },
                 { name: t('nav.staffManagement', 'Управление сотрудниками'), path: '/staff-management', icon: Users },
                 { name: t('nav.generalSettings', 'Общие настройки'), path: '/settings', icon: SettingsIcon },
+                { name: t('nav.receiptSettings', 'Настройка чеков'), path: '/receipt-settings', icon: Printer },
                 { name: t('nav.googleSheets'), path: '/google-sheets', icon: BarChart3 },
                 { name: t('nav.notifications'), path: '/notifications', icon: Mail },
                 { name: t('nav.telegram'), path: '/telegram-settings', icon: Mail },

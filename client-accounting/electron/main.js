@@ -48,6 +48,21 @@ function logError(message, ...args) {
 // Redirect console to our log functions
 console.log = log;
 console.error = logError;
+
+// Helper to compare semver strings (x.y.z)
+function isVersionNewer(current, latest) {
+    if (!current || !latest) return false;
+    const v1 = current.replace(/^v/, '').split('.').map(Number);
+    const v2 = latest.replace(/^v/, '').split('.').map(Number);
+    for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+        const num1 = v1[i] || 0;
+        const num2 = v2[i] || 0;
+        if (num2 > num1) return true;
+        if (num1 > num2) return false;
+    }
+    return false;
+}
+
 console.warn = log;
 console.info = log;
 
@@ -70,7 +85,7 @@ function readServerMode() {
     } catch (e) {
         console.log('[Config] Error reading server mode:', e.message);
     }
-    return 'server'; // по умолчанию — локальный сервер (self-hosted)
+    return 'own'; // по умолчанию — свой сервер (own)
 }
 
 // Определяем URL API из встроенной конфигурации
@@ -483,7 +498,9 @@ async function createWindow() {
             enableRemoteModule: false,
             preload: path.join(__dirname, 'preload.js')
         },
-        icon: path.join(__dirname, '../build/icon.ico'),
+        icon: isDev
+            ? path.join(__dirname, '../build/icon.ico')
+            : path.join(process.resourcesPath, 'build', 'icon.ico'),
         autoHideMenuBar: true,
         frame: true
     });
@@ -492,7 +509,7 @@ async function createWindow() {
     const serverUrl = `http://localhost:${SERVER_PORT}`;
     const mode = readServerMode();
 
-    if (mode === 'server' || mode === 'hybrid') {
+    if (mode === 'own' || mode === 'server' || mode === 'hybrid') {
         // Локальный режим: ждём пока сервер будет готов, затем загружаем через HTTP
         // Это решает проблему чёрного экрана при file:// + API на localhost:5000
         console.log('[Electron] Waiting for local server to be ready...');
@@ -686,12 +703,12 @@ ipcMain.handle('get-server-mode', () => {
 
 ipcMain.handle('set-server-mode', (event, mode) => {
     writeServerMode(mode);
-    // Если переключили на 'server' или 'hybrid' — запустить сервер
-    if ((mode === 'server' || mode === 'hybrid') && serverStatus !== 'running') {
+    // Если переключили на 'own'/'server'/'hybrid' — запустить сервер
+    if ((mode === 'own' || mode === 'server' || mode === 'hybrid') && serverStatus !== 'running') {
         startServer();
     }
     // Если переключили на client/cloud — остановить
-    if (mode !== 'server' && mode !== 'hybrid' && serverProcess) {
+    if (mode !== 'own' && mode !== 'server' && mode !== 'hybrid' && serverProcess) {
         stopServer();
     }
     return { success: true, mode };
@@ -762,7 +779,18 @@ process.on('uncaughtException', (err) => {
     // НЕ крашим приложение
 });
 
-app.whenReady().then(async () => {
+// Добавляем обработчик сертификатов для E-IMZO (Узбекистан)
+// Это позволяет приложению подключаться к локальному модулю E-IMZO без ручного подтверждения сертификата
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    if (url.startsWith('https://127.0.0.1:64443') || url.startsWith('https://localhost:64443')) {
+        event.preventDefault();
+        callback(true);
+    } else {
+        callback(false);
+    }
+});
+
+app.on('ready', async () => {
     try {
         // Initialize export folders
         initializeExportFolders();
@@ -775,14 +803,14 @@ app.whenReady().then(async () => {
         const serverExists = fs.existsSync(serverPathPrimary);
         console.log('[App] Server path:', serverPathPrimary, '| exists:', serverExists);
 
-        // Если режим server/hybrid, но сервера нет — автоматически переключаем на cloud
-        if ((mode === 'server' || mode === 'hybrid') && !serverExists) {
+        // Если режим own/server/hybrid, но сервера нет — автоматически переключаем на cloud
+        if ((mode === 'own' || mode === 'server' || mode === 'hybrid') && !serverExists) {
             console.log('[App] Server folder missing — auto-switching to cloud mode (Railway)');
             writeServerMode('cloud');
             mode = 'cloud';
         }
 
-        if (mode === 'server' || mode === 'hybrid') {
+        if (mode === 'own' || mode === 'server' || mode === 'hybrid') {
             console.log('[App] Mode:', mode, '— starting embedded server...');
             try {
                 startServer();
@@ -797,17 +825,80 @@ app.whenReady().then(async () => {
             serverStatus = 'external';
         }
 
-        // Открыть окно (await — createWindow теперь async, ждёт готовности сервера)
+        // Открыть окно
         await createWindow();
 
-        // Initialize auto-updater (only in production)
+        // Проверка обновления через сервер
+        async function checkServerUpdate() {
+            const http = require('http');
+            const https = require('https');
+            const { dialog, shell } = require('electron');
+            
+            // Проверяем локальный сервер ВСЕГДА, если он есть
+            const localUrl = `http://127.0.0.1:${SERVER_PORT}/health`;
+            const cloudUrl = `${CLOUD_URL}/health`;
+
+            const runCheck = async (url) => {
+                try {
+                    const client = url.startsWith('https') ? https : http;
+                    const response = await new Promise((resolve, reject) => {
+                        const req = client.get(url, (res) => {
+                            let data = '';
+                            res.on('data', (chunk) => data += chunk);
+                            res.on('end', () => {
+                                try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+                            });
+                        });
+                        req.on('error', reject);
+                        req.setTimeout(3000, () => { req.destroy(); reject(new Error('Timeout')); });
+                    });
+
+                    if (response && response.version) {
+                        const currentVersion = app.getVersion();
+                        const serverVersion = response.version;
+                        
+                        if (isVersionNewer(currentVersion, serverVersion)) {
+                            const options = {
+                                type: 'info',
+                                buttons: ['Скачать обновление', 'Позже'],
+                                defaultId: 0,
+                                cancelId: 1,
+                                title: 'Доступно обновление',
+                                message: `Доступна новая версия SmartPOS Pro: ${serverVersion}`,
+                                detail: `Ваша текущая версия: ${currentVersion}\nРекомендуется обновиться для стабильной работы.`
+                            };
+
+                            dialog.showMessageBox(mainWindow, options).then((result) => {
+                                if (result.response === 0) {
+                                    shell.openExternal('https://github.com/zarinaabdullaeva80-rgb/smartpos-pro/releases/latest');
+                                }
+                            });
+                            return true;
+                        }
+                    }
+                    return false;
+                } catch (e) {
+                    return false;
+                }
+            };
+
+            // Проверяем локально сразу, потом облако
+            setTimeout(async () => {
+                if (!(await runCheck(localUrl))) {
+                    runCheck(cloudUrl);
+                }
+            }, 5000);
+        }
+
+        checkServerUpdate();
+
+        // Initialize auto-updater (only in production for GitHub releases)
         if (!isDev) {
             try {
                 autoUpdater = new AutoUpdater();
                 autoUpdater.init();
-                console.log('[AutoUpdater] Initialized');
             } catch (e) {
-                console.warn('[AutoUpdater] Init failed (non-critical):', e.message);
+                console.warn('[AutoUpdater] Init failed:', e.message);
             }
         }
 

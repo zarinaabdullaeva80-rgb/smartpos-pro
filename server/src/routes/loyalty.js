@@ -89,8 +89,8 @@ router.get('/card/:customerId', authenticateToken, async (req, res) => {
         const customerResult = await pool.query(`
             SELECT c.*, 
                    COALESCE(SUM(lt.points), 0) as total_points,
-                   COALESCE(SUM(CASE WHEN lt.type = 'earn' THEN lt.points ELSE 0 END), 0) as earned_points,
-                   COALESCE(SUM(CASE WHEN lt.type = 'spend' THEN lt.points ELSE 0 END), 0) as spent_points
+                   COALESCE(SUM(CASE WHEN lt.transaction_type = 'earn' THEN lt.points ELSE 0 END), 0) as earned_points,
+                   COALESCE(SUM(CASE WHEN lt.transaction_type = 'spend' THEN lt.points ELSE 0 END), 0) as spent_points
             FROM customers c
             LEFT JOIN loyalty_transactions lt ON c.id = lt.customer_id
             WHERE c.id = $1 AND c.organization_id = $2
@@ -335,10 +335,10 @@ router.post('/earn', authenticateToken, async (req, res) => {
         const points = Math.floor(amount * (settings.cashback_percent || 2) / 100);
 
         const result = await pool.query(`
-            INSERT INTO loyalty_transactions (customer_id, type, points, amount, sale_id, description, created_by, organization_id)
-            VALUES ($1, 'earn', $2, $3, $4, $5, $6, $7)
+            INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
+            VALUES ($1, 'earn', $2, $3, $4, $5, $6)
             RETURNING *
-        `, [customerId, points, amount, saleId, description || 'Начисление за покупку', req.user.id, orgId]);
+        `, [customerId, points, saleId, description || 'Начисление за покупку', req.user.id, orgId]);
 
         res.json({
             success: true,
@@ -378,7 +378,7 @@ router.post('/spend', authenticateToken, async (req, res) => {
         }
 
         const result = await pool.query(`
-            INSERT INTO loyalty_transactions (customer_id, type, points, sale_id, description, created_by, organization_id)
+            INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
             VALUES ($1, 'spend', $2, $3, $4, $5, $6)
             RETURNING *
         `, [customerId, -points, saleId, description || 'Оплата баллами', req.user.id, orgId]);
@@ -640,7 +640,7 @@ router.post('/add-points', authenticateToken, async (req, res) => {
         // Записать транзакцию
         try {
             await pool.query(`
-                INSERT INTO loyalty_transactions (customer_id, type, points, description, created_by, organization_id)
+                INSERT INTO loyalty_transactions (customer_id, transaction_type, points, description, created_by, organization_id)
                 VALUES ($1, 'earn', $2, $3, $4, $5)
             `, [customerId, parseInt(points), reason || 'Ручное начисление', req.user.id, orgId]);
         } catch (e) {
@@ -736,7 +736,7 @@ router.post('/redeem', authenticateToken, async (req, res) => {
         // Записать транзакцию
         try {
             await pool.query(`
-                INSERT INTO loyalty_transactions (customer_id, type, points, sale_id, description, created_by, organization_id)
+                INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
                 VALUES ($1, 'spend', $2, $3, 'Оплата баллами', $4, $5)
             `, [customerId, -parseInt(points), saleId, req.user.id, orgId]);
         } catch (e) {

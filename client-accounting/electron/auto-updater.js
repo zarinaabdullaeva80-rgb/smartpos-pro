@@ -140,8 +140,21 @@ class AutoUpdater {
                 const currentVersion = autoUpdater.currentVersion.version;
                 const latestVersion = result.updateInfo.version;
 
+                // Helper to compare semver strings (x.y.z)
+                const isNewer = (curr, late) => {
+                    const v1 = curr.split('.').map(Number);
+                    const v2 = late.split('.').map(Number);
+                    for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+                        const n1 = v1[i] || 0;
+                        const n2 = v2[i] || 0;
+                        if (n2 > n1) return true;
+                        if (n1 > n2) return false;
+                    }
+                    return false;
+                };
+
                 return {
-                    updateAvailable: latestVersion !== currentVersion,
+                    updateAvailable: isNewer(currentVersion, latestVersion),
                     currentVersion,
                     latestVersion,
                     releaseNotes: result.updateInfo.releaseNotes || ''

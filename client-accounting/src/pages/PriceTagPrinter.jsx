@@ -15,6 +15,11 @@ function PriceTagPrinter() {
         showBarcode: true,
         showSKU: true,
         showOldPrice: true,
+        showStoreName: true,
+        storeName: localStorage.getItem('priceTagStoreName') || '',
+        storeNamePosition: 'top', // top, bottom
+        nameFontSize: 10, // px
+        priceFontSize: 15, // px
         columns: 3
     });
 
@@ -98,9 +103,9 @@ function PriceTagPrinter() {
     const printTags = () => {
         const printWindow = window.open('', '_blank');
         const tagSize = {
-            small: { width: '40mm', height: '25mm', fontSize: '8px', barcodeHeight: '20px' },
-            medium: { width: '58mm', height: '40mm', fontSize: '10px', barcodeHeight: '30px' },
-            large: { width: '80mm', height: '50mm', fontSize: '12px', barcodeHeight: '40px' }
+            small: { width: '40mm', height: '25mm', barcodeHeight: '20px' },
+            medium: { width: '58mm', height: '40mm', barcodeHeight: '30px' },
+            large: { width: '80mm', height: '50mm', barcodeHeight: '40px' }
         }[tagSettings.size];
 
         printWindow.document.write(`
@@ -142,14 +147,32 @@ function PriceTagPrinter() {
                     }
                     .tag-name {
                         font-weight: bold;
-                        font-size: ${tagSize.fontSize};
+                        font-size: ${tagSettings.nameFontSize}px;
                         line-height: 1.2;
                         max-height: 2.4em;
                         overflow: hidden;
                         text-overflow: ellipsis;
                     }
+                    .tag-store-name {
+                        font-size: ${Math.max(tagSettings.nameFontSize - 2, 7)}px;
+                        color: #333;
+                        text-align: center;
+                        font-weight: 600;
+                        border-bottom: 1px solid #ddd;
+                        padding-bottom: 2px;
+                        margin-bottom: 2px;
+                    }
+                    .tag-store-name-bottom {
+                        font-size: ${Math.max(tagSettings.nameFontSize - 2, 7)}px;
+                        color: #333;
+                        text-align: center;
+                        font-weight: 600;
+                        border-top: 1px solid #ddd;
+                        padding-top: 2px;
+                        margin-top: 2px;
+                    }
                     .tag-sku {
-                        font-size: calc(${tagSize.fontSize} * 0.8);
+                        font-size: ${Math.max(tagSettings.nameFontSize - 2, 7)}px;
                         color: #666;
                     }
                     .tag-barcode {
@@ -161,12 +184,12 @@ function PriceTagPrinter() {
                         width: auto;
                     }
                     .tag-price {
-                        font-size: calc(${tagSize.fontSize} * 1.5);
+                        font-size: ${tagSettings.priceFontSize}px;
                         font-weight: bold;
                         text-align: center;
                     }
                     .tag-old-price {
-                        font-size: calc(${tagSize.fontSize} * 0.9);
+                        font-size: ${Math.max(tagSettings.priceFontSize - 3, 8)}px;
                         text-decoration: line-through;
                         color: #999;
                         text-align: center;
@@ -185,11 +208,13 @@ function PriceTagPrinter() {
                     ${selectedProducts.flatMap(product =>
             Array(product.quantity).fill(null).map(() => `
                             <div class="price-tag">
+                                ${tagSettings.showStoreName && tagSettings.storeName && tagSettings.storeNamePosition === 'top' ? `<div class="tag-store-name">${tagSettings.storeName}</div>` : ''}
                                 <div class="tag-name">${product.name}</div>
                                 ${tagSettings.showSKU ? `<div class="tag-sku">Арт: ${product.sku}</div>` : ''}
                                 ${tagSettings.showBarcode ? `<div class="tag-barcode">${generateBarcodeSVG(product.barcode)}</div>` : ''}
                                 ${tagSettings.showOldPrice && product.old_price ? `<div class="tag-old-price">${formatCurrency(product.old_price)}</div>` : ''}
                                 <div class="tag-price">${formatCurrency(product.price)}</div>
+                                ${tagSettings.showStoreName && tagSettings.storeName && tagSettings.storeNamePosition === 'bottom' ? `<div class="tag-store-name-bottom">${tagSettings.storeName}</div>` : ''}
                             </div>
                         `)
         ).join('')}
@@ -253,6 +278,50 @@ function PriceTagPrinter() {
                         <input type="checkbox" checked={tagSettings.showOldPrice} onChange={(e) => setTagSettings({ ...tagSettings, showOldPrice: e.target.checked })} />
                         Старая цена
                     </label>
+                </div>
+                {/* Второй ряд: название магазина и размеры шрифтов */}
+                <div style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={tagSettings.showStoreName} onChange={(e) => setTagSettings({ ...tagSettings, showStoreName: e.target.checked })} />
+                        Магазин
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                            type="text"
+                            placeholder="Название магазина"
+                            value={tagSettings.storeName}
+                            onChange={(e) => {
+                                setTagSettings({ ...tagSettings, storeName: e.target.value });
+                                localStorage.setItem('priceTagStoreName', e.target.value);
+                            }}
+                            style={{ width: '200px', padding: '4px 8px', fontSize: '13px' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>Позиция:</span>
+                        <select value={tagSettings.storeNamePosition} onChange={(e) => setTagSettings({ ...tagSettings, storeNamePosition: e.target.value })}>
+                            <option value="top">Сверху</option>
+                            <option value="bottom">Снизу</option>
+                        </select>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>Шрифт названия:</span>
+                        <input
+                            type="range" min="7" max="20" value={tagSettings.nameFontSize}
+                            onChange={(e) => setTagSettings({ ...tagSettings, nameFontSize: parseInt(e.target.value) })}
+                            style={{ width: '80px' }}
+                        />
+                        <span style={{ fontSize: '12px', minWidth: '30px' }}>{tagSettings.nameFontSize}px</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>Шрифт цены:</span>
+                        <input
+                            type="range" min="10" max="30" value={tagSettings.priceFontSize}
+                            onChange={(e) => setTagSettings({ ...tagSettings, priceFontSize: parseInt(e.target.value) })}
+                            style={{ width: '80px' }}
+                        />
+                        <span style={{ fontSize: '12px', minWidth: '30px' }}>{tagSettings.priceFontSize}px</span>
+                    </div>
                 </div>
             </div>
 
@@ -392,7 +461,12 @@ function PriceTagPrinter() {
                                 borderRadius: '4px',
                                 background: 'white'
                             }}>
-                                <div style={{ fontWeight: 'bold', fontSize: tagSettings.size === 'small' ? '12px' : '16px', marginBottom: '8px' }}>
+                                {tagSettings.showStoreName && tagSettings.storeName && tagSettings.storeNamePosition === 'top' && (
+                                    <div style={{ fontSize: `${Math.max(tagSettings.nameFontSize - 2, 7)}px`, fontWeight: 600, textAlign: 'center', borderBottom: '1px solid #ddd', paddingBottom: '4px', marginBottom: '4px', color: '#333' }}>
+                                        {tagSettings.storeName}
+                                    </div>
+                                )}
+                                <div style={{ fontWeight: 'bold', fontSize: `${tagSettings.nameFontSize}px`, marginBottom: '8px' }}>
                                     {selectedProducts[0].name}
                                 </div>
                                 {tagSettings.showSKU && (
@@ -411,9 +485,14 @@ function PriceTagPrinter() {
                                         {formatCurrency(selectedProducts[0].old_price)}
                                     </div>
                                 )}
-                                <div style={{ textAlign: 'center', fontSize: '24px', fontWeight: 'bold' }}>
+                                <div style={{ textAlign: 'center', fontSize: `${tagSettings.priceFontSize}px`, fontWeight: 'bold' }}>
                                     {formatCurrency(selectedProducts[0].price)}
                                 </div>
+                                {tagSettings.showStoreName && tagSettings.storeName && tagSettings.storeNamePosition === 'bottom' && (
+                                    <div style={{ fontSize: `${Math.max(tagSettings.nameFontSize - 2, 7)}px`, fontWeight: 600, textAlign: 'center', borderTop: '1px solid #ddd', paddingTop: '4px', marginTop: '4px', color: '#333' }}>
+                                        {tagSettings.storeName}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="modal-footer">

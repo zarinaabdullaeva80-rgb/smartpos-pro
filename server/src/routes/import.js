@@ -1010,7 +1010,10 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                             'SELECT id FROM products WHERE barcode = $1 AND (organization_id = $2 OR organization_id IS NULL)',
                             [barcode, orgId]
                         );
-                        if (dup.rows.length > 0) existingId = dup.rows[0].id;
+                        if (dup.rows.length > 0) {
+                            existingId = dup.rows[0].id;
+                            console.log(`[Import V4] Match found by barcode: ${barcode} -> id ${existingId}`);
+                        }
                     } catch (e) { /* ignore lookup error */ }
                 }
 
@@ -1026,13 +1029,16 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
                 }
 
                 // 3) По name (последний шанс найти дубликат)
-                if (!existingId) {
+                if (!existingId && mapped.name && String(mapped.name).trim().length >= 2) {
                     try {
                         const dup = await pool.query(
                             'SELECT id FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) AND (organization_id = $2 OR organization_id IS NULL)',
                             [mapped.name, orgId]
                         );
-                        if (dup.rows.length > 0) existingId = dup.rows[0].id;
+                        if (dup.rows.length > 0) {
+                            existingId = dup.rows[0].id;
+                            console.log(`[Import V4] Match found by name: "${mapped.name}" -> id ${existingId}`);
+                        }
                     } catch (e) { /* ignore lookup error */ }
                 }
 
@@ -1185,9 +1191,9 @@ router.post('/products/auto', authenticate, upload.single('file'), async (req, r
 
         try {
             await pool.query(`
-                INSERT INTO import_logs (type, filename, total_rows, imported, updated, errors, user_id, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            `, ['products_auto', req.file.originalname, rows.length, imported, updated, JSON.stringify(errors.slice(0, 100)), req.user?.id || null]);
+                INSERT INTO import_logs (type, filename, total_rows, imported, updated, errors, user_id, organization_id, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+            `, ['products_auto', req.file.originalname, rows.length, imported, updated, JSON.stringify(errors.slice(0, 100)), req.user?.id || null, orgId]);
         } catch (e) {
             console.error('[Import V4] Failed to write import log:', e.message);
         }

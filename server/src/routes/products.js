@@ -418,7 +418,7 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             } catch (e) { /* stock_balances может не поддерживать upsert */ }
         }
 
-        await logAudit(req.user.id, action, 'products', result.rows[0].id, null, result.rows[0], req.ip);
+        await logAudit(req.user.id, action, 'products', result.rows[0].id, null, result.rows[0], req.ip, orgId);
 
         // Emit real-time update
         const io = req.app.get('io');
@@ -491,7 +491,7 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
             }
         }
 
-        await logAudit(req.user.id, 'UPDATE', 'products', id, oldData.rows[0], result.rows[0], req.ip);
+        await logAudit(req.user.id, 'UPDATE', 'products', id, oldData.rows[0], result.rows[0], req.ip, orgId);
 
         // Emit real-time update
         const io = req.app.get('io');
@@ -644,7 +644,7 @@ router.delete('/:id', authenticate, async (req, res) => {
 
         await deleteProductById(id);
 
-        await logAudit(req.user.id, 'DELETE', 'products', id, null, null, req.ip);
+        await logAudit(req.user.id, 'DELETE', 'products', id, null, null, req.ip, orgId);
 
         const io = req.app.get('io');
         if (io) io.emit('product:updated', { id, action: 'DELETE' });
@@ -765,7 +765,7 @@ router.post('/:id/stock', authenticate, authorize('Администратор', 
             orgId ? [id, orgId] : [id]
         );
 
-        await logAudit(req.user.id, 'STOCK_' + (type || 'adjustment').toUpperCase(), 'products', id, null, { quantity: actualQuantity, type, reason }, req.ip);
+        await logAudit(req.user.id, 'STOCK_' + (type || 'adjustment').toUpperCase(), 'products', id, null, { quantity: actualQuantity, type, reason }, req.ip, orgId);
 
         // Emit real-time inventory update
         const io = req.app.get('io');

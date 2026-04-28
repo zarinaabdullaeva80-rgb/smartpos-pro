@@ -59,9 +59,9 @@ export default function SendDocModal({ show, onClose, eimzoKeys, eimzoConnected,
                 const pkcs7 = await onSignPkcs7(selectedKey, hashHex);
                 if (pkcs7) {
                     formData.append('pkcs7', pkcs7);
-                    const key = (eimzoKeys || []).find(k => k.serialNumber === selectedKey || k.VO_SERIAL_NUMBER === selectedKey);
+                    const key = (eimzoKeys || []).find(k => k.serialNumber === selectedKey);
                     formData.append('signer_name', key?.CN || key?.O || '');
-                    formData.append('signer_tin', key?.TIN || key?.VO_TIN || '');
+                    formData.append('signer_tin', key?.TIN || key?.PINFL || '');
                 }
             }
 
@@ -136,10 +136,12 @@ export default function SendDocModal({ show, onClose, eimzoKeys, eimzoConnected,
                                 {!eimzoConnected ? (
                                     <div style={{ fontSize: 12, color: '#ef4444' }}>{t('eds.statusDisconnected')}</div>
                                 ) : (
-                                    <select value={selectedKey} onChange={e => setSelectedKey(e.target.value)} className="form-input" style={{ width: '100%' }}>
+                                    <select value={selectedKey} onChange={e => setSelectedKey(e.target.value)} className="form-input" style={{ width: '100%', fontSize: '13px' }}>
                                         <option value="">{t('eds.placeholderSelectKey')}</option>
                                         {(eimzoKeys || []).map((k, i) => (
-                                            <option key={i} value={k.serialNumber || k.VO_SERIAL_NUMBER}>{k.CN || k.O} ({k.TIN || k.VO_TIN})</option>
+                                            <option key={i} value={k.serialNumber}>
+                                                [{k.plugin?.toUpperCase() || 'PFX'}] {k.CN || k.O} ({k.TIN || k.PINFL})
+                                            </option>
                                         ))}
                                     </select>
                                 )}
