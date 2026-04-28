@@ -14,29 +14,11 @@ export function initSentry(app) {
 
     Sentry.init({
         dsn: dsn,
-        environment: process.env.NODE_ENV || 'development',
-        release: process.env.npm_package_version || '1.0.0',
-
-        // Performance monitoring
-        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-
-        // Additional options
-        integrations: [
-            // HTTP integration for tracing
-            Sentry.httpIntegration({ tracing: true }),
-            // Express integration
-            Sentry.expressIntegration({ app }),
-        ],
-
-        // Filter sensitive data
-        beforeSend(event) {
-            // Remove sensitive headers
-            if (event.request?.headers) {
-                delete event.request.headers['authorization'];
-                delete event.request.headers['cookie'];
-            }
-            return event;
-        },
+        environment: process.env.NODE_ENV || 'production',
+        release: `smartpos-pro@4.2.8`,
+        tracesSampleRate: 0.2,
+        // Сбор данных о пользователях для отладки
+        sendDefaultPii: true,
     });
 
     console.log('✓ Sentry initialized');
@@ -44,24 +26,23 @@ export function initSentry(app) {
 }
 
 /**
- * Sentry request handler middleware
+ * Setup Sentry error handler for Express
+ * @param {Express} app - Express application instance
  */
-export function sentryRequestHandler() {
-    return Sentry.expressIntegration().requestHandler;
+export function setupSentryErrorHandler(app) {
+    if (process.env.SENTRY_DSN) {
+        Sentry.setupExpressErrorHandler(app);
+        
+        // Кастомный обработчик для возврата ID ошибки клиенту
+        app.use((err, req, res, next) => {
+            res.statusCode = 500;
+            res.end(res.sentry + "\n");
+        });
+        
+        console.log('✓ Sentry Error Handler attached');
+    }
 }
 
-/**
- * Sentry error handler middleware
- */
-export function sentryErrorHandler() {
-    return Sentry.expressErrorHandler();
-}
-
-/**
- * Capture exception manually
- * @param {Error} error - Error to capture
- * @param {Object} context - Additional context
- */
 export function captureException(error, context = {}) {
     if (process.env.SENTRY_DSN) {
         Sentry.withScope((scope) => {
@@ -69,31 +50,6 @@ export function captureException(error, context = {}) {
                 scope.setExtra(key, value);
             });
             Sentry.captureException(error);
-        });
-    }
-}
-
-/**
- * Capture message manually
- * @param {string} message - Message to capture
- * @param {string} level - Sentry level (info, warning, error)
- */
-export function captureMessage(message, level = 'info') {
-    if (process.env.SENTRY_DSN) {
-        Sentry.captureMessage(message, level);
-    }
-}
-
-/**
- * Set user context for Sentry
- * @param {Object} user - User data
- */
-export function setUser(user) {
-    if (process.env.SENTRY_DSN && user) {
-        Sentry.setUser({
-            id: user.id,
-            username: user.username,
-            email: user.email,
         });
     }
 }

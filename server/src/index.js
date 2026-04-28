@@ -127,7 +127,7 @@ import { apiLogger } from './middleware/apiLogger.js';
 import { initRedis } from './services/redis.js';
 import { checkExpiredLicenses } from './middleware/license.js';
 import { globalErrorHandler } from './middleware/errorMiddleware.js';
-import { initSentry, sentryErrorHandler } from './config/sentry.js';
+import { initSentry, setupSentryErrorHandler } from './config/sentry.js';
 import { backupService } from './services/backup.js';
 import schedulerService from './services/scheduler.js';
 
@@ -453,8 +453,13 @@ app.get('/health', async (req, res) => {
 
 // SPA fallback уже обработан выше (строка 130) через express.static + regex route
 
+// Sentry debug route
+app.get('/api/debug-sentry', (req, res) => {
+    throw new Error('My first Sentry error from SmartPOS Pro!');
+});
+
 // Sentry error handler (before global error handler)
-app.use(sentryErrorHandler());
+setupSentryErrorHandler(app);
 
 // Глобальный обработчик ошибок (должен быть последним)
 app.use(globalErrorHandler);
