@@ -9,6 +9,9 @@ RUN npm ci --only=production
 # Copy server source
 COPY server/ .
 
+# Copy mobile PWA dist (mpos/dist → /app/mobile-dist)
+COPY mpos/dist/ ./mobile-dist/
+
 # Environment (non-sensitive only; secrets come from Railway env vars at runtime)
 ENV NODE_ENV=production
 ENV PORT=5000
