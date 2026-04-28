@@ -155,9 +155,14 @@ const mobileDistPath = mobileFallbackPaths.find(p => fs.existsSync(p)) || mobile
 console.log('[Static] Mobile PWA path:', mobileDistPath, '| exists:', fs.existsSync(mobileDistPath));
 
 if (fs.existsSync(mobileDistPath)) {
-    // Статика для /mobile (JS бандл, шрифты, favicon, index.html)
-    // Пути в index.html уже переписаны на /mobile/... после билда
-    app.use('/mobile', express.static(mobileDistPath, { maxAge: '7d' }));
+    // Статика для /mobile (JS бандл, шрифты, favicon)
+    app.use('/mobile', express.static(mobileDistPath, {
+        maxAge: 0,
+        setHeaders: (res, filePath) => {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.set('Pragma', 'no-cache');
+        }
+    }));
     
     // SPA fallback: любой маршрут без расширения → index.html
     app.use('/mobile', (req, res, next) => {
@@ -166,6 +171,7 @@ if (fs.existsSync(mobileDistPath)) {
         }
         const indexPath = path.join(mobileDistPath, 'index.html');
         if (fs.existsSync(indexPath)) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
             res.sendFile(indexPath);
         } else {
             res.status(404).send('Mobile app not found');
