@@ -121,7 +121,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // === Мобильное PWA (mpos/dist) по пути /mobile ===
-const mobileDistPath = process.env.MOBILE_DIST_PATH || path.resolve(__dirname, '..', '..', 'mpos', 'dist');
+const mobileFallbackPaths = [
+    process.env.MOBILE_DIST_PATH,
+    path.resolve(__dirname, '..', '..', 'mpos', 'dist'),        // dev: server/src/../../mpos/dist
+    path.resolve(process.cwd(), '..', 'mpos', 'dist'),           // Railway: /app/../mpos/dist
+    path.resolve(process.cwd(), 'mpos', 'dist'),                 // Railway: /app/mpos/dist (если cwd = root)
+    path.resolve(__dirname, '..', 'mobile-dist'),                // server/mobile-dist (ручная копия)
+    path.resolve(process.cwd(), 'mobile-dist'),                  // cwd/mobile-dist
+].filter(Boolean);
+const mobileDistPath = mobileFallbackPaths.find(p => fs.existsSync(p)) || mobileFallbackPaths[1];
 console.log('[Static] Mobile PWA path:', mobileDistPath, '| exists:', fs.existsSync(mobileDistPath));
 
 if (fs.existsSync(mobileDistPath)) {
