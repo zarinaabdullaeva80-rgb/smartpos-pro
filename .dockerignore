@@ -26,6 +26,9 @@ Thumbs.db
 
 # Build
 dist/
+!mpos/dist/
+!client-accounting/dist/
+!server/client-dist/
 build/
 dist-electron/
 
