@@ -1,10 +1,8 @@
 [build]
-builder = "dockerfile"
-dockerfilePath = "server/Dockerfile"
-watchPatterns = ["server/**", "mpos/dist/**"]
+builder = "nixpacks"
 
 [deploy]
-startCommand = "node src/index.js"
+startCommand = "node server/src/index.js"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/api/health"
