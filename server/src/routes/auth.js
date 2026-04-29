@@ -151,6 +151,13 @@ router.post('/login', async (req, res) => {
                         return res.status(403).json({ error: 'Лицензия неактивна. Обратитесь к администратору.' });
                     }
                     expectedLicenseId = licKeyRes.rows[0].id;
+                } else {
+                    // Ключ передан, но его НЕТ в базе (удален или не существует)
+                    console.warn(`[AUTH] Login attempt with unknown/deleted license key: ${license_key}`);
+                    return res.status(403).json({ 
+                        error: 'Лицензия не найдена или удалена. Обратитесь к администратору.',
+                        code: 'LICENSE_NOT_FOUND'
+                    });
                 }
             } catch (e) {
                 console.log('License key lookup error:', e.message);

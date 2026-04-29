@@ -21,11 +21,11 @@ async function syncToCloud(licenseData) {
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(`${CLOUD_SERVER_URL}/api/license/sync`, {
+        const response = await fetch(`${process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app'}/api/license/sync`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Secret': CLOUD_SYNC_SECRET
+                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026'
             },
             body: JSON.stringify(licenseData),
             signal: controller.signal
@@ -50,23 +50,34 @@ async function deleteFromCloud(licenseKey) {
     if (isCloud) return { skipped: true, reason: 'already cloud' };
 
     try {
+        console.log(`[SYNC-DELETE] 🚀 Notifying cloud about deleted license: ${licenseKey}`);
+        
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(`${CLOUD_SERVER_URL}/api/license/sync-delete`, {
+        
+        const response = await fetch(`${process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app'}/api/license/sync-delete`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Secret': CLOUD_SYNC_SECRET
+                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026'
             },
             body: JSON.stringify({ license_key: licenseKey }),
             signal: controller.signal
         });
+        
         clearTimeout(timeoutId);
+        
         const result = await response.json();
-        console.log('[SYNC-DELETE] Cloud response:', result);
+        
+        if (response.ok) {
+            console.log(`[SYNC-DELETE] ✅ Cloud confirmed deletion:`, result);
+        } else {
+            console.error(`[SYNC-DELETE] ❌ Cloud rejected deletion (HTTP ${response.status}):`, result);
+        }
+        
         return result;
     } catch (error) {
-        console.error('[SYNC-DELETE] Cloud sync-delete failed (non-blocking):', error.message);
+        console.error('[SYNC-DELETE] ❌ Cloud sync-delete failed (non-blocking):', error.message);
         return { error: error.message };
     }
 }
