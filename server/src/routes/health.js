@@ -25,7 +25,7 @@ router.get('/health', async (req, res) => {
         uptime: process.uptime(),
         message: 'OK',
         timestamp: new Date().toISOString(),
-        version: '3.0.0',
+        version: '4.2.8',
         environment: process.env.NODE_ENV || 'development'
     };
 
