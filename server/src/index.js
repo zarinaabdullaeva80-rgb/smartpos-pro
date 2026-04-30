@@ -189,17 +189,28 @@ if (fs.existsSync(mobileDistPath)) {
 }
 
 // === Админ-панель (admin-panel/app) по пути /admin ===
-const adminPanelPath = process.env.ADMIN_PANEL_PATH || path.resolve(__dirname, '..', '..', 'admin-panel', 'app');
+let adminPanelPath = process.env.ADMIN_PANEL_PATH || '';
+const adminFallbackPaths = [
+    adminPanelPath,
+    path.resolve(__dirname, '..', '..', 'admin-panel', 'app'),  // dev: server/src/../../admin-panel/app
+    path.resolve(process.cwd(), 'admin-panel', 'app'),           // Railway: /app/admin-panel/app
+    path.resolve(process.cwd(), 'admin-panel'),                // Railway: /app/admin-panel
+    path.resolve(__dirname, '..', 'admin-panel'),              // Alternative
+].filter(Boolean);
+
+adminPanelPath = adminFallbackPaths.find(p => fs.existsSync(p)) || adminFallbackPaths[1];
 console.log('[Static] Admin panel path:', adminPanelPath, '| exists:', fs.existsSync(adminPanelPath));
 
 if (fs.existsSync(adminPanelPath)) {
     app.use('/admin', express.static(adminPanelPath, { 
-        maxAge: 0,  // Без кэша — всегда свежие файлы
+        maxAge: 0, 
         setHeaders: (res) => {
             res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
         }
     }));
     console.log('[Static] ✅ Admin panel available at /admin');
+} else {
+    console.warn('[Static] ❌ Admin panel NOT found! Searched in:', adminFallbackPaths);
 }
 
 // === Десктопное приложение (client-accounting/dist) ===
