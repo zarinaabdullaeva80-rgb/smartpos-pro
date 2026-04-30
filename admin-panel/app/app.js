@@ -1437,8 +1437,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     const savedToken = localStorage.getItem('admin_token');
     const savedUser = localStorage.getItem('admin_user');
     const savedPass = localStorage.getItem('admin_pass');
+    const currentOrigin = window.location.origin;
 
-    if (savedUrl) document.getElementById('server-url').value = savedUrl;
+    if (savedUrl) {
+        document.getElementById('server-url').value = savedUrl;
+    } else if (currentOrigin && !currentOrigin.includes('file://')) {
+        document.getElementById('server-url').value = currentOrigin;
+    }
     if (savedUser) document.getElementById('login-user').value = savedUser;
     if (savedPass) document.getElementById('login-pass').value = atob(savedPass);
 
