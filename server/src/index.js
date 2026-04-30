@@ -8,10 +8,31 @@ import path from 'path';
 import pool from './config/database.js';
 import { initDatabase } from './config/initDatabase.js';
 import { initGoogleSheets, syncAllData } from './services/googleSheets.js';
-import { exec } from 'child_process';
 import { promisify } from 'util';
+import bcrypt from 'bcrypt';
 
 const execAsync = promisify(exec);
+
+// Функция для гарантии наличия админа (для свежих деплоев в Railway)
+async function ensureAdminUser() {
+    try {
+        const adminCheck = await pool.query("SELECT id FROM users WHERE username = 'admin' LIMIT 1");
+        if (adminCheck.rows.length === 0) {
+            console.log('👤 [Init] Admin user not found, creating default...');
+            const roleRes = await pool.query("SELECT id FROM roles WHERE name = 'Администратор' LIMIT 1");
+            const roleId = roleRes.rows[0]?.id || 1;
+            const hash = await bcrypt.hash('admin123', 10);
+            
+            await pool.query(
+                'INSERT INTO users (username, password_hash, email, full_name, role_id, role, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                ['admin', hash, 'admin@example.com', 'System Administrator', roleId, 'Администратор', true]
+            );
+            console.log('✅ [Init] Default admin created: admin / admin123');
+        }
+    } catch (err) {
+        console.error('❌ [Init] Error ensuring admin user:', err.message);
+    }
+}
 
 // === Sentry Error Monitoring ===
 let Sentry = null;
@@ -529,6 +550,7 @@ async function startServer() {
         // Инициализация базы данных (создание таблиц если не существуют)
         try {
             await initDatabase(pool);
+            await ensureAdminUser(); // Гарантируем наличие админа
         } catch (initErr) {
             console.error('⚠️ Ошибка инициализации БД (не критично):', initErr.message);
         }

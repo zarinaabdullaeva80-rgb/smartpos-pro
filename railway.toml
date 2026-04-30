@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "node server/src/index.js"
+startCommand = "node server/src/scripts/runMigrations.js && node server/src/index.js"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/api/health"
