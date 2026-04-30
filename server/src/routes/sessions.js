@@ -59,16 +59,22 @@ router.use(async (req, res, next) => {
     next();
 });
 
-// Получить активные сессии
-router.get('/', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+// Получить активные сессии (★ с фильтрацией по organization_id)
+router.get('/', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
-        const result = await pool.query(`
+        const orgId = req.user?.organization_id;
+        let query = `
             SELECT s.*, u.username, u.full_name, u.email
             FROM user_sessions s
             LEFT JOIN users u ON s.user_id = u.id
-            WHERE s.is_active = true
-            ORDER BY s.last_activity DESC
-        `);
+            WHERE s.is_active = true`;
+        const params = [];
+        if (orgId) {
+            query += ` AND u.organization_id = $1`;
+            params.push(orgId);
+        }
+        query += ` ORDER BY s.last_activity DESC`;
+        const result = await pool.query(query, params);
 
         res.json({ sessions: result.rows });
     } catch (error) {
@@ -77,14 +83,19 @@ router.get('/', authenticate, authorize('admin', 'superadmin'), async (req, res)
     }
 });
 
-// Завершить сессию
-router.delete('/:id', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+// Завершить сессию (★ только в пределах организации)
+router.delete('/:id', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
         const { id } = req.params;
+        const orgId = req.user?.organization_id;
 
-        await pool.query(`
-            UPDATE user_sessions SET is_active = false WHERE id = $1
-        `, [id]);
+        let query = `UPDATE user_sessions SET is_active = false WHERE id = $1`;
+        const params = [id];
+        if (orgId) {
+            query += ` AND user_id IN (SELECT id FROM users WHERE organization_id = $2)`;
+            params.push(orgId);
+        }
+        await pool.query(query, params);
 
         res.json({ success: true, message: 'Session terminated' });
     } catch (error) {
@@ -93,14 +104,19 @@ router.delete('/:id', authenticate, authorize('admin', 'superadmin'), async (req
     }
 });
 
-// Завершить ВСЕ сессии (кроме текущей)
-router.post('/terminate-all', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+// Завершить ВСЕ сессии (кроме текущей, ★ только в пределах организации)
+router.post('/terminate-all', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
-        const result = await pool.query(`
-            UPDATE user_sessions SET is_active = false 
-            WHERE is_active = true AND user_id != $1
-            RETURNING id
-        `, [req.user.id]);
+        const orgId = req.user?.organization_id;
+        let query = `UPDATE user_sessions SET is_active = false 
+            WHERE is_active = true AND user_id != $1`;
+        const params = [req.user.id];
+        if (orgId) {
+            query += ` AND user_id IN (SELECT id FROM users WHERE organization_id = $2)`;
+            params.push(orgId);
+        }
+        query += ` RETURNING id`;
+        const result = await pool.query(query, params);
 
         res.json({ success: true, terminated: result.rowCount });
     } catch (error) {

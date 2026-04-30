@@ -164,14 +164,12 @@ router.post('/validate', async (req, res) => {
                 WHERE license_key = $1
             `, [license_key]);
         } catch (dbError) {
-            // Таблица licenses может не существовать в локальной БД — пропускаем
             console.log('[License] Local DB error (table may not exist):', dbError.message);
             licenseResult = { rows: [] };
         }
 
         if (licenseResult.rows.length === 0) {
             // Проверяем, не является ли ЭТОТ сервер облачным (Railway)
-            // Если да — не вызываем сам себя (это вызовет бесконечный цикл!)
             const isCloudServer = process.env.RAILWAY_ENVIRONMENT
                 || process.env.RAILWAY_PROJECT_ID
                 || (req.get('host') || '').includes('railway.app');
@@ -182,6 +180,24 @@ router.post('/validate', async (req, res) => {
                     valid: false,
                     error: 'Лицензионный ключ не найден. Обратитесь к администратору.'
                 });
+            }
+
+            // ★ ЗАЩИТА: Проверяем, не была ли эта лицензия УДАЛЕНА локально
+            // Если да — не проксируем в облако (там она может ещё существовать)
+            try {
+                const deletedCheck = await pool.query(
+                    "SELECT id FROM license_history WHERE details::text LIKE $1 AND action = 'deleted' LIMIT 1",
+                    ['%' + license_key + '%']
+                );
+                if (deletedCheck.rows.length > 0) {
+                    console.warn('[License] Key ' + license_key + ' was DELETED locally - blocking cloud proxy');
+                    return res.status(404).json({
+                        valid: false,
+                        error: 'Лицензия была удалена. Обратитесь к администратору.'
+                    });
+                }
+            } catch (historyErr) {
+                console.log('[License] History check error:', historyErr.message);
             }
 
             // Локальный сервер — проверяем на центральном сервере Railway

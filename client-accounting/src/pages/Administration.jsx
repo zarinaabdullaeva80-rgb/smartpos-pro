@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
     Users, Shield, Activity, Clock, LogOut, CheckCircle, AlertCircle, 
-    ArrowRight, History, Settings, RefreshCw, Key, Monitor, Cloud 
+    ArrowRight, History, Settings, RefreshCw, Key, Monitor, Cloud,
+    Globe, HardDrive, Database, Cpu, MemoryStick, Zap, Pause, BarChart3,
+    Download, Upload, Trash2, UserPlus, EyeOff, Eye, X, Check
 } from 'lucide-react';
 import LicenseTimer from '../components/LicenseTimer';
 import { systemAdminAPI, usersAdminAPI, sessionsAPI, backupAdminAPI, databaseAdminAPI, licenseAdminAPI } from '../services/api';

@@ -164,13 +164,37 @@ router.post('/login', async (req, res) => {
             }
         }
 
-        // 1. Поиск пользователя в таблице users (безопасный запрос с fallback)
+        // 1. Поиск пользователя в таблице users
+        // ★ МУЛЬТИТЕНАНТ: если передан license_key, ищем пользователя ВНУТРИ организации лицензии
         let result;
         try {
-            result = await pool.query(
-                'SELECT id, username, email, password_hash, full_name, role, is_active, user_type, organization_id FROM users WHERE LOWER(username) = LOWER($1)',
-                [username]
-            );
+            if (expectedLicenseId) {
+                // Приоритетный поиск: пользователь привязан к организации этой лицензии
+                result = await pool.query(
+                    `SELECT id, username, email, password_hash, full_name, role, is_active, user_type, organization_id
+                     FROM users
+                     WHERE LOWER(username) = LOWER($1)
+                       AND (
+                         license_id = $2
+                         OR organization_id = (SELECT organization_id FROM licenses WHERE id = $2 LIMIT 1)
+                         OR (organization_id IS NULL AND license_id IS NULL)
+                       )
+                     ORDER BY CASE
+                       WHEN license_id = $2 THEN 0
+                       WHEN organization_id IS NOT NULL THEN 1
+                       ELSE 2
+                     END
+                     LIMIT 1`,
+                    [username, expectedLicenseId]
+                );
+                console.log(`[AUTH] Tenant-aware search for "${username}" in license #${expectedLicenseId}: ${result.rows.length} found`);
+            } else {
+                // Без лицензии — глобальный поиск (для локальных развёртываний)
+                result = await pool.query(
+                    'SELECT id, username, email, password_hash, full_name, role, is_active, user_type, organization_id FROM users WHERE LOWER(username) = LOWER($1)',
+                    [username]
+                );
+            }
         } catch (userQueryErr) {
             console.error('Error querying users table:', userQueryErr.message);
             // Fallback: минимальный запрос
