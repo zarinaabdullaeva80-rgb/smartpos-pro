@@ -1,0 +1,2 @@
+server/updates/*.exe filter=lfs diff=lfs merge=lfs -text
+server/updates/*.blockmap filter=lfs diff=lfs merge=lfs -text
