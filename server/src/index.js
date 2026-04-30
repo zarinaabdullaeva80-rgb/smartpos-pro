@@ -80,24 +80,6 @@ console.error = logError;
 console.warn = log;
 console.info = log;
 
-console.log('--- SERVER START ---');
-console.log('cwd:', process.cwd());
-console.log('__dirname:', __dirname);
-console.log('env.PORT:', process.env.PORT);
-
-// Диагностика структуры папок для Railway
-try {
-    const filesInCwd = fs.readdirSync(process.cwd());
-    console.log('Files in CWD:', filesInCwd);
-    const parentDir = path.resolve(process.cwd(), '..');
-    if (fs.existsSync(parentDir)) {
-        console.log('Files in Parent Dir:', fs.readdirSync(parentDir));
-    }
-} catch (e) {
-    console.log('Diagnostic failed:', e.message);
-}
-
-
 // Routes
 import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
@@ -176,6 +158,19 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Диагностика структуры папок для Railway
+try {
+    console.log('--- SERVER START ---');
+    console.log('cwd:', process.cwd());
+    console.log('__dirname:', __dirname);
+    console.log('env.PORT:', process.env.PORT);
+    
+    const filesInCwd = fs.readdirSync(process.cwd());
+    console.log('Files in CWD:', filesInCwd);
+} catch (e) {
+    console.log('Diagnostic failed:', e.message);
+}
 
 // === Мобильное PWA (mpos/dist) по пути /mobile ===
 const mobileFallbackPaths = [
