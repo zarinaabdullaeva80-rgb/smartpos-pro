@@ -2,4 +2,4 @@
 installCommand = "npm install && cd server && npm install"
 
 [start]
-command = "node server/src/index.js"
+command = "node server/src/scripts/runMigrations.js && node server/src/index.js"

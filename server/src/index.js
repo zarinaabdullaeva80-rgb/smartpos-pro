@@ -82,8 +82,21 @@ console.info = log;
 
 console.log('--- SERVER START ---');
 console.log('cwd:', process.cwd());
+console.log('__dirname:', __dirname);
 console.log('env.PORT:', process.env.PORT);
-console.log('env.DATABASE_URL existing:', !!process.env.DATABASE_URL);
+
+// Диагностика структуры папок для Railway
+try {
+    const filesInCwd = fs.readdirSync(process.cwd());
+    console.log('Files in CWD:', filesInCwd);
+    const parentDir = path.resolve(process.cwd(), '..');
+    if (fs.existsSync(parentDir)) {
+        console.log('Files in Parent Dir:', fs.readdirSync(parentDir));
+    }
+} catch (e) {
+    console.log('Diagnostic failed:', e.message);
+}
+
 
 // Routes
 import authRoutes from './routes/auth.js';
