@@ -19,14 +19,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Поддержка DATABASE_URL (CI/CD) и отдельных переменных (.env)
+const getSSLConfig = () => {
+    const connStr = process.env.DATABASE_URL || '';
+    if (connStr.includes('postgres.railway.internal')) return false;
+    if (connStr.includes('.rlwy.') || connStr.includes('neon.tech')) return { rejectUnauthorized: false };
+    return false;
+};
+
 const pool = process.env.DATABASE_URL
-    ? new Pool({ connectionString: process.env.DATABASE_URL })
+    ? new Pool({ 
+        connectionString: process.env.DATABASE_URL,
+        ssl: getSSLConfig()
+    })
     : new Pool({
         host: process.env.DB_HOST || 'localhost',
         port: process.env.DB_PORT || 5432,
         database: process.env.DB_NAME || 'accounting_db',
         user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || ''
+        password: process.env.DB_PASSWORD || '',
+        ssl: getSSLConfig()
     });
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../../database/migrations');
