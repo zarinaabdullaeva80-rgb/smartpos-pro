@@ -13,7 +13,7 @@
     "server": {
         "_comment": "Режим работы: local (свой сервер), remote (удалённый), cloud (облако)",
         "mode": "local",
-        "address": "192.168.1.35",
+        "address": "192.168.1.33",
         "port": 5000,
         "remote_url": ""
     },

@@ -1674,139 +1674,139 @@ router.get('/:id/export', authenticate, async (req, res) => {
  * Каскадное удаление лицензии и ВСЕХ связанных данных
  * Только для super_admin / owner, только после экспорта (confirmed=true)
  */
+/**
+ * DELETE /api/license/:id
+ * ГЛАВНЫЙ РОУТ УДАЛЕНИЯ (ИСПРАВЛЕННЫЙ)
+ * Глубокое удаление с использованием SAVEPOINT для каждой таблицы
+ */
 router.delete('/:id', authenticate, async (req, res) => {
+    const { id } = req.params;
+    const { confirmed } = req.query;
+
+    // Проверка прав — только super_admin / owner
+    const userType = req.user.user_type || '';
+    const userRole = req.user.role || '';
+    if (!['super_admin', 'admin', 'owner'].includes(userType) && !['Администратор', 'admin'].includes(userRole)) {
+        return res.status(403).json({ error: 'Только администратор может удалять лицензии' });
+    }
+
+    if (confirmed !== 'true') {
+        return res.status(400).json({ 
+            error: 'Требуется подтверждение удаления. Сначала экспортируйте данные.',
+            hint: 'Добавьте ?confirmed=true'
+        });
+    }
+
+    const client = await pool.connect();
     try {
-        const { id } = req.params;
-        const { confirmed } = req.query;
+        // 0. Получаем данные лицензии
+        const licRes = await client.query('SELECT id, license_key, customer_name, organization_id FROM licenses WHERE id = $1', [id]);
+        if (licRes.rows.length === 0) return res.status(404).json({ error: 'Лицензия не найдена' });
+        const { license_key, customer_name, organization_id } = licRes.rows[0];
 
-        // Проверка прав — только super_admin / owner
-        const userType = req.user.user_type || '';
-        const userRole = req.user.role || '';
-        if (!['super_admin', 'admin', 'owner'].includes(userType) && !['Администратор', 'admin'].includes(userRole)) {
-            return res.status(403).json({ error: 'Только администратор может удалять лицензии' });
-        }
+        console.log(`[DEEP-DELETE] 🚀 Starting NUCLEAR cleanup for License: ${license_key} (ID: ${id}), Org: ${organization_id}`);
 
-        // Проверка подтверждения
-        if (confirmed !== 'true') {
-            return res.status(400).json({ 
-                error: 'Требуется подтверждение удаления. Сначала экспортируйте данные.',
-                hint: 'Добавьте ?confirmed=true после экспорта данных'
-            });
-        }
+        await client.query('BEGIN');
+        let currentStep = 'START';
 
-        // Проверка существования лицензии
-        const licCheck = await pool.query('SELECT id, customer_name, license_key FROM licenses WHERE id = $1', [id]);
-        if (licCheck.rows.length === 0) {
-            return res.status(404).json({ error: 'Лицензия не найдена' });
-        }
-        const licInfo = licCheck.rows[0];
-
-        // Каскадное удаление в транзакции
-        const client = await pool.connect();
         try {
-            await client.query('BEGIN');
-
-            const deletedCounts = {};
-
-            // 1. Удаляем позиции продаж (через sales)
-            try {
-                const salesIds = await client.query('SELECT id FROM sales WHERE license_id = $1', [id]);
-                if (salesIds.rows.length > 0) {
-                    const ids = salesIds.rows.map(r => r.id);
-                    await client.query('DELETE FROM sale_items WHERE sale_id = ANY($1::int[])', [ids]);
-                    try { await client.query('DELETE FROM sale_payment_details WHERE sale_id = ANY($1::int[])', [ids]); } catch (e) {}
-                }
-            } catch (e) {}
-
-            // 2. Удаляем позиции закупок (через purchases)
-            try {
-                const purchaseIds = await client.query('SELECT id FROM purchases WHERE license_id = $1', [id]);
-                if (purchaseIds.rows.length > 0) {
-                    const ids = purchaseIds.rows.map(r => r.id);
-                    await client.query('DELETE FROM purchase_items WHERE purchase_id = ANY($1::int[])', [ids]);
-                }
-            } catch (e) {}
-
-                        // 3. Отвязываем аудит
-            try {
-                await client.query('UPDATE audit_log SET user_id = NULL, license_id = NULL WHERE license_id = $1', [id]);
-                await client.query('UPDATE audit_log SET user_id = NULL WHERE user_id IN (SELECT id FROM users WHERE license_id = $1 OR created_by_license_id = $1)', [id]);
-            } catch (e) {}
-
-            // 4. Удаляем роли
-            try {
-                await client.query('DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE license_id = $1 OR created_by_license_id = $1)', [id]);
-            } catch (e) {}
-
-            // 5. Удаляем основные таблицы
-            const tables = [
-                'telegram_chats', 'telegram_bots',
-                'inventory_movements', 'sales', 'purchases',
-                'customers', 'warehouses', 'products',
-                'license_activations', 'license_history'
-            ];
-
-            for (const table of tables) {
-                try {
-                    const r = await client.query(`DELETE FROM ${table} WHERE license_id = $1`, [id]);
-                    deletedCounts[table] = r.rowCount;
-                } catch (e) {
-                    deletedCounts[table] = 0;
+            // 1. Динамический поиск всех таблиц с organization_id
+            if (organization_id) {
+                currentStep = 'GET_ORG_TABLES';
+                const orgTablesRes = await client.query(`
+                    SELECT table_name FROM information_schema.columns 
+                    WHERE table_schema = 'public' AND column_name = 'organization_id'
+                    AND table_name NOT IN ('organizations', 'licenses')
+                `);
+                
+                for (const row of orgTablesRes.rows) {
+                    const tName = row.table_name;
+                    try {
+                        await client.query(`SAVEPOINT sp_org_${tName}`);
+                        currentStep = `DELETE_FROM_${tName}_BY_ORG`;
+                        await client.query(`DELETE FROM "${tName}" WHERE organization_id = $1`, [organization_id]);
+                        await client.query(`RELEASE SAVEPOINT sp_org_${tName}`);
+                    } catch (e) {
+                        console.log(`   [SKIP-ORG] ${tName}: ${e.message}`);
+                        await client.query(`ROLLBACK TO SAVEPOINT sp_org_${tName}`);
+                    }
                 }
             }
 
-            // 6. Удаляем сотрудников
-            try {
-                const r = await client.query('DELETE FROM users WHERE (license_id = $1 OR created_by_license_id = $1) AND id != $2', [id, req.user.id]);
-                deletedCounts.employees = r.rowCount;
-            } catch (e) { deletedCounts.employees = 0; }
+            // 2. Динамический поиск всех таблиц с license_id
+            currentStep = 'GET_LIC_TABLES';
+            const licTablesRes = await client.query(`
+                SELECT table_name FROM information_schema.columns 
+                WHERE table_schema = 'public' AND column_name = 'license_id'
+                AND table_name NOT IN ('licenses')
+            `);
 
-            // 7. Удаляем организацию
-            try {
-                const r = await client.query('DELETE FROM organizations WHERE license_key = $1 OR id IN (SELECT organization_id FROM licenses WHERE id = $2)', [licInfo.license_key, id]);
-                deletedCounts.organizations = r.rowCount;
-            } catch (e) { deletedCounts.organizations = 0; }
+            for (const row of licTablesRes.rows) {
+                const tName = row.table_name;
+                try {
+                    await client.query(`SAVEPOINT sp_lic_${tName}`);
+                    currentStep = `DELETE_FROM_${tName}_BY_LIC`;
+                    
+                    if (tName === 'users') {
+                        // Чистим роли отдельно
+                        try {
+                            await client.query(`SAVEPOINT sp_roles`);
+                            await client.query('DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE license_id = $1)', [id]);
+                            await client.query(`RELEASE SAVEPOINT sp_roles`);
+                        } catch (e) { await client.query(`ROLLBACK TO SAVEPOINT sp_roles`); }
+                        
+                        // Удаляем всех кроме текущего пользователя (чтобы не разлогинило админа в процессе)
+                        await client.query('DELETE FROM users WHERE license_id = $1 AND id != $2', [id, req.user.id || 0]);
+                    } else {
+                        await client.query(`DELETE FROM "${tName}" WHERE license_id = $1`, [id]);
+                    }
+                    await client.query(`RELEASE SAVEPOINT sp_lic_${tName}`);
+                } catch (e) {
+                    console.log(`   [SKIP-LIC] ${tName}: ${e.message}`);
+                    await client.query(`ROLLBACK TO SAVEPOINT sp_lic_${tName}`);
+                }
+            }
 
-            // 8. Удаляем лицензию
-            const result = await client.query('DELETE FROM licenses WHERE id = $1 RETURNING *', [id]);
+            // 3. Финальный снос Организации и Лицензии
+            currentStep = 'DELETE_ORG_FINAL';
+            try {
+                await client.query('SAVEPOINT sp_final_org');
+                if (organization_id) {
+                    await client.query('DELETE FROM organizations WHERE id = $1', [organization_id]);
+                } else {
+                    await client.query('DELETE FROM organizations WHERE license_key = $1', [license_key]);
+                }
+                await client.query('RELEASE SAVEPOINT sp_final_org');
+            } catch (e) { 
+                await client.query('ROLLBACK TO SAVEPOINT sp_final_org');
+                console.log('   [SKIP] organizations final delete failed');
+            }
+
+            currentStep = 'DELETE_LICENSE_FINAL';
+            await client.query('DELETE FROM licenses WHERE id = $1', [id]);
 
             await client.query('COMMIT');
+            console.log(`[DEEP-DELETE] ✅ SUCCESS: License ${license_key} and Org ${organization_id} removed.`);
+            
+            // Синхронизация с облаком (неблокирующая)
+            deleteFromCloud(license_key).catch(e => console.error('Cloud sync err:', e.message));
+            
+            res.json({ success: true, message: `Лицензия "${customer_name}" успешно удалена.` });
 
-            // Аудит
-            try {
-                await pool.query(
-                    `INSERT INTO audit_log (user_id, action, table_name, record_id, old_values, ip_address, created_at)
-                     VALUES ($1, 'DELETE_LICENSE', 'licenses', $2, $3, $4, NOW())`,
-                    [req.user.id, id, JSON.stringify({ customer_name: licInfo.customer_name, license_key: licInfo.license_key, deleted_counts: deletedCounts }), req.ip]
-                );
-            } catch (e) {}
-
-            // ★ Синхронизировать удаление на облачный сервер Railway
-            let cloudDeleteResult = null;
-            try {
-                cloudDeleteResult = await deleteFromCloud(licInfo.license_key);
-                console.log('[License Delete] Cloud sync-delete:', cloudDeleteResult?.success ? '✅ OK' : '⚠️ ' + (cloudDeleteResult?.error || 'unknown'));
-            } catch (syncErr) {
-                console.warn('[License Delete] Cloud sync-delete error (non-blocking):', syncErr.message);
-            }
-
-            console.log(`[License Delete] License ${id} (${licInfo.customer_name}) fully deleted. Counts:`, deletedCounts);
-
-            res.json({ 
-                success: true, 
-                message: `Лицензия "${licInfo.customer_name}" и все связанные данные удалены`,
-                deleted: deletedCounts,
-                cloud_deleted: cloudDeleteResult?.success || false
-            });
         } catch (txError) {
             await client.query('ROLLBACK');
-            throw txError;
-        } finally {
-            client.release();
+            throw { message: txError.message, step: currentStep };
         }
     } catch (error) {
-        console.error('Error deleting license:', error);
-        res.status(500).json({ error: error.message });
+        console.error('[DEEP-DELETE] ❌ CRITICAL ERROR:', error);
+        const failStep = error.step || 'PRE-TRANSACTION';
+        res.status(500).json({ 
+            error: `[Step: ${failStep}] ${error.message}`,
+            step: failStep,
+            detail: 'Database cleanup failed. Check server logs.'
+        });
+    } finally {
+        client.release();
     }
 });
 

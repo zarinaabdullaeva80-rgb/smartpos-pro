@@ -38,12 +38,23 @@ class SchedulerService {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS sync_settings (
                 id SERIAL PRIMARY KEY,
-                setting_key VARCHAR(100) UNIQUE NOT NULL,
+                setting_key VARCHAR(100) NOT NULL,
                 setting_value TEXT,
                 description TEXT,
+                organization_id INTEGER DEFAULT 1,
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         `);
+
+        // Добавить колонку organization_id и уникальный индекс если не существуют
+        try {
+            await pool.query(`ALTER TABLE sync_settings ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1`);
+            await pool.query(`ALTER TABLE sync_settings DROP CONSTRAINT IF EXISTS sync_settings_setting_key_key`); // Старый индекс
+            await pool.query(`ALTER TABLE sync_settings DROP CONSTRAINT IF EXISTS sync_settings_key_org_idx`); // На всякий случай
+            await pool.query(`ALTER TABLE sync_settings ADD CONSTRAINT sync_settings_key_org_idx UNIQUE (setting_key, organization_id)`);
+        } catch (e) {
+            // Игнорируем ошибки при модификации индекса
+        }
 
         await pool.query(`
             CREATE TABLE IF NOT EXISTS sync_log (
