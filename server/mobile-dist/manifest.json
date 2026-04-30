@@ -1,0 +1,18 @@
+{
+  "name": "SmartPOS Pro Mobile",
+  "short_name": "SmartPOS",
+  "description": "Мобильная POS-система для бизнеса",
+  "start_url": "/mobile/",
+  "scope": "/mobile/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/mobile/favicon.ico",
+      "sizes": "64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}

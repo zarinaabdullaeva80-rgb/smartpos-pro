@@ -159,33 +159,17 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Диагностика структуры папок для Railway
-try {
-    console.log('--- SERVER START ---');
-    console.log('cwd:', process.cwd());
-    console.log('__dirname:', __dirname);
-    console.log('env.PORT:', process.env.PORT);
-    
-    const filesInCwd = fs.readdirSync(process.cwd());
-    console.log('Files in CWD:', filesInCwd);
-} catch (e) {
-    console.log('Diagnostic failed:', e.message);
-}
-
 // === Мобильное PWA (mpos/dist) по пути /mobile ===
 const mobileFallbackPaths = [
     process.env.MOBILE_DIST_PATH,
-    path.resolve(__dirname, '..', '..', 'mpos', 'dist'),        // dev: server/src/../../mpos/dist
-    path.resolve(process.cwd(), '..', 'mpos', 'dist'),           // Railway: /app/../mpos/dist
-    path.resolve(process.cwd(), 'mpos', 'dist'),                 // Railway: /app/mpos/dist (если cwd = root)
-    path.resolve(__dirname, '..', 'mobile-dist'),                // server/mobile-dist (ручная копия)
-    path.resolve(process.cwd(), 'mobile-dist'),                  // cwd/mobile-dist
+    path.resolve(process.cwd(), 'mobile-dist'),                  // Railway: /app/mobile-dist
+    path.resolve(__dirname, '..', 'mobile-dist'),                // server/mobile-dist
+    path.resolve(__dirname, '..', '..', 'mpos', 'dist'),        // dev local
 ].filter(Boolean);
 const mobileDistPath = mobileFallbackPaths.find(p => fs.existsSync(p)) || mobileFallbackPaths[1];
 console.log('[Static] Mobile PWA path:', mobileDistPath, '| exists:', fs.existsSync(mobileDistPath));
 
 if (fs.existsSync(mobileDistPath)) {
-    // Статика для /mobile (JS бандл, шрифты, favicon)
     app.use('/mobile', express.static(mobileDistPath, {
         maxAge: 0,
         setHeaders: (res, filePath) => {
@@ -194,11 +178,8 @@ if (fs.existsSync(mobileDistPath)) {
         }
     }));
     
-    // SPA fallback: любой маршрут без расширения → index.html
     app.use('/mobile', (req, res, next) => {
-        if (req.path.match(/\.\w+$/)) {
-            return res.status(404).send('Not found');
-        }
+        if (req.path.match(/\.\w+$/)) return res.status(404).send('Not found');
         const indexPath = path.join(mobileDistPath, 'index.html');
         if (fs.existsSync(indexPath)) {
             res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -208,12 +189,9 @@ if (fs.existsSync(mobileDistPath)) {
         }
     });
 
-    // Expo загружает шрифты по абсолютному пути /assets/...
     app.use('/assets', (req, res, next) => {
         const mobilePath = path.join(mobileDistPath, 'assets', req.path);
-        if (fs.existsSync(mobilePath)) {
-            return res.sendFile(mobilePath);
-        }
+        if (fs.existsSync(mobilePath)) return res.sendFile(mobilePath);
         next();
     });
 }
@@ -222,10 +200,9 @@ if (fs.existsSync(mobileDistPath)) {
 let adminPanelPath = process.env.ADMIN_PANEL_PATH || '';
 const adminFallbackPaths = [
     adminPanelPath,
-    path.resolve(__dirname, '..', '..', 'admin-panel', 'app'),  // dev: server/src/../../admin-panel/app
-    path.resolve(process.cwd(), 'admin-panel', 'app'),           // Railway: /app/admin-panel/app
-    path.resolve(process.cwd(), 'admin-panel'),                // Railway: /app/admin-panel
-    path.resolve(__dirname, '..', 'admin-panel'),              // Alternative
+    path.resolve(process.cwd(), 'admin-panel-static'),          // Railway: /app/admin-panel-static
+    path.resolve(__dirname, '..', 'admin-panel-static'),        // server/admin-panel-static
+    path.resolve(__dirname, '..', '..', 'admin-panel', 'app'),  // dev local
 ].filter(Boolean);
 
 adminPanelPath = adminFallbackPaths.find(p => fs.existsSync(p)) || adminFallbackPaths[1];
