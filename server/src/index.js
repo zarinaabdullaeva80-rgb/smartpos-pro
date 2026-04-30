@@ -8,6 +8,7 @@ import path from 'path';
 import pool from './config/database.js';
 import { initDatabase } from './config/initDatabase.js';
 import { initGoogleSheets, syncAllData } from './services/googleSheets.js';
+import { exec } from 'child_process';
 import { promisify } from 'util';
 import bcrypt from 'bcrypt';
 
