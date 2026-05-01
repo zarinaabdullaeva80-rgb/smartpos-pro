@@ -312,24 +312,51 @@ router.post('/bulk-import', async (req, res) => {
             }
         }
 
-        // 3. Товары
+        // 3. Товары — проверим наличие столбца sku один раз
+        let hasSku = false;
+        try {
+            const colCheck = await client.query(`
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'products' AND column_name = 'sku'
+            `);
+            hasSku = colCheck.rows.length > 0;
+        } catch (e) { /* ignore */ }
+
         for (const prod of products) {
             try {
-                await client.query(`
-                    INSERT INTO products (id, name, sku, barcode, price, cost_price, quantity, min_stock,
-                                         category_id, unit, description, is_active, organization_id, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = $2, sku = $3, barcode = $4, price = $5, cost_price = $6,
-                        quantity = $7, min_stock = $8, category_id = $9, unit = $10,
-                        description = $11, is_active = $12, updated_at = $15
-                `, [
-                    prod.id, prod.name, prod.sku || null, prod.barcode || null,
-                    prod.price || 0, prod.cost_price || 0, prod.quantity || 0, prod.min_stock || 0,
-                    prod.category_id || null, prod.unit || 'шт', prod.description || '',
-                    prod.is_active !== false, prod.organization_id || null,
-                    prod.created_at || new Date(), prod.updated_at || new Date()
-                ]);
+                if (hasSku) {
+                    await client.query(`
+                        INSERT INTO products (id, name, sku, barcode, price, cost_price, quantity, min_stock,
+                                             category_id, unit, description, is_active, organization_id, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                        ON CONFLICT (id) DO UPDATE SET
+                            name = $2, sku = $3, barcode = $4, price = $5, cost_price = $6,
+                            quantity = $7, min_stock = $8, category_id = $9, unit = $10,
+                            description = $11, is_active = $12, updated_at = $15
+                    `, [
+                        prod.id, prod.name, prod.sku || null, prod.barcode || null,
+                        prod.price || 0, prod.cost_price || 0, prod.quantity || 0, prod.min_stock || 0,
+                        prod.category_id || null, prod.unit || 'шт', prod.description || '',
+                        prod.is_active !== false, prod.organization_id || null,
+                        prod.created_at || new Date(), prod.updated_at || new Date()
+                    ]);
+                } else {
+                    await client.query(`
+                        INSERT INTO products (id, name, barcode, price, cost_price, quantity, min_stock,
+                                             category_id, unit, description, is_active, organization_id, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                        ON CONFLICT (id) DO UPDATE SET
+                            name = $2, barcode = $3, price = $4, cost_price = $5,
+                            quantity = $6, min_stock = $7, category_id = $8, unit = $9,
+                            description = $10, is_active = $11, updated_at = $14
+                    `, [
+                        prod.id, prod.name, prod.barcode || null,
+                        prod.price || 0, prod.cost_price || 0, prod.quantity || 0, prod.min_stock || 0,
+                        prod.category_id || null, prod.unit || 'шт', prod.description || '',
+                        prod.is_active !== false, prod.organization_id || null,
+                        prod.created_at || new Date(), prod.updated_at || new Date()
+                    ]);
+                }
                 stats.products++;
             } catch (e) {
                 stats.errors.push(`product ${prod.id} (${prod.name}): ${e.message}`);
