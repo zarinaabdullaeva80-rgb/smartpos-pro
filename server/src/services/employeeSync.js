@@ -5,7 +5,7 @@
  */
 import pool from '../config/database.js';
 
-const RAILWAY_API_URL = process.env.RAILWAY_API_URL || 'https://smartpos-pro-production.up.railway.app/api';
+const RAILWAY_API_URL = process.env.RAILWAY_API_URL || 'https://smartpos-pro-production-f885.up.railway.app/api';
 
 /**
  * Получить server_type и server_url для лицензии
@@ -39,26 +39,25 @@ function getCloudUrl(license) {
  */
 export async function syncEmployeeCreate(employeeData, licenseId) {
     const license = await getLicenseServerInfo(licenseId);
-    if (!license) {
-        console.log('[EmployeeSync] No license found, skipping sync');
-        return { synced: false, reason: 'no_license' };
-    }
+    
+    // Если лицензия не найдена — всё равно синхронизируем на Railway (fallback)
+    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
+    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
 
-    if (license.server_type === 'self_hosted') {
+    if (license?.server_type === 'self_hosted') {
         console.log('[EmployeeSync] License is self_hosted, skipping cloud sync');
         return { synced: false, reason: 'self_hosted' };
     }
 
-    const cloudUrl = getCloudUrl(license);
-    console.log(`[EmployeeSync] Syncing employee "${employeeData.username}" to ${cloudUrl}`);
+    console.log(`[EmployeeSync] Syncing employee "${employeeData.username}" to ${cloudUrl}${!license ? ' (fallback, no license)' : ''}`);
 
     try {
         const response = await fetch(`${cloudUrl}/employees/sync`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Key': license.server_api_key || '',
-                'X-License-Id': String(licenseId)
+                'X-Sync-Key': syncKey,
+                'X-License-Id': String(licenseId || '')
             },
             body: JSON.stringify({
                 action: 'create',
@@ -87,17 +86,18 @@ export async function syncEmployeeCreate(employeeData, licenseId) {
  */
 export async function syncEmployeeUpdate(employeeId, updateData, licenseId) {
     const license = await getLicenseServerInfo(licenseId);
-    if (!license || license.server_type === 'self_hosted') return { synced: false };
+    if (license?.server_type === 'self_hosted') return { synced: false };
 
-    const cloudUrl = getCloudUrl(license);
+    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
+    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
 
     try {
         const response = await fetch(`${cloudUrl}/employees/sync`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Key': license.server_api_key || '',
-                'X-License-Id': String(licenseId)
+                'X-Sync-Key': syncKey,
+                'X-License-Id': String(licenseId || '')
             },
             body: JSON.stringify({
                 action: 'update',
@@ -120,17 +120,18 @@ export async function syncEmployeeUpdate(employeeId, updateData, licenseId) {
  */
 export async function syncEmployeeDelete(username, licenseId) {
     const license = await getLicenseServerInfo(licenseId);
-    if (!license || license.server_type === 'self_hosted') return { synced: false };
+    if (license?.server_type === 'self_hosted') return { synced: false };
 
-    const cloudUrl = getCloudUrl(license);
+    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
+    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
 
     try {
         const response = await fetch(`${cloudUrl}/employees/sync`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Key': license.server_api_key || '',
-                'X-License-Id': String(licenseId)
+                'X-Sync-Key': syncKey,
+                'X-License-Id': String(licenseId || '')
             },
             body: JSON.stringify({
                 action: 'delete',

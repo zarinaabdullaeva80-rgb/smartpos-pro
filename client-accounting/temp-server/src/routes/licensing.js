@@ -96,7 +96,7 @@ router.post('/validate', async (req, res) => {
             // Лицензия не найдена локально — проверяем на центральном сервере Railway
             console.log('[License] Not found locally, checking Railway cloud server...');
             try {
-                const cloudResponse = await fetch('https://smartpos-pro-production.up.railway.app/api/license/validate', {
+                const cloudResponse = await fetch('https://smartpos-pro-production-f885.up.railway.app/api/license/validate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ license_key, device_id })
@@ -1142,7 +1142,7 @@ router.post('/customer/login', async (req, res) => {
             // Server configuration for client apps
             server_config: {
                 type: license.server_type || 'cloud',
-                url: license.server_type === 'self_hosted' ? license.server_url : (process.env.RAILWAY_API_URL || 'https://smartpos-pro-production.up.railway.app/api'),
+                url: license.server_type === 'self_hosted' ? license.server_url : (process.env.RAILWAY_API_URL || 'https://smartpos-pro-production-f885.up.railway.app/api'),
                 api_key: license.server_api_key
             }
         });

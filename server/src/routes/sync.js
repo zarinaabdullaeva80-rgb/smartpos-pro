@@ -266,4 +266,99 @@ router.post('/receipts', authenticate, async (req, res) => {
     });
 });
 
+/**
+ * POST /api/sync/bulk-import
+ * Массовый импорт товаров, категорий, складов из локальной БД
+ * Используется для синхронизации данных на облачный сервер
+ */
+router.post('/bulk-import', async (req, res) => {
+    const syncKey = req.headers['x-sync-key'];
+    if (syncKey !== (process.env.SYNC_SECRET_KEY || 'smartpos-sync-key')) {
+        return res.status(403).json({ error: 'Invalid sync key' });
+    }
+
+    const { categories = [], products = [], stockBalances = [], warehouses = [] } = req.body;
+    const stats = { categories: 0, products: 0, warehouses: 0, stockBalances: 0, errors: [] };
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // 1. Склады
+        for (const wh of warehouses) {
+            try {
+                await client.query(`
+                    INSERT INTO warehouses (id, name, address, is_default, organization_id, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (id) DO UPDATE SET name = $2, address = $3, is_default = $4
+                `, [wh.id, wh.name, wh.address || '', wh.is_default || false, wh.organization_id || null, wh.created_at || new Date()]);
+                stats.warehouses++;
+            } catch (e) {
+                stats.errors.push(`warehouse ${wh.id}: ${e.message}`);
+            }
+        }
+
+        // 2. Категории
+        for (const cat of categories) {
+            try {
+                await client.query(`
+                    INSERT INTO product_categories (id, name, description, parent_id, organization_id, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, parent_id = $4
+                `, [cat.id, cat.name, cat.description || '', cat.parent_id || null, cat.organization_id || null, cat.created_at || new Date()]);
+                stats.categories++;
+            } catch (e) {
+                stats.errors.push(`category ${cat.id}: ${e.message}`);
+            }
+        }
+
+        // 3. Товары
+        for (const prod of products) {
+            try {
+                await client.query(`
+                    INSERT INTO products (id, name, sku, barcode, price, cost_price, quantity, min_stock,
+                                         category_id, unit, description, is_active, organization_id, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = $2, sku = $3, barcode = $4, price = $5, cost_price = $6,
+                        quantity = $7, min_stock = $8, category_id = $9, unit = $10,
+                        description = $11, is_active = $12, updated_at = $15
+                `, [
+                    prod.id, prod.name, prod.sku || null, prod.barcode || null,
+                    prod.price || 0, prod.cost_price || 0, prod.quantity || 0, prod.min_stock || 0,
+                    prod.category_id || null, prod.unit || 'шт', prod.description || '',
+                    prod.is_active !== false, prod.organization_id || null,
+                    prod.created_at || new Date(), prod.updated_at || new Date()
+                ]);
+                stats.products++;
+            } catch (e) {
+                stats.errors.push(`product ${prod.id} (${prod.name}): ${e.message}`);
+            }
+        }
+
+        // 4. Обновить sequence чтобы новые записи не конфликтовали
+        try {
+            await client.query(`SELECT setval('products_id_seq', COALESCE((SELECT MAX(id) FROM products), 1))`);
+            await client.query(`SELECT setval('product_categories_id_seq', COALESCE((SELECT MAX(id) FROM product_categories), 1))`);
+            await client.query(`SELECT setval('warehouses_id_seq', COALESCE((SELECT MAX(id) FROM warehouses), 1))`);
+        } catch (e) { /* sequences may not exist */ }
+
+        await client.query('COMMIT');
+
+        console.log(`[BulkImport] ✅ Synced: ${stats.warehouses} warehouses, ${stats.categories} categories, ${stats.products} products`);
+
+        res.json({
+            success: true,
+            stats,
+            synced_at: new Date().toISOString()
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('[BulkImport] ❌ Error:', error.message);
+        res.status(500).json({ error: error.message, stats });
+    } finally {
+        client.release();
+    }
+});
+
 export default router;
