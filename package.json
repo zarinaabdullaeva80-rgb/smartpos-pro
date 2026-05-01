@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/src/index.js",
+    "postinstall": "cd server && npm install --production",
     "install-server": "cd server && npm install"
   },
   "devDependencies": {
