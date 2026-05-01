@@ -1118,6 +1118,7 @@ async function addMissingColumns(pool) {
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_retail DECIMAL(15, 2) DEFAULT 0',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_rate DECIMAL(5, 2) DEFAULT 20',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS license_id INTEGER',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(100)',
     ];
     for (const q of productColumns) {
         try { await pool.query(q); } catch (e) { /* ignore */ }
@@ -1153,6 +1154,7 @@ async function addMissingColumns(pool) {
     // Ensure warehouses has license_id column
     try {
         await pool.query('ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS license_id INTEGER');
+        await pool.query('ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false');
     } catch (e) { /* ignore */ }
 
     // Ensure all required columns exist on licenses table

@@ -284,16 +284,36 @@ router.post('/bulk-import', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Склады
+        // 1. Склады — проверим наличие столбца is_default
+        let hasIsDefault = false;
+        try {
+            const whColCheck = await client.query(`
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'warehouses' AND column_name = 'is_default'
+            `);
+            hasIsDefault = whColCheck.rows.length > 0;
+        } catch (e) { /* ignore */ }
+
         for (const wh of warehouses) {
             try {
-                await client.query(`
-                    INSERT INTO warehouses (id, name, address, is_default, organization_id, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (id) DO UPDATE SET name = $2, address = $3, is_default = $4
-                `, [wh.id, wh.name, wh.address || '', wh.is_default || false, wh.organization_id || null, wh.created_at || new Date()]);
+                await client.query('SAVEPOINT item_start');
+                if (hasIsDefault) {
+                    await client.query(`
+                        INSERT INTO warehouses (id, name, address, is_default, organization_id, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (id) DO UPDATE SET name = $2, address = $3, is_default = $4
+                    `, [wh.id, wh.name, wh.address || '', wh.is_default || false, wh.organization_id || null, wh.created_at || new Date()]);
+                } else {
+                    await client.query(`
+                        INSERT INTO warehouses (id, name, address, organization_id, created_at)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (id) DO UPDATE SET name = $2, address = $3
+                    `, [wh.id, wh.name, wh.address || '', wh.organization_id || null, wh.created_at || new Date()]);
+                }
+                await client.query('RELEASE SAVEPOINT item_start');
                 stats.warehouses++;
             } catch (e) {
+                await client.query('ROLLBACK TO SAVEPOINT item_start');
                 stats.errors.push(`warehouse ${wh.id}: ${e.message}`);
             }
         }
@@ -301,13 +321,16 @@ router.post('/bulk-import', async (req, res) => {
         // 2. Категории
         for (const cat of categories) {
             try {
+                await client.query('SAVEPOINT cat_start');
                 await client.query(`
                     INSERT INTO product_categories (id, name, description, parent_id, organization_id, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, parent_id = $4
                 `, [cat.id, cat.name, cat.description || '', cat.parent_id || null, cat.organization_id || null, cat.created_at || new Date()]);
+                await client.query('RELEASE SAVEPOINT cat_start');
                 stats.categories++;
             } catch (e) {
+                await client.query('ROLLBACK TO SAVEPOINT cat_start');
                 stats.errors.push(`category ${cat.id}: ${e.message}`);
             }
         }
@@ -324,6 +347,7 @@ router.post('/bulk-import', async (req, res) => {
 
         for (const prod of products) {
             try {
+                await client.query('SAVEPOINT prod_start');
                 if (hasSku) {
                     await client.query(`
                         INSERT INTO products (id, name, sku, barcode, price, cost_price, quantity, min_stock,
@@ -357,8 +381,10 @@ router.post('/bulk-import', async (req, res) => {
                         prod.created_at || new Date(), prod.updated_at || new Date()
                     ]);
                 }
+                await client.query('RELEASE SAVEPOINT prod_start');
                 stats.products++;
             } catch (e) {
+                await client.query('ROLLBACK TO SAVEPOINT prod_start');
                 stats.errors.push(`product ${prod.id} (${prod.name}): ${e.message}`);
             }
         }
