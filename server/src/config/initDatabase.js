@@ -26,6 +26,35 @@ export async function initDatabase(pool) {
         console.log('📦 Создание таблиц базы данных...');
 
         // ============================================
+        // ОРГАНИЗАЦИИ (ДЛЯ МУЛЬТИ-ТЕНАНТНОСТИ)
+        // ============================================
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS organizations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                code VARCHAR(50) UNIQUE NOT NULL,
+                license_key VARCHAR(100) UNIQUE,
+                is_active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('  ✓ organizations');
+
+        await pool.query(`
+            INSERT INTO organizations (id, name, code)
+            VALUES (1, 'Основная организация', 'MAIN')
+            ON CONFLICT (id) DO NOTHING
+        `);
+        await pool.query(`
+            INSERT INTO organizations (id, name, code)
+            VALUES (1, 'Основная организация', 'MAIN')
+            ON CONFLICT (code) DO NOTHING
+        `);
+        console.log('  ✓ default organization');
+
+        // ============================================
         // ПОЛЬЗОВАТЕЛИ И ПРАВА
         // ============================================
 
@@ -104,6 +133,7 @@ export async function initDatabase(pool) {
                 parent_id INTEGER REFERENCES product_categories(id),
                 is_active BOOLEAN DEFAULT true,
                 sort_order INTEGER DEFAULT 0,
+                organization_id INTEGER REFERENCES organizations(id),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -131,6 +161,7 @@ export async function initDatabase(pool) {
                 is_active BOOLEAN DEFAULT true,
                 image_url VARCHAR(500),
                 license_id INTEGER,
+                organization_id INTEGER REFERENCES organizations(id),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -155,6 +186,7 @@ export async function initDatabase(pool) {
                 working_hours VARCHAR(255),
                 capacity DECIMAL(15, 2),
                 is_active BOOLEAN DEFAULT true,
+                organization_id INTEGER REFERENCES organizations(id),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
