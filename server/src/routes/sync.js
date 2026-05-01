@@ -284,49 +284,48 @@ router.post('/bulk-import', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Склады — проверим наличие столбца is_default
-        let hasIsDefault = false;
+        // 1. Склады
+        let whColumns = [];
         try {
-            const whColCheck = await client.query(`
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'warehouses' AND column_name = 'is_default'
-            `);
-            hasIsDefault = whColCheck.rows.length > 0;
-        } catch (e) { /* ignore */ }
+            const res = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'warehouses'`);
+            whColumns = res.rows.map(r => r.column_name);
+        } catch (e) {}
 
         for (const wh of warehouses) {
             try {
-                await client.query('SAVEPOINT item_start');
-                if (hasIsDefault) {
-                    await client.query(`
-                        INSERT INTO warehouses (id, name, address, is_default, organization_id, created_at)
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                        ON CONFLICT (id) DO UPDATE SET name = $2, address = $3, is_default = $4
-                    `, [wh.id, wh.name, wh.address || '', wh.is_default || false, wh.organization_id || null, wh.created_at || new Date()]);
-                } else {
-                    await client.query(`
-                        INSERT INTO warehouses (id, name, address, organization_id, created_at)
-                        VALUES ($1, $2, $3, $4, $5)
-                        ON CONFLICT (id) DO UPDATE SET name = $2, address = $3
-                    `, [wh.id, wh.name, wh.address || '', wh.organization_id || null, wh.created_at || new Date()]);
-                }
-                await client.query('RELEASE SAVEPOINT item_start');
+                await client.query('SAVEPOINT wh_start');
+                const cols = ['id', 'name', 'address', 'organization_id', 'created_at'].filter(c => whColumns.includes(c));
+                if (whColumns.includes('is_default')) cols.push('is_default');
+                
+                const vals = cols.map(c => c === 'is_default' ? (wh.is_default || false) : (wh[c] || (c === 'created_at' ? new Date() : null)));
+                const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+                const updates = cols.filter(c => c !== 'id').map((c, i) => `${c} = $${i + 1}`).join(', ');
+
+                await client.query(`INSERT INTO warehouses (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updates}`, vals);
+                await client.query('RELEASE SAVEPOINT wh_start');
                 stats.warehouses++;
             } catch (e) {
-                await client.query('ROLLBACK TO SAVEPOINT item_start');
+                await client.query('ROLLBACK TO SAVEPOINT wh_start');
                 stats.errors.push(`warehouse ${wh.id}: ${e.message}`);
             }
         }
 
         // 2. Категории
+        let catColumns = [];
+        try {
+            const res = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'product_categories'`);
+            catColumns = res.rows.map(r => r.column_name);
+        } catch (e) {}
+
         for (const cat of categories) {
             try {
                 await client.query('SAVEPOINT cat_start');
-                await client.query(`
-                    INSERT INTO product_categories (id, name, description, parent_id, organization_id, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (id) DO UPDATE SET name = $2, description = $3, parent_id = $4
-                `, [cat.id, cat.name, cat.description || '', cat.parent_id || null, cat.organization_id || null, cat.created_at || new Date()]);
+                const cols = ['id', 'name', 'description', 'parent_id', 'organization_id', 'created_at'].filter(c => catColumns.includes(c));
+                const vals = cols.map(c => cat[c] || (c === 'created_at' ? new Date() : null));
+                const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+                const updates = cols.filter(c => c !== 'id').map((c, i) => `${c} = $${i + 1}`).join(', ');
+
+                await client.query(`INSERT INTO product_categories (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updates}`, vals);
                 await client.query('RELEASE SAVEPOINT cat_start');
                 stats.categories++;
             } catch (e) {
@@ -335,44 +334,35 @@ router.post('/bulk-import', async (req, res) => {
             }
         }
 
-        // 3. Товары — проверим наличие столбцов sku и cost_price
-        let hasSku = false;
-        let hasCostPrice = false;
+        // 3. Товары
+        let prodColumns = [];
         try {
-            const colCheck = await client.query(`
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'products' AND (column_name = 'sku' OR column_name = 'cost_price')
-            `);
-            hasSku = colCheck.rows.some(r => r.column_name === 'sku');
-            hasCostPrice = colCheck.rows.some(r => r.column_name === 'cost_price');
-        } catch (e) { /* ignore */ }
+            const res = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'products'`);
+            prodColumns = res.rows.map(r => r.column_name);
+        } catch (e) {}
 
         for (const prod of products) {
             try {
                 await client.query('SAVEPOINT prod_start');
                 
-                // Динамическая сборка запроса для поддержки разных схем
-                const columns = ['id', 'name', 'barcode', 'price', 'quantity', 'min_stock', 'category_id', 'unit', 'description', 'is_active', 'organization_id', 'created_at', 'updated_at'];
-                const values = [prod.id, prod.name, prod.barcode || null, prod.price || 0, prod.quantity || 0, prod.min_stock || 0, prod.category_id || null, prod.unit || 'шт', prod.description || '', prod.is_active !== false, prod.organization_id || null, prod.created_at || new Date(), prod.updated_at || new Date()];
+                const possibleCols = ['id', 'name', 'sku', 'barcode', 'price', 'cost_price', 'quantity', 'min_stock', 'category_id', 'unit', 'description', 'is_active', 'organization_id', 'created_at', 'updated_at'];
+                const cols = possibleCols.filter(c => prodColumns.includes(c));
                 
-                if (hasSku) {
-                    columns.push('sku');
-                    values.push(prod.sku || null);
-                }
-                if (hasCostPrice) {
-                    columns.push('cost_price');
-                    values.push(prod.cost_price || 0);
-                }
+                const vals = cols.map(c => {
+                    if (c === 'is_active') return prod.is_active !== false;
+                    if (c === 'created_at' || c === 'updated_at') return prod[c] || new Date();
+                    return prod[c] || null;
+                });
 
-                const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-                const updates = columns.filter(c => c !== 'id' && c !== 'organization_id' && c !== 'created_at')
-                                     .map((c, i) => `${c} = $${columns.indexOf(c) + 1}`).join(', ');
+                const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+                const updates = cols.filter(c => c !== 'id' && c !== 'organization_id' && c !== 'created_at')
+                                     .map((c, i) => `${c} = $${cols.indexOf(c) + 1}`).join(', ');
 
                 await client.query(`
-                    INSERT INTO products (${columns.join(', ')})
+                    INSERT INTO products (${cols.join(', ')})
                     VALUES (${placeholders})
                     ON CONFLICT (id) DO UPDATE SET ${updates}
-                `, values);
+                `, vals);
 
                 await client.query('RELEASE SAVEPOINT prod_start');
                 stats.products++;

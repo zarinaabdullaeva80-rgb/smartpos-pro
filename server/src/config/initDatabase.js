@@ -124,6 +124,7 @@ export async function initDatabase(pool) {
                 price_sale DECIMAL(15, 2) DEFAULT 0,
                 price_retail DECIMAL(15, 2) DEFAULT 0,
                 purchase_price DECIMAL(15, 2),
+                quantity DECIMAL(15, 3) DEFAULT 0,
                 vat_rate DECIMAL(5, 2) DEFAULT 20,
                 min_stock DECIMAL(10, 2) DEFAULT 0,
                 max_stock DECIMAL(10, 2),
@@ -1120,6 +1121,7 @@ async function addMissingColumns(pool) {
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS license_id INTEGER',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS sku VARCHAR(100)',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price DECIMAL(15, 2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS quantity DECIMAL(15, 3) DEFAULT 0',
     ];
     for (const q of productColumns) {
         try { await pool.query(q); } catch (e) { /* ignore */ }
