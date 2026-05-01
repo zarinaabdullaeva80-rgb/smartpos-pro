@@ -20,6 +20,7 @@ const Warehouse = () => {
     const [showModal, setShowModal] = useState(false);
     const [modalType, setModalType] = useState(''); // 'warehouse', 'movement', or 'transfer'
     const [editingItem, setEditingItem] = useState(null);
+    const [transferItems, setTransferItems] = useState([{ product_id: '', quantity: 0 }]);
 
     const [formData, setFormData] = useState({
         code: '',
@@ -128,11 +129,10 @@ const Warehouse = () => {
                 });
             } else if (type === 'transfer') {
                 setFormData({
-                    product_id: '',
                     from_warehouse_id: warehouses[0]?.id || '',
-                    to_warehouse_id: warehouses[1]?.id || warehouses[0]?.id,
-                    quantity: 0
+                    to_warehouse_id: warehouses[1]?.id || warehouses[0]?.id
                 });
+                setTransferItems([{ product_id: '', quantity: 0 }]);
             }
         }
         setShowModal(true);
@@ -184,13 +184,25 @@ const Warehouse = () => {
 
     const handleSubmitTransfer = async (e) => {
         e.preventDefault();
+        const validItems = transferItems.filter(i => i.product_id && i.quantity > 0);
+        if (validItems.length === 0) {
+            handleError('Добавьте хотя бы один товар с количеством');
+            return;
+        }
         setLoading(true);
         try {
-            await warehousesAPI.transfer(formData);
+            for (const item of validItems) {
+                await warehousesAPI.transfer({
+                    product_id: item.product_id,
+                    from_warehouse_id: formData.from_warehouse_id,
+                    to_warehouse_id: formData.to_warehouse_id,
+                    quantity: item.quantity
+                });
+            }
             await loadMovements();
             await loadStock();
             handleCloseModal();
-            handleSuccess('Перемещение выполнено успешно');
+            handleSuccess(`Перемещение выполнено: ${validItems.length} товар(ов)`);
         } catch (error) {
             console.error('Ошибка перемещения:', error);
             handleError(error.response?.data?.error || 'Ошибка перемещения');
@@ -376,9 +388,9 @@ const Warehouse = () => {
                                     <tr key={item.id}>
                                         <td>{item.code}</td>
                                         <td className="font-medium">{item.name}</td>
-                                        <td className="font-semibold">{item.total_quantity} {item.unit}</td>
+                                        <td className="font-semibold">{Number(item.total_quantity || 0)} {item.unit}</td>
                                         <td>{formatCurrency(item.avg_cost)}</td>
-                                        <td className="font-semibold">{formatCurrency(item.total_quantity * item.avg_cost)}</td>
+                                        <td className="font-semibold">{formatCurrency(Number(item.total_quantity || 0) * Number(item.avg_cost || 0))}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -467,28 +479,42 @@ const Warehouse = () => {
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
-                                        <div className="form-group">
-                                            <label className="label required">Товар</label>
-                                            <select className="input" value={formData.product_id || ''} onChange={(e) => setFormData({ ...formData, product_id: e.target.value })} required>
-                                                <option value="">{t('warehouse.vyberite_tovar', 'Выберите товар')}</option>
-                                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                            </select>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                            <div className="form-group">
+                                                <label className="label required">{t('warehouse.so_sklada', 'Со склада')}</label>
+                                                <select className="input" value={formData.from_warehouse_id || ''} onChange={(e) => setFormData({ ...formData, from_warehouse_id: e.target.value })} required>
+                                                    {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="label required">{t('warehouse.na_sklad', 'На склад')}</label>
+                                                <select className="input" value={formData.to_warehouse_id || ''} onChange={(e) => setFormData({ ...formData, to_warehouse_id: e.target.value })} required>
+                                                    {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
+                                                </select>
+                                            </div>
                                         </div>
-                                        <div className="form-group">
-                                            <label className="label required">{t('warehouse.so_sklada', 'Со склада')}</label>
-                                            <select className="input" value={formData.from_warehouse_id || ''} onChange={(e) => setFormData({ ...formData, from_warehouse_id: e.target.value })} required>
-                                                {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="label required">{t('warehouse.na_sklad', 'На склад')}</label>
-                                            <select className="input" value={formData.to_warehouse_id || ''} onChange={(e) => setFormData({ ...formData, to_warehouse_id: e.target.value })} required>
-                                                {warehouses.map(wh => <option key={wh.id} value={wh.id}>{wh.name}</option>)}
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="label required">{t('warehouse.kolichestvo', 'Количество')}</label>
-                                            <input type="number" step="0.001" className="input" value={formData.quantity || 0} onChange={(e) => setFormData({ ...formData, quantity: parseFloat(e.target.value) })} required />
+
+                                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px' }}>
+                                            <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <label className="label" style={{ margin: 0 }}>Товары для перемещения</label>
+                                                <button type="button" className="btn btn-success btn-sm" onClick={() => setTransferItems(prev => [...prev, { product_id: '', quantity: 0 }])} style={{ fontSize: '11px', padding: '4px 10px' }}>+ Добавить товар</button>
+                                            </div>
+                                            {transferItems.map((item, idx) => (
+                                                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 120px 36px', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
+                                                    <div className="form-group" style={{ margin: 0 }}>
+                                                        {idx === 0 && <label style={{ fontSize: '11px', color: '#888' }}>Товар</label>}
+                                                        <select className="input" value={item.product_id} onChange={(e) => { const u = [...transferItems]; u[idx].product_id = e.target.value; setTransferItems(u); }} required>
+                                                            <option value="">{t('warehouse.vyberite_tovar', 'Выберите товар')}</option>
+                                                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div className="form-group" style={{ margin: 0 }}>
+                                                        {idx === 0 && <label style={{ fontSize: '11px', color: '#888' }}>Кол-во</label>}
+                                                        <input type="number" step="0.001" min="0.001" className="input" value={item.quantity || ''} onChange={(e) => { const u = [...transferItems]; u[idx].quantity = parseFloat(e.target.value) || 0; setTransferItems(u); }} placeholder="0" required />
+                                                    </div>
+                                                    <button type="button" className="btn btn-danger btn-sm" onClick={() => setTransferItems(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev)} style={{ height: '36px', padding: '0 8px' }} disabled={transferItems.length <= 1}>×</button>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}

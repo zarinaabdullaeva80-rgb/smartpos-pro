@@ -265,7 +265,14 @@ ReceiptContent.displayName = 'ReceiptContent';
 // Основной компонент
 function ReceiptPrinter({ sale, onClose, isOpen, autoPrint = false }) {
     const printRef = useRef();
-    const [size, setSize] = React.useState('thermal80');
+    const [size, setSize] = React.useState(() => {
+        return localStorage.getItem('receiptPrinterSize') || 'thermal80';
+    });
+
+    // Сохранять выбранный размер ленты при изменении
+    React.useEffect(() => {
+        localStorage.setItem('receiptPrinterSize', size);
+    }, [size]);
 
     // Информация о компании (загружается из настроек)
     const [companyInfo, setCompanyInfo] = React.useState({

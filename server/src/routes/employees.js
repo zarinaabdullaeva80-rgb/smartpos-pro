@@ -138,7 +138,7 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
                 SELECT l.max_users,
                        COUNT(u.id) AS current_count
                 FROM licenses l
-                LEFT JOIN users u ON u.created_by_organization_id = l.id AND u.is_active = true
+                LEFT JOIN users u ON u.organization_id = l.id AND u.is_active = true
                 WHERE l.id = $1
                 GROUP BY l.max_users
             `, [req.user.organization_id]);
@@ -402,7 +402,7 @@ router.post('/sync', async (req, res) => {
                 try {
                     const result = await pool.query(
                         `UPDATE users SET password_hash = $1, email = $2, full_name = $3, phone = $4, role = $5, 
-                         organization_id = $6, created_by_organization_id = $6, user_type = 'employee', is_active = true, updated_at = NOW()
+                         organization_id = $6, user_type = 'employee', is_active = true, updated_at = NOW()
                          WHERE username = $7
                          RETURNING id, username, email, full_name, role, is_active`,
                         [passwordHash, employee.email, employee.fullName, employee.phone, employee.role, licenseId, employee.username]
@@ -424,8 +424,8 @@ router.post('/sync', async (req, res) => {
             // Create new employee (try with organization_id, fallback without)
             try {
                 const result = await pool.query(
-                    `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id, created_by_organization_id)
-                     VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7, $7)
+                    `INSERT INTO users (username, email, password_hash, full_name, phone, role, user_type, organization_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, 'employee', $7)
                      RETURNING id, username, email, full_name, role, is_active`,
                     [employee.username, employee.email, passwordHash, employee.fullName, employee.phone, employee.role || 'Кассир', licenseId]
                 );
@@ -467,7 +467,7 @@ router.post('/sync', async (req, res) => {
             return res.json({ message: 'Employee updated via sync', employee: result.rows[0] });
 
         } else if (action === 'delete' && deleteUsername) {
-            await pool.query('DELETE FROM users WHERE username = $1 AND created_by_organization_id = $2', [deleteUsername, licenseId]);
+            await pool.query('DELETE FROM users WHERE username = $1 AND organization_id = $2', [deleteUsername, licenseId]);
             return res.json({ message: `Employee ${deleteUsername} deleted via sync` });
         }
 

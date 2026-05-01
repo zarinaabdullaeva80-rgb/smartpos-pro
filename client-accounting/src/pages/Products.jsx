@@ -30,6 +30,9 @@ function Products() {
     const [showDraftNotice, setShowDraftNotice] = useState(false);
     const [showBarcodeModal, setShowBarcodeModal] = useState(false);
     const [selectedProductForBarcode, setSelectedProductForBarcode] = useState(null);
+    const [inlineBarcodeId, setInlineBarcodeId] = useState(null); // inline barcode edit
+    const [inlineBarcodeValue, setInlineBarcodeValue] = useState('');
+    const [moveCategoryForProductId, setMoveCategoryForProductId] = useState(null); // per-product category move
 
     // ── Новые состояния: режимы, сортировка, пагинация, фильтры ──
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('products_viewMode') || 'table');
@@ -934,9 +937,10 @@ function Products() {
                                         </button>
                                     </td>
                                     <td style={{ padding: '6px 8px' }}>
-                                        <div className="action-buttons" style={{ gap: '3px' }}>
-                                            <button className="btn btn-info btn-sm" onClick={() => { setSelectedProductForBarcode(product); setShowBarcodeModal(true); }} title="Штрихкод" style={{ padding: '3px 5px' }}><Barcode size={12} /></button>
+                                        <div className="action-buttons" style={{ gap: '3px', flexWrap: 'wrap' }}>
+                                            <button className="btn btn-info btn-sm" onClick={() => { if (inlineBarcodeId === product.id) { setInlineBarcodeId(null); } else { setInlineBarcodeId(product.id); setInlineBarcodeValue(product.barcode || ''); setSelectedProductForBarcode(product); } }} title="Штрихкод" style={{ padding: '3px 5px', background: inlineBarcodeId === product.id ? '#0891b2' : undefined }}><Barcode size={12} /></button>
                                             <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(product)} title="Редактировать" style={{ padding: '3px 5px' }}><Edit size={12} /></button>
+                                            <button className="btn btn-sm" onClick={() => setMoveCategoryForProductId(moveCategoryForProductId === product.id ? null : product.id)} title="В категорию" style={{ padding: '3px 5px', background: moveCategoryForProductId === product.id ? '#8b5cf6' : 'rgba(139,92,246,0.2)', color: moveCategoryForProductId === product.id ? '#fff' : '#a78bfa', border: 'none' }}><Move size={12} /></button>
                                             <button className="btn btn-danger btn-sm" onClick={() => handleDelete(product.id)} title="Удалить" style={{ padding: '3px 5px' }}><Trash2 size={12} /></button>
                                         </div>
                                     </td>
@@ -992,6 +996,98 @@ function Products() {
                                                     </div>
                                                 </div>
                                             </form>
+                                        </td>
+                                    </tr>
+                                )}
+                                {/* Inline category move row */}
+                                {moveCategoryForProductId === product.id && (
+                                    <tr>
+                                        <td colSpan="12" style={{ padding: '8px 12px', background: 'rgba(139,92,246,0.06)', borderLeft: '3px solid #8b5cf6' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <Move size={14} style={{ color: '#a78bfa' }} />
+                                                <span style={{ fontSize: '12px', color: '#a78bfa', fontWeight: 500 }}>Переместить в категорию:</span>
+                                                <select
+                                                    value={moveCategoryId}
+                                                    onChange={e => setMoveCategoryId(e.target.value)}
+                                                    style={{ fontSize: '12px', padding: '4px 8px', minWidth: '160px' }}
+                                                >
+                                                    <option value="">Без категории</option>
+                                                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                </select>
+                                                <button
+                                                    className="btn btn-primary btn-sm"
+                                                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await api.post('/products/bulk-move-category', {
+                                                                ids: [product.id],
+                                                                categoryId: moveCategoryId ? parseInt(moveCategoryId) : null
+                                                            });
+                                                            toast.success(res.data.message || 'Товар перемещён');
+                                                            setMoveCategoryForProductId(null);
+                                                            setRefreshTrigger(prev => prev + 1);
+                                                        } catch (e) {
+                                                            toast.error(e.response?.data?.error || 'Ошибка перемещения');
+                                                        }
+                                                    }}
+                                                >
+                                                    <Check size={12} /> Переместить
+                                                </button>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => setMoveCategoryForProductId(null)} style={{ fontSize: '11px', padding: '4px 8px' }}>
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                {/* Inline barcode editor row */}
+                                {inlineBarcodeId === product.id && (
+                                    <tr>
+                                        <td colSpan="12" style={{ padding: '10px 12px', background: 'rgba(6,182,212,0.06)', borderLeft: '3px solid #06b6d4' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                                <Barcode size={16} style={{ color: '#06b6d4' }} />
+                                                <span style={{ fontSize: '12px', color: '#06b6d4', fontWeight: 600 }}>Штрих-код:</span>
+                                                <input
+                                                    type="text"
+                                                    value={inlineBarcodeValue}
+                                                    onChange={e => setInlineBarcodeValue(e.target.value)}
+                                                    placeholder="Введите или сгенерируйте штрих-код"
+                                                    style={{ width: '220px', fontSize: '13px', padding: '5px 8px', fontFamily: 'monospace', letterSpacing: '1px' }}
+                                                />
+                                                <button
+                                                    className="btn btn-secondary btn-sm"
+                                                    onClick={() => { const bc = generateBarcode(); setInlineBarcodeValue(bc); }}
+                                                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                                                    title="Сгенерировать EAN-13"
+                                                >
+                                                    <RefreshCw size={12} /> Генерировать
+                                                </button>
+                                                <button
+                                                    className="btn btn-primary btn-sm"
+                                                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                    onClick={async () => {
+                                                        try {
+                                                            await api.put(`/products/${product.id}`, { barcode: inlineBarcodeValue });
+                                                            setProducts(prev => prev.map(p => p.id === product.id ? { ...p, barcode: inlineBarcodeValue } : p));
+                                                            toast.success('Штрих-код сохранён');
+                                                        } catch (e) {
+                                                            toast.error(e.response?.data?.error || 'Ошибка сохранения');
+                                                        }
+                                                    }}
+                                                >
+                                                    <Check size={12} /> Сохранить
+                                                </button>
+                                                <button
+                                                    className="btn btn-info btn-sm"
+                                                    style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                    onClick={() => { setSelectedProductForBarcode({ ...product, barcode: inlineBarcodeValue }); setShowBarcodeModal(true); }}
+                                                >
+                                                    Печать
+                                                </button>
+                                                <button className="btn btn-secondary btn-sm" onClick={() => setInlineBarcodeId(null)} style={{ fontSize: '11px', padding: '4px 8px' }}>
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 )}
