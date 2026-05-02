@@ -186,18 +186,23 @@ function Login({ onLogin }) {
         try {
             // Проверяем на центральном сервере лицензирования
             const licenseUrl = await getLicenseServerUrl();
+            console.log('[License] checkSavedLicense: checking key on', licenseUrl);
             const response = await fetch(`${licenseUrl}/license/validate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ license_key: key })
             });
             const data = await response.json();
+            console.log('[License] checkSavedLicense result:', response.status, data);
+
             if (data.valid) {
                 setLicenseInfo(data.license);
                 setLicenseValid(true);
                 setMode('login');
                 setError('');
                 setSuccess('Лицензия подтверждена');
+                // Сохранить актуальные данные лицензии для офлайн режима
+                localStorage.setItem('license_info', JSON.stringify(data.license));
                 // Автонастройка сервера по лицензии
                 if (data.license.server_url) {
                     const savedServerUrl = localStorage.getItem('server_url');
@@ -206,13 +211,30 @@ function Login({ onLogin }) {
                         setServerUrl(data.license.server_url);
                     }
                 }
-            } else {
+            } else if (response.status === 403 && data.error && (data.error.includes('истекла') || data.error.includes('revoked'))) {
+                // Лицензия ЯВНО отозвана или истекла — удаляем
+                console.warn('[License] License explicitly expired/revoked, removing');
                 setLicenseValid(false);
                 setMode('license');
                 localStorage.removeItem('license_key');
+                localStorage.removeItem('license_info');
+            } else {
+                // 404 или другая ошибка — НЕ удаляем ключ, пробуем офлайн кэш
+                console.warn('[License] Validation returned non-valid, keeping key. Status:', response.status);
+                const savedInfo = localStorage.getItem('license_info');
+                if (savedInfo) {
+                    setLicenseInfo(JSON.parse(savedInfo));
+                    setLicenseValid(true);
+                    setMode('login');
+                } else {
+                    setLicenseValid(false);
+                    setMode('license');
+                    setError(data.error || 'Не удалось проверить лицензию');
+                }
             }
         } catch (err) {
             // Не удалось проверить — разрешить вход (офлайн режим)
+            console.warn('[License] checkSavedLicense network error:', err.message);
             const savedInfo = localStorage.getItem('license_info');
             if (savedInfo) {
                 setLicenseInfo(JSON.parse(savedInfo));
