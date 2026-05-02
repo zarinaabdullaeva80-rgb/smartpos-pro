@@ -183,6 +183,7 @@ function Login({ onLogin }) {
 
     // Проверка сохранённой лицензии при загрузке
     const checkSavedLicense = async (key) => {
+        setError(''); // ★ Очищаем старые ошибки перед каждой проверкой
         try {
             // Проверяем на центральном сервере лицензирования
             const licenseUrl = await getLicenseServerUrl();

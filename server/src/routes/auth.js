@@ -142,9 +142,11 @@ router.post('/login', async (req, res) => {
         let expectedLicenseId = null;
         if (license_key) {
             try {
+                // Нормализуем ключ: убираем тире и пробелы для надёжного сравнения
+                const normalizedKey = license_key.toUpperCase().replace(/[^A-Z0-9]/g, '');
                 const licKeyRes = await pool.query(
-                    'SELECT id, status FROM licenses WHERE license_key = $1',
-                    [license_key]
+                    'SELECT id, status FROM licenses WHERE REPLACE(license_key, \'-\', \'\') = $1',
+                    [normalizedKey]
                 );
                 if (licKeyRes.rows.length > 0) {
                     if (licKeyRes.rows[0].status !== 'active') {
@@ -152,12 +154,8 @@ router.post('/login', async (req, res) => {
                     }
                     expectedLicenseId = licKeyRes.rows[0].id;
                 } else {
-                    // Ключ передан, но его НЕТ в базе (удален или не существует)
-                    console.warn(`[AUTH] Login attempt with unknown/deleted license key: ${license_key}`);
-                    return res.status(403).json({ 
-                        error: 'Лицензия не найдена или удалена. Обратитесь к администратору.',
-                        code: 'LICENSE_NOT_FOUND'
-                    });
+                    // Ключ передан, но его НЕТ в базе — НЕ блокируем вход, просто логируем
+                    console.warn(`[AUTH] License key not found locally: ${normalizedKey}, proceeding without license filter`);
                 }
             } catch (e) {
                 console.log('License key lookup error:', e.message);
