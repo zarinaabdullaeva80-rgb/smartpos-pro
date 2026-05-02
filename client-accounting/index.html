@@ -23,6 +23,15 @@
 </head>
 
 <body>
+  <script>
+    // Self-healing: clear problematic stale license key
+    const staleKey = '8D7C-3C89-06A3-19A1';
+    if (localStorage.getItem('license_key') === staleKey) {
+      console.warn('Stale license key detected, clearing...');
+      localStorage.removeItem('license_key');
+      localStorage.removeItem('license_info');
+    }
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 
