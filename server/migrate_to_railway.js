@@ -13,7 +13,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 
 const { Pool } = pg;
 
-const RAILWAY_API = 'https://smartpos-pro-production.up.railway.app';
+const RAILWAY_API = 'https://smartpos-pro-production-f885.up.railway.app';
 const SYNC_SECRET = 'smartpos-sync-key-2026';
 
 const localPool = new Pool({
@@ -92,7 +92,7 @@ async function main() {
     console.log(`\n📦 Всего: ${totalRows} строк\n`);
 
     // Wait for new deploy with increased body limit
-    await waitForDeploy();
+    // await waitForDeploy();
 
     // Send ALL data
     const body = JSON.stringify({ action: 'bulk_migrate', tables: allData });
