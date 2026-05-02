@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { Card, Title, Paragraph, Button, IconButton, TextInput, Divider, SegmentedButtons } from 'react-native-paper';
-import { salesAPI, shiftsAPI } from '../services/api';
+import { View, StyleSheet, FlatList, Alert, KeyboardAvoidingView, Platform, Keyboard, TouchableWithoutFeedback, TouchableOpacity, Modal } from 'react-native';
+import { Card, Title, Paragraph, Button, IconButton, TextInput, Divider, SegmentedButtons, Avatar, Chip, Dialog, Portal, ActivityIndicator } from 'react-native-paper';
+import { salesAPI, shiftsAPI, loyaltyAPI } from '../services/api';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
@@ -19,6 +19,14 @@ export default function CartScreen({ route, navigation }) {
     const [discountType, setDiscountType] = useState('percent');
     const [discountValue, setDiscountValue] = useState('');
     const [warehouseId, setWarehouseId] = useState(null);
+
+    // Loyalty state
+    const [loyaltyCustomer, setLoyaltyCustomer] = useState(null);
+    const [showLoyaltySearch, setShowLoyaltySearch] = useState(false);
+    const [loyaltyPhone, setLoyaltyPhone] = useState('');
+    const [loyaltySearching, setLoyaltySearching] = useState(false);
+    const [usePoints, setUsePoints] = useState(false);
+    const [pointsToUse, setPointsToUse] = useState('');
 
     useEffect(() => {
         checkShift();
@@ -83,138 +91,127 @@ export default function CartScreen({ route, navigation }) {
         return discountType === 'percent' ? subtotal * value / 100 : value;
     };
 
-    const getTotal = () => Math.max(0, getSubtotal() - getDiscountAmount());
+    const getLoyaltyDiscount = () => {
+        if (!usePoints || !loyaltyCustomer) return 0;
+        const pts = parseInt(pointsToUse) || 0;
+        const available = loyaltyCustomer.points || loyaltyCustomer.loyalty_points || 0;
+        return Math.min(pts, available);
+    };
+
+    const getTotal = () => Math.max(0, getSubtotal() - getDiscountAmount() - getLoyaltyDiscount());
 
     const formatPrice = (value) => Math.round(value || 0).toLocaleString('ru-RU') + " so'm";
 
-    const completeSale = async () => {
-        // Recheck shift before sale
-        let shift = currentShift;
-        if (!shift) {
-            shift = await checkShift();
-        }
-
-        if (!shift) {
-            Alert.alert('Ошибка', 'Сначала откройте смену. Если смена уже открыта, проверьте интернет-соединение.');
+    // --- Loyalty search ---
+    const searchLoyaltyCustomer = async () => {
+        if (!loyaltyPhone.trim()) {
+            Alert.alert('Ошибка', 'Введите номер телефона или имя');
             return;
         }
-        if (cartItems.length === 0) {
-            Alert.alert('Ошибка', 'Корзина пуста');
-            return;
-        }
-
-        setLoading(true);
         try {
-            const subtotal = getSubtotal();
-            let discountPercent = discountType === 'percent'
-                ? parseFloat(discountValue) || 0
-                : subtotal > 0 ? ((parseFloat(discountValue) || 0) / subtotal) * 100 : 0;
-
-            const saleData = {
-                documentNumber: `MOB-${Date.now()}`,
-                documentDate: new Date().toISOString().split('T')[0],
-                counterpartyId: null,
-                warehouseId: warehouseId || null,
-                items: cartItems.map(item => ({
-                    productId: item.id,
-                    quantity: item.quantity,
-                    price: item.price || item.price_sale,
-                    vatRate: 12,
-                    discountPercent: 0
-                })),
-                discountPercent: Math.min(100, Math.max(0, discountPercent)),
-                notes: customerName || 'Мобильная продажа',
-                autoConfirm: true
-            };
-
-            await salesAPI.create(saleData);
-            SoundManager.playSuccess();
-
-            Alert.alert('Успех!', `Продажа на ${formatPrice(getTotal())} оформлена`, [
-                {
-                    text: 'OK', onPress: () => {
-                        setCartItems([]);
-                        if (parentSetCart) parentSetCart([]);
-                        navigation.goBack();
-                    }
-                }
-            ]);
+            setLoyaltySearching(true);
+            const res = await loyaltyAPI.checkBalance(loyaltyPhone.trim());
+            if (res.data?.customer) {
+                setLoyaltyCustomer(res.data.customer);
+                setCustomerName(res.data.customer.name || res.data.customer.full_name || '');
+                setShowLoyaltySearch(false);
+                SoundManager.playSuccess();
+            } else {
+                Alert.alert('Не найден', 'Клиент не найден');
+            }
         } catch (error) {
-            SoundManager.playError();
-            const errorMsg = error.response?.data?.error || error.response?.data?.details || error.message || 'Ошибка сервера';
-            Alert.alert('Ошибка', errorMsg);
+            if (error.response?.status === 404) {
+                Alert.alert('Не найден', 'Клиент с таким номером не найден');
+            } else {
+                Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка поиска');
+            }
         } finally {
-            setLoading(false);
+            setLoyaltySearching(false);
         }
     };
 
-    // Переход к выбору способа оплаты
-    const goToPayment = () => {
-        if (!currentShift) {
-            Alert.alert('Ошибка', 'Сначала откройте смену');
-            return;
-        }
-        if (cartItems.length === 0) {
-            Alert.alert('Ошибка', 'Корзина пуста');
-            return;
-        }
+    const removeLoyaltyCustomer = () => {
+        setLoyaltyCustomer(null);
+        setUsePoints(false);
+        setPointsToUse('');
+        setCustomerName('');
+    };
 
-        // Переходим на экран выбора оплаты
+    // --- Sale logic ---
+    const buildSaleData = (paymentResult) => {
+        const subtotal = getSubtotal();
+        let discountPercent = discountType === 'percent'
+            ? parseFloat(discountValue) || 0
+            : subtotal > 0 ? ((parseFloat(discountValue) || 0) / subtotal) * 100 : 0;
+
+        const loyaltyDiscount = getLoyaltyDiscount();
+
+        return {
+            documentNumber: `MOB-${Date.now()}`,
+            documentDate: new Date().toISOString().split('T')[0],
+            counterpartyId: loyaltyCustomer?.id || null,
+            warehouseId: warehouseId || null,
+            items: cartItems.map(item => ({
+                productId: item.id,
+                quantity: item.quantity,
+                price: item.price || item.price_sale,
+                vatRate: 12,
+                discountPercent: 0
+            })),
+            discountPercent: Math.min(100, Math.max(0, discountPercent)),
+            loyaltyPointsUsed: loyaltyDiscount,
+            notes: paymentResult
+                ? `${customerName || 'Мобильная продажа'} | Оплата: ${paymentResult.type}`
+                : customerName || 'Мобильная продажа',
+            paymentType: paymentResult?.type,
+            autoConfirm: true
+        };
+    };
+
+    const completeSale = async () => {
+        let shift = currentShift;
+        if (!shift) shift = await checkShift();
+        if (!shift) { Alert.alert('Ошибка', 'Сначала откройте смену.'); return; }
+        if (cartItems.length === 0) { Alert.alert('Ошибка', 'Корзина пуста'); return; }
+
+        setLoading(true);
+        try {
+            await salesAPI.create(buildSaleData(null));
+            SoundManager.playSuccess();
+            Alert.alert('Успех!', `Продажа на ${formatPrice(getTotal())} оформлена`, [{
+                text: 'OK', onPress: () => {
+                    setCartItems([]); if (parentSetCart) parentSetCart([]); navigation.goBack();
+                }
+            }]);
+        } catch (error) {
+            SoundManager.playError();
+            Alert.alert('Ошибка', error.response?.data?.error || error.response?.data?.details || error.message || 'Ошибка сервера');
+        } finally { setLoading(false); }
+    };
+
+    const goToPayment = () => {
+        if (!currentShift) { Alert.alert('Ошибка', 'Сначала откройте смену'); return; }
+        if (cartItems.length === 0) { Alert.alert('Ошибка', 'Корзина пуста'); return; }
         navigation.navigate('PaymentMethods', {
             total: getTotal(),
-            onPaymentComplete: (paymentResult) => {
-                // После подтверждения оплаты - завершаем продажу
-                completeSaleWithPayment(paymentResult);
-            }
+            onPaymentComplete: (paymentResult) => completeSaleWithPayment(paymentResult)
         });
     };
 
-    // Завершение продажи с указанием типа оплаты
     const completeSaleWithPayment = async (paymentResult) => {
         setLoading(true);
         try {
-            const subtotal = getSubtotal();
-            let discountPercent = discountType === 'percent'
-                ? parseFloat(discountValue) || 0
-                : subtotal > 0 ? ((parseFloat(discountValue) || 0) / subtotal) * 100 : 0;
-
-            const saleData = {
-                documentNumber: `MOB-${Date.now()}`,
-                documentDate: new Date().toISOString().split('T')[0],
-                counterpartyId: null,
-                warehouseId: warehouseId || null,
-                items: cartItems.map(item => ({
-                    productId: item.id,
-                    quantity: item.quantity,
-                    price: item.price || item.price_sale,
-                    vatRate: 12,
-                    discountPercent: 0
-                })),
-                discountPercent: Math.min(100, Math.max(0, discountPercent)),
-                notes: `${customerName || 'Мобильная продажа'} | Оплата: ${paymentResult.type}`,
-                paymentType: paymentResult.type,
-                autoConfirm: true
-            };
-
-            await salesAPI.create(saleData);
+            await salesAPI.create(buildSaleData(paymentResult));
             SoundManager.playSuccess();
-
-            Alert.alert('✅ Продажа оформлена!', `Сумма: ${formatPrice(getTotal())}\nОплата: ${paymentResult.type}`, [
-                {
-                    text: 'OK', onPress: () => {
-                        setCartItems([]);
-                        if (parentSetCart) parentSetCart([]);
-                        navigation.navigate('Home');
-                    }
+            Alert.alert('✅ Продажа оформлена!', `Сумма: ${formatPrice(getTotal())}\nОплата: ${paymentResult.type}`, [{
+                text: 'OK', onPress: () => {
+                    setCartItems([]); if (parentSetCart) parentSetCart([]); navigation.navigate('Home');
                 }
-            ]);
+            }]);
         } catch (error) {
             SoundManager.playError();
-            const errorMsg = error.response?.data?.error || error.response?.data?.details || error.message || 'Ошибка сервера';
-            Alert.alert('Ошибка', errorMsg);
-        } finally {
-            setLoading(false);
-        }
+            Alert.alert('Ошибка', error.response?.data?.error || error.response?.data?.details || error.message || 'Ошибка сервера');
+        } finally { setLoading(false); }
     };
 
     const dynamicStyles = {
@@ -255,21 +252,87 @@ export default function CartScreen({ route, navigation }) {
         </Card>
     );
 
+    const customerPoints = loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0;
+
     return (
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
             style={[styles.container, dynamicStyles.container]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.container}>
-                    <TextInput
-                        label="Имя клиента"
-                        value={customerName}
-                        onChangeText={setCustomerName}
-                        style={[styles.input, dynamicStyles.input]}
-                        mode="outlined"
-                    />
+                    {/* Loyalty Customer Section */}
+                    {loyaltyCustomer ? (
+                        <Card style={[styles.loyaltyCard, { backgroundColor: '#1e3a5f' }]}>
+                            <Card.Content>
+                                <View style={styles.loyaltyRow}>
+                                    <Avatar.Text
+                                        size={40}
+                                        label={(loyaltyCustomer.name || 'К')[0].toUpperCase()}
+                                        style={{ backgroundColor: '#ffd700' }}
+                                        color="#1e3a5f"
+                                    />
+                                    <View style={styles.loyaltyInfo}>
+                                        <Paragraph style={styles.loyaltyName}>
+                                            {loyaltyCustomer.name || loyaltyCustomer.full_name}
+                                        </Paragraph>
+                                        <Paragraph style={styles.loyaltyPhone}>
+                                            {loyaltyCustomer.phone}
+                                        </Paragraph>
+                                    </View>
+                                    <View style={styles.loyaltyPointsBox}>
+                                        <Paragraph style={styles.loyaltyPointsValue}>{customerPoints}</Paragraph>
+                                        <Paragraph style={styles.loyaltyPointsLabel}>баллов</Paragraph>
+                                    </View>
+                                    <IconButton icon="close" iconColor="#fff" size={20} onPress={removeLoyaltyCustomer} />
+                                </View>
+                                {customerPoints > 0 && (
+                                    <View style={styles.usePointsRow}>
+                                        <Button
+                                            mode={usePoints ? 'contained' : 'outlined'}
+                                            onPress={() => { setUsePoints(!usePoints); if (usePoints) setPointsToUse(''); }}
+                                            style={styles.usePointsBtn}
+                                            labelStyle={{ fontSize: 12, color: usePoints ? '#1e3a5f' : '#ffd700' }}
+                                            buttonColor={usePoints ? '#ffd700' : undefined}
+                                            icon={usePoints ? 'check' : 'star'}
+                                            compact
+                                        >
+                                            {usePoints ? 'Баллы применены' : 'Использовать баллы'}
+                                        </Button>
+                                        {usePoints && (
+                                            <TextInput
+                                                value={pointsToUse}
+                                                onChangeText={(t) => {
+                                                    const v = parseInt(t) || 0;
+                                                    setPointsToUse(v > customerPoints ? String(customerPoints) : t);
+                                                }}
+                                                keyboardType="numeric"
+                                                placeholder={`макс ${customerPoints}`}
+                                                placeholderTextColor="#90a4ae"
+                                                style={styles.pointsInput}
+                                                mode="outlined"
+                                                dense
+                                                outlineColor="#ffd700"
+                                                activeOutlineColor="#ffd700"
+                                                textColor="#fff"
+                                            />
+                                        )}
+                                    </View>
+                                )}
+                            </Card.Content>
+                        </Card>
+                    ) : (
+                        <Button
+                            mode="outlined"
+                            onPress={() => setShowLoyaltySearch(true)}
+                            style={styles.loyaltyButton}
+                            icon="card-account-details-star"
+                            textColor={colors.primary}
+                        >
+                            Карта лояльности клиента
+                        </Button>
+                    )}
 
                     <FlatList
                         data={cartItems}
@@ -313,6 +376,12 @@ export default function CartScreen({ route, navigation }) {
                                         <Paragraph style={{ color: colors.warning }}>−{formatPrice(getDiscountAmount())}</Paragraph>
                                     </View>
                                 )}
+                                {getLoyaltyDiscount() > 0 && (
+                                    <View style={styles.totalRow}>
+                                        <Paragraph style={{ color: '#ffd700' }}>⭐ Баллы:</Paragraph>
+                                        <Paragraph style={{ color: '#ffd700' }}>−{formatPrice(getLoyaltyDiscount())}</Paragraph>
+                                    </View>
+                                )}
                                 <View style={styles.totalRow}>
                                     <Title style={dynamicStyles.text}>ИТОГО:</Title>
                                     <Title style={{ color: colors.success, fontSize: 24 }}>{formatPrice(getTotal())}</Title>
@@ -325,6 +394,30 @@ export default function CartScreen({ route, navigation }) {
                     )}
                 </View>
             </TouchableWithoutFeedback>
+
+            {/* Loyalty Search Dialog */}
+            <Portal>
+                <Dialog visible={showLoyaltySearch} onDismiss={() => setShowLoyaltySearch(false)}>
+                    <Dialog.Title>🔍 Поиск клиента</Dialog.Title>
+                    <Dialog.Content>
+                        <TextInput
+                            label="Телефон или имя"
+                            value={loyaltyPhone}
+                            onChangeText={setLoyaltyPhone}
+                            keyboardType="phone-pad"
+                            mode="outlined"
+                            left={<TextInput.Icon icon="phone" />}
+                            onSubmitEditing={searchLoyaltyCustomer}
+                            style={{ marginBottom: 8 }}
+                        />
+                        {loyaltySearching && <ActivityIndicator size="small" style={{ marginTop: 8 }} />}
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <Button onPress={() => setShowLoyaltySearch(false)}>Отмена</Button>
+                        <Button onPress={searchLoyaltyCustomer} loading={loyaltySearching}>Найти</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
         </KeyboardAvoidingView>
     );
 }
@@ -347,4 +440,17 @@ const styles = StyleSheet.create({
     divider: { marginVertical: 12 },
     totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
     button: { marginTop: 12, paddingVertical: 8 },
+    // Loyalty
+    loyaltyButton: { marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderStyle: 'dashed' },
+    loyaltyCard: { marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 14 },
+    loyaltyRow: { flexDirection: 'row', alignItems: 'center' },
+    loyaltyInfo: { flex: 1, marginLeft: 12 },
+    loyaltyName: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+    loyaltyPhone: { color: '#90a4ae', fontSize: 12 },
+    loyaltyPointsBox: { alignItems: 'center', marginRight: 4 },
+    loyaltyPointsValue: { color: '#4ade80', fontSize: 20, fontWeight: 'bold' },
+    loyaltyPointsLabel: { color: '#90a4ae', fontSize: 10 },
+    usePointsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 },
+    usePointsBtn: { borderColor: '#ffd700' },
+    pointsInput: { width: 100, backgroundColor: 'rgba(255,255,255,0.1)', fontSize: 14 },
 });

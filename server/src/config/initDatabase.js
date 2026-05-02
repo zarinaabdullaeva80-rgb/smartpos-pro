@@ -912,6 +912,11 @@ async function addMissingColumns(pool) {
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(15,2) DEFAULT 0',
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50)',
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS shift_id INTEGER',
+        // Loyalty points tracking on sales
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS loyalty_points_used NUMERIC DEFAULT 0',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS loyalty_points_earned NUMERIC DEFAULT 0',
+        // sale_items organization_id for multi-tenant
+        'ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS organization_id INTEGER DEFAULT 1',
         // ============================================
         // WAREHOUSES: missing columns
         // ============================================
