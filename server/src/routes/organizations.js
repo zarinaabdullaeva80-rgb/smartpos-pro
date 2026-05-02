@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import crypto from 'crypto';
+import { syncToCloud } from '../services/licenseSync.js';
 
 const router = express.Router();
 
@@ -75,6 +76,22 @@ router.post('/', authenticate, authorize('Администратор'), async (r
             INSERT INTO licenses (license_key, organization_id, plan, max_users, max_products, expires_at, is_active, activated_at)
             VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP)
         `, [licenseKey, org.id, plan, maxUsers, maxProducts, expiresAt]);
+
+        // ★ Автоматическая синхронизация на Railway Cloud
+        try {
+            await syncToCloud({
+                license_key: licenseKey,
+                company_name: name,
+                license_type: plan,
+                max_devices: 3,
+                max_users: maxUsers,
+                expires_at: expiresAt,
+                customer_username: 'admin', // Placeholder
+                is_active: true
+            });
+        } catch (syncErr) {
+            console.warn('[ORGANIZATIONS] Cloud sync error:', syncErr.message);
+        }
 
         await client.query('COMMIT');
 

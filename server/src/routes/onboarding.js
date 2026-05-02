@@ -3,6 +3,7 @@ import pool from '../config/database.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { syncToCloud } from '../services/licenseSync.js';
 
 const router = express.Router();
 
@@ -229,6 +230,22 @@ router.post('/create-license', async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP)`,
             [licenseKey, org.id, plan, maxUsers, maxProducts, expiresAt]
         );
+
+        // ★ Автоматическая синхронизация на Railway Cloud
+        try {
+            await syncToCloud({
+                license_key: licenseKey,
+                company_name: company_name || 'New Client',
+                license_type: plan,
+                max_devices: 3,
+                max_users: maxUsers,
+                expires_at: expiresAt,
+                customer_username: 'admin', // Default for onboarding
+                is_active: true
+            });
+        } catch (syncErr) {
+            console.warn('[ONBOARDING] Cloud sync error:', syncErr.message);
+        }
 
         res.status(201).json({
             success: true,

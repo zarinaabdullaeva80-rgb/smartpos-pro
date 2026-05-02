@@ -1,97 +1,38 @@
 import express from 'express';
+import fetch from 'node-fetch';
 import pool from '../config/database.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
 import { auditLog } from '../middleware/audit.js';
 
 const router = express.Router();
 
-// ★ Секрет для синхронизации между локальным сервером и Railway
-const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
-const CLOUD_SERVER_URL = process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app';
+import { syncToCloud, deleteFromCloud } from '../services/licenseSync.js';
 
-/**
- * Синхронизация лицензии на облачный сервер Railway
- * Вызывается автоматически после создания лицензии на локальном сервере
- */
-async function syncToCloud(licenseData) {
-    // Не синхронизировать если МЫ и есть облако
-    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
-    if (isCloud) return { skipped: true, reason: 'already cloud' };
-
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        const response = await fetch(`${process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app'}/api/license/sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026'
-            },
-            body: JSON.stringify(licenseData),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        const result = await response.json();
-        console.log('[SYNC] Cloud response:', result);
-        return result;
-    } catch (error) {
-        console.error('[SYNC] Cloud sync failed (non-blocking):', error.message);
-        return { error: error.message };
+const normalizeLicenseKey = (key) => {
+    if (!key) return '';
+    // Заменяем похожие русские буквы на английские (гомоглифы)
+    const homoglyphs = {
+        'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H', 'К': 'K', 'М': 'M', 
+        'О': 'O', 'Р': 'P', 'Т': 'T', 'Х': 'X', 'У': 'Y'
+    };
+    let normalized = key.toUpperCase().trim();
+    for (const [ru, en] of Object.entries(homoglyphs)) {
+        normalized = normalized.split(ru).join(en);
     }
-}
-
-/**
- * Синхронизация УДАЛЕНИЯ лицензии на облачный сервер Railway
- * Вызывается автоматически после удаления лицензии на локальном сервере
- */
-async function deleteFromCloud(licenseKey) {
-    // Не синхронизировать если МЫ и есть облако
-    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
-    if (isCloud) return { skipped: true, reason: 'already cloud' };
-
-    try {
-        console.log(`[SYNC-DELETE] 🚀 Notifying cloud about deleted license: ${licenseKey}`);
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        
-        const response = await fetch(`${process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app'}/api/license/sync-delete`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026'
-            },
-            body: JSON.stringify({ license_key: licenseKey }),
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        const result = await response.json();
-        
-        if (response.ok) {
-            console.log(`[SYNC-DELETE] ✅ Cloud confirmed deletion:`, result);
-        } else {
-            console.error(`[SYNC-DELETE] ❌ Cloud rejected deletion (HTTP ${response.status}):`, result);
-        }
-        
-        return result;
-    } catch (error) {
-        console.error('[SYNC-DELETE] ❌ Cloud sync-delete failed (non-blocking):', error.message);
-        return { error: error.message };
-    }
-}
+    return normalized;
+};
 
 /**
  * GET /api/license/resolve?key=XXXX-XXXX-XXXX-XXXX
  * Публичный endpoint (без аутентификации) — резолв лицензионного ключа в URL сервера.
- * Вызывается мобильным приложением при первом запуске до логина.
+ * Вызывается мобильным приложением при первым запуске до логина.
  */
 router.get('/resolve', async (req, res) => {
     try {
-        const { key } = req.query;
+        const { key: raw_key } = req.query;
+        const key = normalizeLicenseKey(raw_key);
 
-        if (!key || key.trim().length < 8) {
+        if (!key || key.length < 8) {
             return res.status(400).json({ valid: false, error: 'Введите лицензионный ключ' });
         }
 
@@ -104,7 +45,47 @@ router.get('/resolve', async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ valid: false, error: 'Лицензионный ключ не найден' });
+            // Проверяем, не является ли ЭТОТ сервер облачным (Railway)
+            const isCloudServer = process.env.RAILWAY_ENVIRONMENT
+                || process.env.RAILWAY_PROJECT_ID
+                || (req.get('host') || '').includes('railway.app');
+
+            if (isCloudServer) {
+                console.log('[License Resolve] Ключ не найден в облачной БД:', key);
+                return res.status(404).json({
+                    valid: false,
+                    error: 'Лицензионный ключ не найден (Cloud). Обратитесь к администратору.'
+                });
+            }
+
+            // Локальный сервер — проверяем на центральном сервере Railway
+            console.log('[License Resolve] Not found locally, checking Railway cloud server...');
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const cloudResponse = await fetch(`https://smartpos-pro-production.up.railway.app/api/license/resolve?key=${key}`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                const cloudData = await cloudResponse.json();
+                console.log('[License Resolve] Cloud response status:', cloudResponse.status);
+
+                if (cloudResponse.ok) {
+                    return res.json(cloudData);
+                } else {
+                    return res.status(cloudResponse.status).json({
+                        ...cloudData,
+                        error: `${cloudData.error || 'Лицензия не найдена'} (Cloud Proxy)`
+                    });
+                }
+            } catch (cloudError) {
+                console.error('[License Resolve] Railway cloud error:', cloudError.message);
+                return res.status(404).json({
+                    valid: false,
+                    error: 'Лицензионный ключ не найден (Cloud Proxy Error). Облачный сервер недоступен или ключ там отсутствует.'
+                });
+            }
         }
 
         const license = result.rows[0];
@@ -150,7 +131,8 @@ router.get('/resolve', async (req, res) => {
  */
 router.post('/validate', async (req, res) => {
     try {
-        const { license_key, device_id } = req.body;
+        const { license_key: raw_key, device_id } = req.body;
+        const license_key = normalizeLicenseKey(raw_key);
 
         if (!license_key) {
             return res.status(400).json({ error: 'Требуется лицензионный ключ' });
@@ -158,11 +140,13 @@ router.post('/validate', async (req, res) => {
 
         // Попробовать проверить локально
         let licenseResult = null;
+        console.log(`[License] Validating key: "${license_key}"`);
         try {
             licenseResult = await pool.query(`
                 SELECT * FROM licenses
                 WHERE license_key = $1
             `, [license_key]);
+            console.log(`[License] Local search result: ${licenseResult.rows.length} rows`);
         } catch (dbError) {
             console.log('[License] Local DB error (table may not exist):', dbError.message);
             licenseResult = { rows: [] };
@@ -178,7 +162,7 @@ router.post('/validate', async (req, res) => {
                 console.log('[License] Ключ не найден в облачной БД:', license_key);
                 return res.status(404).json({
                     valid: false,
-                    error: 'Лицензионный ключ не найден. Обратитесь к администратору.'
+                    error: 'Лицензионный ключ не найден (Cloud). Обратитесь к администратору.'
                 });
             }
 
@@ -219,7 +203,7 @@ router.post('/validate', async (req, res) => {
                 console.error('[License] Railway cloud error:', cloudError.message);
                 return res.status(404).json({
                     valid: false,
-                    error: 'Лицензия не найдена (облачный сервер недоступен)'
+                    error: 'Лицензионный ключ не найден (Cloud Proxy). Облачный сервер недоступен или ключ там отсутствует.'
                 });
             }
         }
@@ -297,7 +281,8 @@ router.post('/activate', async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        const { license_key, device_id, device_type, device_name, device_fingerprint } = req.body;
+        const { license_key: raw_key, device_id, device_type, device_name, device_fingerprint } = req.body;
+        const license_key = normalizeLicenseKey(raw_key);
 
         if (!license_key || !device_id) {
             return res.status(400).json({ error: 'Требуются license_key и device_id' });
@@ -769,6 +754,13 @@ router.put('/admin/licenses/:id', authenticate, auditLog('license'), async (req,
             VALUES ($1, 'updated', $2, $3)
         `, [id, req.user.id, JSON.stringify(req.body)]);
 
+        // ★ Автоматическая синхронизация на Railway Cloud
+        try {
+            await syncToCloud(result.rows[0]);
+        } catch (syncErr) {
+            console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
+        }
+
         res.json({
             success: true,
             license: result.rows[0]
@@ -847,6 +839,13 @@ router.post('/admin/licenses/:id/reset-credentials', authenticate, auditLog('lic
             username_changed: !!new_username,
             password_changed: !!new_password
         })]);
+
+        // ★ Автоматическая синхронизация на Railway Cloud
+        try {
+            await syncToCloud(result.rows[0]);
+        } catch (syncErr) {
+            console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
+        }
 
         res.json({
             success: true,
@@ -1835,6 +1834,7 @@ router.delete('/all/cleanup', authenticate, async (req, res) => {
 router.post('/sync', async (req, res) => {
     try {
         const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
         if (secret !== CLOUD_SYNC_SECRET) {
             return res.status(403).json({ error: 'Invalid sync secret' });
         }
@@ -1844,7 +1844,8 @@ router.post('/sync', async (req, res) => {
             customer_username, customer_password_hash,
             company_name, license_type, max_devices = 3, max_users = 5,
             max_pos_terminals = 1, expires_at, trial_days = 0,
-            features = {}, server_type = 'cloud', server_url, server_api_key
+            features = {}, server_type = 'cloud', server_url, server_api_key,
+            status = 'active', is_active = true
         } = req.body;
 
         if (!license_key || !customer_username) {
@@ -1883,24 +1884,33 @@ router.post('/sync', async (req, res) => {
                 company_name, license_type, max_devices, max_users,
                 max_pos_terminals, expires_at, trial_days, features, status,
                 server_type, server_url, server_api_key, is_active
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'active',$15,$16,$17,true)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
             ON CONFLICT (license_key) DO UPDATE SET
                 customer_name = EXCLUDED.customer_name,
+                customer_email = EXCLUDED.customer_email,
+                customer_phone = EXCLUDED.customer_phone,
                 customer_username = EXCLUDED.customer_username,
                 customer_password_hash = EXCLUDED.customer_password_hash,
                 company_name = EXCLUDED.company_name,
                 license_type = EXCLUDED.license_type,
                 max_devices = EXCLUDED.max_devices,
                 max_users = EXCLUDED.max_users,
+                max_pos_terminals = EXCLUDED.max_pos_terminals,
                 expires_at = EXCLUDED.expires_at,
+                trial_days = EXCLUDED.trial_days,
                 features = EXCLUDED.features,
+                server_type = EXCLUDED.server_type,
+                server_url = EXCLUDED.server_url,
+                server_api_key = EXCLUDED.server_api_key,
+                status = EXCLUDED.status,
+                is_active = EXCLUDED.is_active,
                 updated_at = NOW()
             RETURNING id`, [
             license_key, customer_name, customer_email, customer_phone,
             customer_username, customer_password_hash,
             company_name, license_type, max_devices, max_users,
             max_pos_terminals, expires_at, trial_days, JSON.stringify(features),
-            server_type, server_url, server_api_key
+            status, server_type, server_url, server_api_key, is_active
         ]);
         const licenseId = licResult.rows[0].id;
 
@@ -1964,6 +1974,7 @@ router.post('/sync', async (req, res) => {
 router.post('/sync-delete', async (req, res) => {
     try {
         const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
         if (secret !== CLOUD_SYNC_SECRET) {
             return res.status(403).json({ error: 'Invalid sync secret' });
         }
@@ -2081,6 +2092,7 @@ router.post('/sync-delete', async (req, res) => {
 router.post('/admin-cleanup', async (req, res) => {
     try {
         const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
         if (secret !== CLOUD_SYNC_SECRET) {
             return res.status(403).json({ error: 'Invalid sync secret' });
         }

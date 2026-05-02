@@ -143,6 +143,7 @@ import edsRoutes from './routes/eds.js';
 import { apiLogger } from './middleware/apiLogger.js';
 import { initRedis } from './services/redis.js';
 import { checkExpiredLicenses } from './middleware/license.js';
+import { syncAllLicensesToCloud } from './services/licenseAutoSync.js';
 import { globalErrorHandler } from './middleware/errorMiddleware.js';
 import { initSentry, setupSentryErrorHandler } from './config/sentry.js';
 import { backupService } from './services/backup.js';
@@ -561,6 +562,9 @@ async function startServer() {
         try {
             await checkExpiredLicenses();
             console.log('✓ Initial expired licenses check completed');
+            
+            // Фоновая синхронизация лицензий с облаком при старте (неблокирующая)
+            syncAllLicensesToCloud().catch(e => console.error('Initial auto-sync failed:', e.message));
         } catch (error) {
             console.error('Ошибка начальной проверки лицензий:', error);
         }
@@ -571,6 +575,15 @@ async function startServer() {
                 console.error('Ошибка проверки лицензий:', error);
             }
         }, 10 * 60 * 1000);
+
+        // Периодическая синхронизация всех лицензий с облаком (каждые 6 часов)
+        setInterval(async () => {
+            try {
+                await syncAllLicensesToCloud();
+            } catch (error) {
+                console.error('Ошибка периодической синхронизации лицензий:', error);
+            }
+        }, 6 * 60 * 60 * 1000);
 
         // Автоматический бэкап (каждые 24 часа)
         setInterval(async () => {
