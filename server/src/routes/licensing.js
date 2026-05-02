@@ -15,7 +15,12 @@ const normalizeLicenseKey = (key) => {
         'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H', 'К': 'K', 'М': 'M', 
         'О': 'O', 'Р': 'P', 'Т': 'T', 'Х': 'X', 'У': 'Y'
     };
-    let normalized = key.toUpperCase().trim();
+    // Очистка от пробелов, переносов и нормализация тире
+    let normalized = key.toUpperCase()
+        .replace(/[\s\t\n\r\u00A0]/g, '') // Убираем все виды пробелов
+        .replace(/[\u2013\u2014\u2015]/g, '-') // Нормализуем разные виды тире
+        .trim();
+
     for (const [ru, en] of Object.entries(homoglyphs)) {
         normalized = normalized.split(ru).join(en);
     }
