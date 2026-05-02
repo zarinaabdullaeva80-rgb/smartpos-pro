@@ -1,6 +1,11 @@
 name: Build Android APK
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'mpos/**'
   workflow_dispatch:
     inputs:
       build_type:
@@ -55,20 +60,25 @@ jobs:
         working-directory: mpos/android
         run: chmod +x gradlew
 
-      - name: Build APK (${{ github.event.inputs.build_type }})
+      - name: Build APK
         working-directory: mpos/android
         run: |
+          BUILD_TYPE="${{ github.event.inputs.build_type }}"
+          if [ -z "$BUILD_TYPE" ]; then BUILD_TYPE="release"; fi
+          
           GRADLE_ARGS=""
           if [ -n "${{ github.event.inputs.cloud_url }}" ]; then
             GRADLE_ARGS="-PcloudUrl=${{ github.event.inputs.cloud_url }}"
             echo "🔧 Pre-configured build with cloud URL: ${{ github.event.inputs.cloud_url }}"
           fi
 
-          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
+          if [ "$BUILD_TYPE" = "release" ]; then
             ./gradlew assembleRelease $GRADLE_ARGS
           else
             ./gradlew assembleDebug $GRADLE_ARGS
           fi
+          
+          echo "build_type=$BUILD_TYPE" >> $GITHUB_ENV
 
       - name: Find APK
         id: find_apk
@@ -81,7 +91,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SmartPOS-Pro-${{ github.event.inputs.build_type }}-${{ github.run_number }}
+          name: SmartPOS-Pro-${{ env.build_type }}-${{ github.run_number }}
           path: mpos/android/${{ steps.find_apk.outputs.apk_path }}
           retention-days: 30
 
@@ -90,7 +100,7 @@ jobs:
           echo "## 🎉 APK Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Version:** 4.1.1 (build 42)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Type:** ${{ github.event.inputs.build_type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** ${{ env.build_type }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ github.event.inputs.cloud_url }}" ]; then
             echo "- **Pre-configured URL:** ${{ github.event.inputs.cloud_url }}" >> $GITHUB_STEP_SUMMARY
