@@ -31,6 +31,7 @@ import ServerSettingsScreen from './src/screens/ServerSettingsScreen';
 import SyncScreen from './src/screens/SyncScreen';
 import LoyaltyScreen from './src/screens/LoyaltyScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
+import LicenseScreen from './src/screens/LicenseScreen';
 
 // Context & Services
 import { ThemeProvider, useTheme, COLORS } from './src/context/ThemeContext';
@@ -38,7 +39,7 @@ import SettingsService, { THEMES } from './src/services/settings';
 import ErrorReporter from './src/services/errorReporter';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import UpdateChecker from './src/components/UpdateChecker';
-import { setApiUrl, initSettings } from './src/config/settings';
+import { setApiUrl, initSettings, hasLicense } from './src/config/settings';
 import SocketService from './src/services/socketService';
 import Sync1CService from './src/services/sync1c';
 import { I18nProvider } from './src/i18n';
@@ -87,6 +88,7 @@ function AppNavigator({ onLogout }) {
     const { theme, colors, isDark, setTheme } = useTheme();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [serverConfigured, setServerConfigured] = useState(false);
+    const [licenseRequired, setLicenseRequired] = useState(false);
     const [loading, setLoading] = useState(true);
     const appState = useRef(AppState.currentState);
 
@@ -128,6 +130,7 @@ function AppNavigator({ onLogout }) {
             } else {
                 console.log('[App] No token found');
             }
+
             setIsAuthenticated(!!token);
         } catch (error) {
             console.error('Auth check error:', error);
@@ -183,13 +186,23 @@ function AppNavigator({ onLogout }) {
                                 }} />}
                             </Stack.Screen>
                         ) : !isAuthenticated ? (
-                            <Stack.Screen name="Login" options={{ headerShown: false }}>
-                                {(props) => <LoginScreen {...props} onLogin={handleLogin} onChangeServer={() => {
-                                    setServerConfigured(false);
-                                    setIsAuthenticated(false);
-                                }} />}
-                            </Stack.Screen>
-                            ) : (
+                            <>
+                                <Stack.Screen name="Login" options={{ headerShown: false }}>
+                                    {(props) => <LoginScreen 
+                                        {...props} 
+                                        onLogin={handleLogin} 
+                                        onActivateLicense={() => props.navigation.navigate('License')}
+                                        onChangeServer={() => {
+                                            setServerConfigured(false);
+                                            setIsAuthenticated(false);
+                                        }} 
+                                    />}
+                                </Stack.Screen>
+                                <Stack.Screen name="License" options={{ headerShown: false }}>
+                                    {(props) => <LicenseScreen {...props} onActivated={() => props.navigation.navigate('Login')} />}
+                                </Stack.Screen>
+                            </>
+                        ) : (
                                 <>
                                     <Stack.Screen name="Home" options={{ title: 'SmartPOS Pro' }}>
                                         {(props) => <HomeScreen {...props} onLogout={handleLogout} />}
@@ -215,6 +228,7 @@ function AppNavigator({ onLogout }) {
                                     <Stack.Screen name="Sync" component={SyncScreen} options={{ title: 'Синхронизация' }} />
                                     <Stack.Screen name="Loyalty" component={LoyaltyScreen} options={{ title: 'Лояльность' }} />
                                     <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Уведомления' }} />
+                                    <Stack.Screen name="License" component={LicenseScreen} options={{ title: 'Лицензия' }} />
                                 </>
                             )}
                         </Stack.Navigator>

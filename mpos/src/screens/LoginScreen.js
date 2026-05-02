@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
-import { autoDiscoverServer, setApiUrl, getApiUrl, APP_VERSION, initSettings, setCloudUrl, getCloudUrl, getLicenseData } from '../config/settings';
+import { autoDiscoverServer, setApiUrl, getApiUrl, APP_VERSION, initSettings, setCloudUrl, getCloudUrl, getLicenseData, getLicenseKey } from '../config/settings';
 
 // Ключи хранилища
 const STORAGE_KEYS = {
@@ -25,7 +25,7 @@ if (Platform.OS !== 'web') {
     }
 }
 
-export default function LoginScreen({ onLogin, onChangeServer }) {
+export default function LoginScreen({ onLogin, onChangeServer, onActivateLicense }) {
     const { colors } = useTheme();
 
     const [username, setUsername] = useState('');
@@ -262,7 +262,12 @@ export default function LoginScreen({ onLogin, onChangeServer }) {
 
         setLoading(true);
         try {
-            const response = await authAPI.login({ username: username.trim(), password });
+            const licenseKey = getLicenseKey();
+            const response = await authAPI.login({ 
+                username: username.trim(), 
+                password,
+                license_key: licenseKey 
+            });
             const { token, user } = response.data;
 
             await AsyncStorage.setItem('token', token);

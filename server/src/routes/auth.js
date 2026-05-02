@@ -363,28 +363,24 @@ router.post('/login', async (req, res) => {
                 }
                 console.log(`[AUTH] License key "${license_key.substring(0,8)}..." not in local DB, user org check passed`);
             } else if (!license_key) {
-                // ★ license_key НЕ передан — блокируем если пользователь лицензионный
+                // ★ АВТОМАТИЧЕСКОЕ ОПРЕДЕЛЕНИЕ ЛИЦЕНЗИИ
+                // Если ключ не передан, используем license_id привязанный к пользователю
                 if (userLicenseId) {
-                    console.warn(`[AUTH] User "${username}" has license_id=${userLicenseId} but no license_key sent`);
-                    return res.status(401).json({ 
-                        error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
-                        code: 'LICENSE_KEY_REQUIRED'
-                    });
+                    console.log(`[AUTH] User "${username}" is bound to license #${userLicenseId}, checking status automatically`);
+                    // Продолжаем выполнение, проверка статуса лицензии будет ниже (строка 391+)
+                } else {
+                    // Если пользователь не привязан к лицензии — проверяем, не является ли он владельцем
+                    try {
+                        const licByUser = await pool.query(
+                            'SELECT id FROM licenses WHERE LOWER(customer_username) = LOWER($1) AND status = $2',
+                            [username, 'active']
+                        );
+                        if (licByUser.rows.length > 0) {
+                            userLicenseId = licByUser.rows[0].id;
+                            console.log(`[AUTH] User "${username}" identified as owner of license #${userLicenseId}`);
+                        }
+                    } catch (e) { /* licenses table may not exist */ }
                 }
-                // Проверить в таблице licenses
-                try {
-                    const licByUser = await pool.query(
-                        'SELECT id FROM licenses WHERE LOWER(customer_username) = LOWER($1) AND status = $2',
-                        [username, 'active']
-                    );
-                    if (licByUser.rows.length > 0) {
-                        console.warn(`[AUTH] User "${username}" is license owner but no license_key sent`);
-                        return res.status(401).json({ 
-                            error: 'Требуется лицензионный ключ для входа. Активируйте лицензию.',
-                            code: 'LICENSE_KEY_REQUIRED'
-                        });
-                    }
-                } catch (e) { /* licenses table may not exist */ }
             }
 
             // Проверить статус лицензии (если привязана)
