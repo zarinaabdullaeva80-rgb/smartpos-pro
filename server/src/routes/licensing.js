@@ -15,15 +15,17 @@ const normalizeLicenseKey = (key) => {
         'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H', 'К': 'K', 'М': 'M', 
         'О': 'O', 'Р': 'P', 'Т': 'T', 'Х': 'X', 'У': 'Y'
     };
-    // Очистка от пробелов, переносов и нормализация тире
-    let normalized = key.toUpperCase()
-        .replace(/[\s\t\n\r\u00A0]/g, '') // Убираем все виды пробелов
-        .replace(/[\u2013\u2014\u2015]/g, '-') // Нормализуем разные виды тире
-        .trim();
-
+    
+    let normalized = key.toString().toUpperCase();
+    
+    // 1. Заменяем русские буквы на английские
     for (const [ru, en] of Object.entries(homoglyphs)) {
         normalized = normalized.split(ru).join(en);
     }
+    
+    // 2. Оставляем только буквы и цифры (убираем тире, пробелы, точки и т.д.)
+    normalized = normalized.replace(/[^A-Z0-9]/g, '');
+    
     return normalized;
 };
 
@@ -45,8 +47,8 @@ router.get('/resolve', async (req, res) => {
             `SELECT id, license_key, license_type, status, expires_at,
                     company_name, customer_name, server_type, server_url,
                     max_devices, max_users, features
-             FROM licenses WHERE license_key = $1`,
-            [key.trim()]
+             FROM licenses WHERE REPLACE(license_key, '-', '') = $1`,
+            [key]
         );
 
         if (result.rows.length === 0) {
@@ -76,7 +78,32 @@ router.get('/resolve', async (req, res) => {
                 const cloudData = await cloudResponse.json();
                 console.log('[License Resolve] Cloud response status:', cloudResponse.status);
 
-                if (cloudResponse.ok) {
+                if (cloudResponse.ok && cloudData.valid) {
+                    // ★ САМОЛЕЧЕНИЕ: Сохраняем лицензию в локальную базу, если её там не было
+                    try {
+                        const l = cloudData.license;
+                        await pool.query(`
+                            INSERT INTO licenses (
+                                license_key, license_type, status, expires_at,
+                                company_name, customer_name, server_type, server_url,
+                                max_devices, max_users, features, is_active
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+                            ON CONFLICT (license_key) DO UPDATE SET
+                                status = EXCLUDED.status,
+                                expires_at = EXCLUDED.expires_at,
+                                company_name = EXCLUDED.company_name,
+                                server_url = EXCLUDED.server_url
+                        `, [
+                            l.license_key || key, l.license_type || l.type || 'yearly', 
+                            l.status || 'active', l.expires_at,
+                            l.company_name, l.customer_name, l.server_type, l.server_url,
+                            l.max_devices || 3, l.max_users || 5, 
+                            JSON.stringify(l.features || {})
+                        ]);
+                        console.log('[License Resolve] Successfully cached cloud license locally:', key);
+                    } catch (cacheErr) {
+                        console.error('[License Resolve] Failed to cache license locally:', cacheErr.message);
+                    }
                     return res.json(cloudData);
                 } else {
                     return res.status(cloudResponse.status).json({
@@ -149,7 +176,7 @@ router.post('/validate', async (req, res) => {
         try {
             licenseResult = await pool.query(`
                 SELECT * FROM licenses
-                WHERE license_key = $1
+                WHERE REPLACE(license_key, '-', '') = $1
             `, [license_key]);
             console.log(`[License] Local search result: ${licenseResult.rows.length} rows`);
         } catch (dbError) {
@@ -203,6 +230,34 @@ router.post('/validate', async (req, res) => {
                 clearTimeout(timeoutId);
                 const cloudData = await cloudResponse.json();
                 console.log('[License] Railway response:', cloudData);
+
+                if (cloudResponse.ok && cloudData.valid) {
+                    // ★ САМОЛЕЧЕНИЕ: Сохраняем лицензию локально
+                    try {
+                        const l = cloudData.license;
+                        await pool.query(`
+                            INSERT INTO licenses (
+                                license_key, license_type, status, expires_at,
+                                company_name, customer_name, server_type, server_url,
+                                max_devices, max_users, features, is_active
+                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+                            ON CONFLICT (license_key) DO UPDATE SET
+                                status = EXCLUDED.status,
+                                expires_at = EXCLUDED.expires_at,
+                                company_name = EXCLUDED.company_name,
+                                server_url = EXCLUDED.server_url
+                        `, [
+                            l.license_key || license_key, l.license_type || l.type || 'yearly', 
+                            l.status || 'active', l.expires_at,
+                            l.company_name, l.customer_name, l.server_type, l.server_url,
+                            l.max_devices || 3, l.max_users || 5, 
+                            JSON.stringify(l.features || {})
+                        ]);
+                        console.log('[License] Successfully cached cloud license locally during validation:', license_key);
+                    } catch (cacheErr) {
+                        console.error('[License] Cache error:', cacheErr.message);
+                    }
+                }
                 return res.status(cloudResponse.status).json(cloudData);
             } catch (cloudError) {
                 console.error('[License] Railway cloud error:', cloudError.message);
