@@ -311,7 +311,9 @@ function Login({ onLogin }) {
 
     // Вход в систему
     const handleSubmit = async (e) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
+        
+        setError('');
         if (!serverConnected) {
             setError('Нет подключения к серверу. Проверьте настройки.');
             return;
@@ -321,7 +323,7 @@ function Login({ onLogin }) {
             setMode('license');
             return;
         }
-        setError('');
+        
         setLoading(true);
 
         try {
@@ -331,29 +333,44 @@ function Login({ onLogin }) {
                 ...credentials,
                 ...(savedLicenseKey ? { license_key: savedLicenseKey } : {})
             };
+            
+            console.log('[Login] Attempting login for:', credentials.username);
             const response = await authAPI.login(loginPayload);
-            localStorage.setItem('token', response.data.token);
-            localStorage.setItem('user', JSON.stringify(response.data.user));
+            
+            if (response.data && response.data.token) {
+                localStorage.setItem('token', response.data.token);
+                localStorage.setItem('user', JSON.stringify(response.data.user));
 
-            // Сохранить информацию о лицензии если есть
-            if (response.data.license) {
-                localStorage.setItem('license_info', JSON.stringify(response.data.license));
+                // Сохранить информацию о лицензии если есть
+                if (response.data.license) {
+                    localStorage.setItem('license_info', JSON.stringify(response.data.license));
+                }
+
+                // Сохранить имя пользователя для удобства
+                if (rememberMe) {
+                    localStorage.setItem('saved_username', credentials.username);
+                    localStorage.setItem('remember_me', 'true');
+                } else {
+                    localStorage.removeItem('saved_username');
+                    localStorage.setItem('remember_me', 'false');
+                }
+                
+                localStorage.removeItem('saved_password');
+                setSuccess('Успешный вход!');
+                onLogin();
             }
-
-            // Сохранить имя пользователя для удобства (пароль НЕ сохраняем!)
-            if (rememberMe) {
-                localStorage.setItem('saved_username', credentials.username);
-                localStorage.setItem('remember_me', 'true');
-            } else {
-                localStorage.removeItem('saved_username');
-                localStorage.setItem('remember_me', 'false');
-            }
-            // Очистка устаревшего saved_password
-            localStorage.removeItem('saved_password');
-
-            onLogin();
         } catch (err) {
-            setError(err.response?.data?.error || 'Ошибка входа');
+            console.error('[Login] Error:', err);
+            const errorMsg = err.response?.data?.error || err.message || 'Ошибка входа';
+            
+            if (errorMsg.includes('jwt expired')) {
+                setError('Сессия истекла. Пожалуйста, введите пароль заново.');
+                localStorage.removeItem('token');
+            } else if (err.message === 'Network Error') {
+                setError('Сервер недоступен (ошибка сети). Проверьте адрес в настройках.');
+            } else {
+                setError(errorMsg);
+            }
         } finally {
             setLoading(false);
         }
