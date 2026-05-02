@@ -182,7 +182,7 @@ export default function CartScreen({ route, navigation }) {
                 documentNumber: `MOB-${Date.now()}`,
                 documentDate: new Date().toISOString().split('T')[0],
                 counterpartyId: null,
-                warehouseId: 1,
+                warehouseId: warehouseId || null,
                 items: cartItems.map(item => ({
                     productId: item.id,
                     quantity: item.quantity,
