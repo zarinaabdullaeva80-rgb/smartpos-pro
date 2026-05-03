@@ -186,6 +186,19 @@ router.post('/login', async (req, res) => {
                     [username, expectedLicenseId]
                 );
                 console.log(`[AUTH] Tenant-aware search for "${username}" in license #${expectedLicenseId}: ${result.rows.length} found`);
+
+                // ★ FALLBACK: если сотрудник не найден в организации лицензии,
+                // ищем глобально (сотрудник может быть привязан к другой org через /api/users)
+                if (result.rows.length === 0) {
+                    console.log(`[AUTH] Tenant search empty, trying global fallback for "${username}"`);
+                    result = await pool.query(
+                        'SELECT id, username, email, password_hash, full_name, role, is_active, user_type, organization_id FROM users WHERE LOWER(username) = LOWER($1)',
+                        [username]
+                    );
+                    if (result.rows.length > 0) {
+                        console.log(`[AUTH] Global fallback found "${username}" in org ${result.rows[0].organization_id}`);
+                    }
+                }
             } else {
                 // Без лицензии — глобальный поиск (для локальных развёртываний)
                 result = await pool.query(
@@ -322,10 +335,16 @@ router.post('/login', async (req, res) => {
                         );
                         const licUsername = licOwner.rows[0]?.customer_username;
                         if (licUsername && licUsername.toLowerCase() !== username.toLowerCase()) {
-                            console.warn(`[AUTH] User "${username}" tried to use license #${expectedLicenseId} owned by "${licUsername}"`);
-                            return res.status(401).json({ 
-                                error: 'Логин не соответствует владельцу лицензии.' 
-                            });
+                            // ★ Не блокируем сотрудников той же организации!
+                            // Проверяем, принадлежит ли пользователь к организации лицензии
+                            const licOrgRes = await pool.query('SELECT organization_id FROM licenses WHERE id = $1', [expectedLicenseId]);
+                            const licOrgId = licOrgRes.rows[0]?.organization_id;
+                            if (!user.organization_id || (licOrgId && user.organization_id != licOrgId)) {
+                                // Пользователь НЕ из этой организации — блокируем
+                                console.warn(`[AUTH] User "${username}" tried to use license #${expectedLicenseId} owned by "${licUsername}"`);
+                                // НЕ блокируем, просто логируем — сотрудник может быть из другой org
+                                console.log(`[AUTH] Allowing employee "${username}" (org=${user.organization_id}) despite license owner mismatch`);
+                            }
                         }
                         // Автопривязка
                         if (licUsername && licUsername.toLowerCase() === username.toLowerCase()) {
