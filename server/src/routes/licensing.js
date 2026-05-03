@@ -2145,6 +2145,108 @@ router.post('/sync-delete', async (req, res) => {
 });
 
 /**
+ * POST /api/license/sync-employee
+ * Синхронизация сотрудника с локального сервера на облако.
+ * Создаёт/обновляет пользователя с привязкой к organization_id и license_id.
+ * Protected by X-Sync-Secret header.
+ */
+router.post('/sync-employee', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) {
+            return res.status(403).json({ error: 'Invalid sync secret' });
+        }
+
+        const {
+            username, email, password_hash, full_name,
+            organization_id, license_id, user_type = 'employee',
+            role = 'Кассир', action
+        } = req.body;
+
+        if (!username) {
+            return res.status(400).json({ error: 'username is required' });
+        }
+
+        console.log(`[SYNC-EMPLOYEE] Syncing employee "${username}" org=${organization_id} action=${action || 'upsert'}`);
+
+        // Обновление пароля
+        if (action === 'update_password') {
+            const result = await pool.query(
+                `UPDATE users SET password_hash = $1, updated_at = NOW()
+                 WHERE LOWER(username) = LOWER($2) AND organization_id = $3
+                 RETURNING id, username`,
+                [password_hash, username, organization_id]
+            );
+            if (result.rows.length > 0) {
+                console.log(`[SYNC-EMPLOYEE] Password updated for "${username}"`);
+                return res.json({ success: true, action: 'password_updated', user_id: result.rows[0].id });
+            }
+            return res.status(404).json({ error: 'User not found for password update' });
+        }
+
+        // Найти organization_id в облаке (может отличаться от локального)
+        let cloudOrgId = organization_id;
+        let cloudLicenseId = license_id;
+
+        // Попробуем найти org по license_id
+        if (license_id) {
+            try {
+                const licRes = await pool.query('SELECT id, organization_id FROM licenses WHERE id = $1', [license_id]);
+                if (licRes.rows.length > 0 && licRes.rows[0].organization_id) {
+                    cloudOrgId = licRes.rows[0].organization_id;
+                    cloudLicenseId = licRes.rows[0].id;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // Если всё ещё нет org — ищем по organization_id
+        if (!cloudOrgId && organization_id) {
+            try {
+                const orgRes = await pool.query('SELECT id FROM organizations WHERE id = $1', [organization_id]);
+                if (orgRes.rows.length > 0) cloudOrgId = orgRes.rows[0].id;
+            } catch (e) { /* ignore */ }
+        }
+
+        if (!cloudOrgId) {
+            return res.status(400).json({ error: 'Cannot determine organization for employee' });
+        }
+
+        // Upsert employee
+        const result = await pool.query(`
+            INSERT INTO users (username, email, password_hash, full_name, role,
+                               organization_id, license_id, user_type, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+            ON CONFLICT (username) DO UPDATE SET
+                password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+                full_name = COALESCE(EXCLUDED.full_name, users.full_name),
+                email = COALESCE(EXCLUDED.email, users.email),
+                organization_id = EXCLUDED.organization_id,
+                license_id = EXCLUDED.license_id,
+                user_type = EXCLUDED.user_type,
+                is_active = true,
+                updated_at = NOW()
+            RETURNING id, username, organization_id, license_id`,
+            [username, email || (username + '@smartpos.local'), password_hash,
+             full_name || username, role, cloudOrgId, cloudLicenseId, user_type]
+        );
+
+        const user = result.rows[0];
+        console.log(`[SYNC-EMPLOYEE] Done: "${user.username}" id=${user.id} org=${user.organization_id}`);
+
+        res.json({
+            success: true,
+            user_id: user.id,
+            organization_id: user.organization_id,
+            license_id: user.license_id
+        });
+    } catch (error) {
+        console.error('[SYNC-EMPLOYEE] Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * POST /api/license/admin-cleanup
  * Admin endpoint to delete products and reinitialize DB tables.
  * Protected by X-Sync-Secret.

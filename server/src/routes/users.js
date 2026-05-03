@@ -29,52 +29,79 @@ router.get('/', authenticate, authorize('Администратор'), async (re
     }
 });
 
-// Создание пользователя с генерацией пароля
+// Создание пользователя (сотрудника) с привязкой к лицензии
 router.post('/', authenticate, authorize('Администратор'), async (req, res) => {
     try {
-        const { username, email, fullName, roleId } = req.body;
+        const { username, email, fullName, roleId, password: customPassword } = req.body;
         const bcrypt = await import('bcrypt');
 
-        // Генерация случайного пароля
-        const generatedPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+        // ★ Пароль: пользовательский или случайный
+        const generatedPassword = customPassword || (Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10));
         const passwordHash = await bcrypt.hash(generatedPassword, 10);
 
-        // Создать пользователя БЕЗ role_id
+        // ★ Привязка к организации И лицензии создателя
         const orgId = req.user?.organization_id;
+        const licenseId = req.user?.license_id || req.user?.licenseId || null;
 
-        // Создать пользователя
+        if (!orgId) {
+            return res.status(400).json({ error: 'Невозможно создать сотрудника: ваша учётная запись не привязана к организации.' });
+        }
+
+        // Создать пользователя с полной привязкой
         const result = await pool.query(
-            `INSERT INTO users (username, email, password_hash, full_name, organization_id)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, username, email, full_name`,
-            [username, email, passwordHash, fullName, orgId]
+            `INSERT INTO users (username, email, password_hash, full_name, 
+             organization_id, license_id, user_type, created_by_license_id, role, is_active)
+             VALUES ($1, $2, $3, $4, $5, $6, 'employee', $6, 'Кассир', true)
+             RETURNING id, username, email, full_name, organization_id, license_id`,
+            [username, email || (username + '@smartpos.local'), passwordHash, fullName, orgId, licenseId]
         );
 
         const newUser = result.rows[0];
 
         // Назначить роль через user_roles
         if (roleId) {
-            await pool.query(
-                `INSERT INTO user_roles (user_id, role_id, assigned_by)
-         VALUES ($1, $2, $3)`,
-                [newUser.id, roleId, req.user.id]
-            );
+            try {
+                await pool.query(
+                    `INSERT INTO user_roles (user_id, role_id, assigned_by) VALUES ($1, $2, $3)`,
+                    [newUser.id, roleId, req.user.id]
+                );
+            } catch (e) { /* role table might not exist */ }
         }
 
         await logAudit(req.user.id, 'CREATE', 'users', newUser.id, null, newUser, req.ip);
 
+        // ★ Автоматическая синхронизация сотрудника в облако (Railway)
+        let cloudSynced = false;
+        try {
+            const { syncEmployeeToCloud } = await import('../services/employeeSync.js');
+            const syncResult = await syncEmployeeToCloud({
+                username: newUser.username,
+                email: newUser.email,
+                password_hash: passwordHash,
+                full_name: newUser.full_name,
+                organization_id: orgId,
+                license_id: licenseId,
+                user_type: 'employee',
+                role: 'Кассир'
+            });
+            cloudSynced = syncResult?.success || syncResult?.skipped || false;
+        } catch (syncErr) {
+            console.warn('[USERS] Employee cloud sync error (non-blocking):', syncErr.message);
+        }
+
         res.status(201).json({
-            message: 'Пользователь создан',
+            message: 'Сотрудник создан',
             user: newUser,
-            password: generatedPassword // Отправляем сгенерированный пароль
+            password: generatedPassword,
+            cloud_synced: cloudSynced
         });
     } catch (error) {
         console.error('Ошибка создания пользователя:', error);
         if (error.code === '23505') {
-            if (error.detail.includes('username')) {
+            if (error.detail?.includes('username')) {
                 return res.status(400).json({ error: `Логин «${req.body.username}» уже занят` });
             }
-            if (error.detail.includes('email')) {
+            if (error.detail?.includes('email')) {
                 return res.status(400).json({ error: `Email «${req.body.email}» уже зарегистрирован` });
             }
         }
@@ -130,20 +157,26 @@ router.put('/:id', authenticate, authorize('Администратор'), async 
     }
 });
 
-// Сброс пароля
+// Сброс пароля (с синхронизацией в облако)
 router.post('/:id/reset-password', authenticate, authorize('Администратор'), async (req, res) => {
     try {
         const { id } = req.params;
+        const { password: customPassword } = req.body;
         const bcrypt = await import('bcrypt');
 
-        // Генерация нового пароля
-        const newPassword = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+        const newPassword = customPassword || (Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10));
         const passwordHash = await bcrypt.hash(newPassword, 10);
 
-        const result = await pool.query(
-            'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING username',
-            [passwordHash, id]
-        );
+        const orgId = req.user?.organization_id;
+        let query = 'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2';
+        const params = [passwordHash, id];
+        if (orgId) {
+            query += ' AND organization_id = $3';
+            params.push(orgId);
+        }
+        query += ' RETURNING username, organization_id';
+
+        const result = await pool.query(query, params);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Пользователь не найден' });
@@ -151,6 +184,13 @@ router.post('/:id/reset-password', authenticate, authorize('Администра
 
         await logAudit(req.user.id, 'RESET_PASSWORD', 'users', id, null, null, req.ip);
 
+        // ★ Синхронизация нового пароля в облако
+        try {
+            const { syncEmployeePasswordToCloud } = await import('../services/employeeSync.js');
+            await syncEmployeePasswordToCloud(result.rows[0].username, passwordHash, result.rows[0].organization_id);
+        } catch (syncErr) {
+            console.warn('[USERS] Password sync error (non-blocking):', syncErr.message);
+        }
         res.json({
             message: 'Пароль сброшен',
             username: result.rows[0].username,

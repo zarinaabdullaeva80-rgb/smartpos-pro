@@ -1,172 +1,77 @@
-/**
- * Employee Sync Service
- * Синхронизирует сотрудников с облачным сервером (Railway)
- * когда лицензия имеет server_type = 'cloud'
- */
-import pool from '../config/database.js';
+import fetch from 'node-fetch';
 
-const RAILWAY_API_URL = process.env.RAILWAY_API_URL || 'https://smartpos-pro-production-f885.up.railway.app/api';
+const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+const CLOUD_SERVER_URL = process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app';
 
 /**
- * Получить server_type и server_url для лицензии
+ * Синхронизация сотрудника на облачный сервер Railway
+ * Вызывается автоматически после создания/обновления сотрудника на локальном сервере
  */
-async function getLicenseServerInfo(licenseId) {
-    if (!licenseId) return null;
-    try {
-        const result = await pool.query(
-            'SELECT id, server_type, server_url, server_api_key FROM licenses WHERE id = $1',
-            [licenseId]
-        );
-        return result.rows[0] || null;
-    } catch (e) {
-        console.error('[EmployeeSync] Error getting license info:', e.message);
-        return null;
-    }
-}
-
-/**
- * Получить URL облачного сервера
- */
-function getCloudUrl(license) {
-    if (license.server_type === 'self_hosted' && license.server_url) {
-        return license.server_url;
-    }
-    return RAILWAY_API_URL;
-}
-
-/**
- * Синхронизировать сотрудника с облачным сервером при создании
- */
-export async function syncEmployeeCreate(employeeData, licenseId) {
-    const license = await getLicenseServerInfo(licenseId);
-    
-    // Если лицензия не найдена — всё равно синхронизируем на Railway (fallback)
-    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
-    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
-
-    if (license?.server_type === 'self_hosted') {
-        console.log('[EmployeeSync] License is self_hosted, skipping cloud sync');
-        return { synced: false, reason: 'self_hosted' };
-    }
-
-    console.log(`[EmployeeSync] Syncing employee "${employeeData.username}" to ${cloudUrl}${!license ? ' (fallback, no license)' : ''}`);
+export async function syncEmployeeToCloud(employeeData) {
+    // Не синхронизировать если МЫ и есть облако
+    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+    if (isCloud) return { skipped: true, reason: 'already cloud' };
 
     try {
-        const response = await fetch(`${cloudUrl}/employees/sync`, {
+        console.log(`[EMPLOYEE-SYNC] Syncing employee "${employeeData.username}" to cloud...`);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        const response = await fetch(`${process.env.CLOUD_SERVER_URL || CLOUD_SERVER_URL}/api/license/sync-employee`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Key': syncKey,
-                'X-License-Id': String(licenseId || '')
+                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || CLOUD_SYNC_SECRET
             },
-            body: JSON.stringify({
-                action: 'create',
-                employee: employeeData,
-                licenseId: licenseId
-            })
+            body: JSON.stringify(employeeData),
+            signal: controller.signal
         });
 
-        const data = await response.json();
-
-        if (response.ok) {
-            console.log(`[EmployeeSync] Employee "${employeeData.username}" synced successfully`);
-            return { synced: true, remote_id: data.employee?.id };
-        } else {
-            console.error(`[EmployeeSync] Sync failed: ${data.error}`);
-            return { synced: false, reason: data.error };
-        }
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        console.log(`[EMPLOYEE-SYNC] Cloud response:`, result.success ? '✅ OK' : '⚠️ ' + (result.error || 'unknown'));
+        return result;
     } catch (error) {
-        console.error(`[EmployeeSync] Network error: ${error.message}`);
-        return { synced: false, reason: error.message };
+        console.error('[EMPLOYEE-SYNC] Cloud sync failed (non-blocking):', error.message);
+        return { success: false, error: error.message };
     }
 }
 
 /**
- * Синхронизировать обновление сотрудника
+ * Синхронизация обновления пароля сотрудника
  */
-export async function syncEmployeeUpdate(employeeId, updateData, licenseId) {
-    const license = await getLicenseServerInfo(licenseId);
-    if (license?.server_type === 'self_hosted') return { synced: false };
-
-    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
-    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
+export async function syncEmployeePasswordToCloud(username, passwordHash, organizationId) {
+    const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
+    if (isCloud) return { skipped: true, reason: 'already cloud' };
 
     try {
-        const response = await fetch(`${cloudUrl}/employees/sync`, {
+        console.log(`[EMPLOYEE-SYNC] Syncing password update for "${username}" to cloud...`);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        const response = await fetch(`${process.env.CLOUD_SERVER_URL || CLOUD_SERVER_URL}/api/license/sync-employee`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Sync-Key': syncKey,
-                'X-License-Id': String(licenseId || '')
+                'X-Sync-Secret': process.env.CLOUD_SYNC_SECRET || CLOUD_SYNC_SECRET
             },
             body: JSON.stringify({
-                action: 'update',
-                employeeId,
-                employee: updateData,
-                licenseId
-            })
-        });
-
-        const data = await response.json();
-        return { synced: response.ok, remote_id: data.employee?.id };
-    } catch (error) {
-        console.error(`[EmployeeSync] Update sync error: ${error.message}`);
-        return { synced: false, reason: error.message };
-    }
-}
-
-/**
- * Синхронизировать удаление/деактивацию сотрудника
- */
-export async function syncEmployeeDelete(username, licenseId) {
-    const license = await getLicenseServerInfo(licenseId);
-    if (license?.server_type === 'self_hosted') return { synced: false };
-
-    const cloudUrl = license ? getCloudUrl(license) : RAILWAY_API_URL;
-    const syncKey = license?.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key';
-
-    try {
-        const response = await fetch(`${cloudUrl}/employees/sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key': syncKey,
-                'X-License-Id': String(licenseId || '')
-            },
-            body: JSON.stringify({
-                action: 'delete',
                 username,
-                licenseId
-            })
+                password_hash: passwordHash,
+                organization_id: organizationId,
+                action: 'update_password'
+            }),
+            signal: controller.signal
         });
 
-        const data = await response.json();
-        return { synced: response.ok };
+        clearTimeout(timeoutId);
+        const result = await response.json();
+        console.log(`[EMPLOYEE-SYNC] Password sync response:`, result.success ? '✅ OK' : '⚠️ ' + (result.error || 'unknown'));
+        return result;
     } catch (error) {
-        console.error(`[EmployeeSync] Delete sync error: ${error.message}`);
-        return { synced: false, reason: error.message };
-    }
-}
-
-/**
- * Синхронизировать лицензию с облачным сервером
- */
-export async function syncLicenseToCloud(licenseData) {
-    try {
-        const response = await fetch(`${RAILWAY_API_URL}/licenses/sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Sync-Key': licenseData.server_api_key || process.env.SYNC_SECRET_KEY || 'smartpos-sync-key'
-            },
-            body: JSON.stringify({ license: licenseData })
-        });
-
-        const data = await response.json();
-        console.log(`[EmployeeSync] License sync result:`, data);
-        return { synced: response.ok };
-    } catch (error) {
-        console.error(`[EmployeeSync] License sync error: ${error.message}`);
-        return { synced: false, reason: error.message };
+        console.error('[EMPLOYEE-SYNC] Password sync failed (non-blocking):', error.message);
+        return { success: false, error: error.message };
     }
 }
