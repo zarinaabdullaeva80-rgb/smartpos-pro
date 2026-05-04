@@ -192,10 +192,11 @@ function ensureServerSetup(serverPath) {
         // Find psql executable
         const psqlPaths = [
             'psql',
+            'C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe',
+            'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe',
             'C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe',
             'C:\\Program Files\\PostgreSQL\\15\\bin\\psql.exe',
             'C:\\Program Files\\PostgreSQL\\14\\bin\\psql.exe',
-            'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe',
         ];
 
         let psql = null;
@@ -224,6 +225,60 @@ function ensureServerSetup(serverPath) {
                         { env: pgEnv, stdio: 'pipe', timeout: 10000 }
                     );
                     console.log(`[Setup] Database '${dbName}' created!`);
+
+                    // ★ AUTO-RESTORE: Если есть готовый дамп — восстанавливаем данные
+                    const backupPaths = [
+                        path.join(serverPath, 'db_backup', 'smartpos_ready.backup'),
+                        path.join(process.resourcesPath || '', 'server', 'db_backup', 'smartpos_ready.backup'),
+                    ];
+                    
+                    let backupFile = null;
+                    for (const bp of backupPaths) {
+                        if (fs.existsSync(bp)) { backupFile = bp; break; }
+                    }
+
+                    if (backupFile) {
+                        console.log(`[Setup] Found backup file: ${backupFile}`);
+                        console.log(`[Setup] Restoring database from backup...`);
+                        
+                        // Find pg_restore
+                        const pgBinDir = psql.replace(/psql(\.exe)?$/i, '');
+                        const pgRestorePaths = [
+                            path.join(pgBinDir, 'pg_restore.exe'),
+                            path.join(pgBinDir, 'pg_restore'),
+                            'pg_restore',
+                            'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_restore.exe',
+                            'C:\\Program Files\\PostgreSQL\\17\\bin\\pg_restore.exe',
+                            'C:\\Program Files\\PostgreSQL\\16\\bin\\pg_restore.exe',
+                            'C:\\Program Files\\PostgreSQL\\15\\bin\\pg_restore.exe',
+                        ];
+                        
+                        let pgRestore = null;
+                        for (const p of pgRestorePaths) {
+                            try {
+                                execSync(`"${p}" --version`, { stdio: 'pipe', timeout: 5000 });
+                                pgRestore = p;
+                                break;
+                            } catch (e) { /* try next */ }
+                        }
+                        
+                        if (pgRestore) {
+                            try {
+                                execSync(
+                                    `"${pgRestore}" -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --no-owner --no-privileges --clean --if-exists "${backupFile}"`,
+                                    { env: pgEnv, stdio: 'pipe', timeout: 120000 }
+                                );
+                                console.log(`[Setup] ✅ Database restored successfully from backup!`);
+                            } catch (restoreErr) {
+                                // pg_restore часто выдает warnings (exit code != 0) но данные восстановлены
+                                console.log(`[Setup] pg_restore completed with warnings (this is normal):`, restoreErr.message?.substring(0, 200));
+                            }
+                        } else {
+                            console.warn('[Setup] pg_restore not found — database will start empty');
+                        }
+                    } else {
+                        console.log('[Setup] No backup file found — database will start empty');
+                    }
                 } else {
                     console.log(`[Setup] Database '${dbName}' already exists`);
                 }
