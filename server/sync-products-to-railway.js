@@ -12,7 +12,7 @@ const __dirname = dirname(__filename);
 
 dotenv.config({ path: join(__dirname, '.env') });
 
-const RAILWAY_URL = 'https://smartpos-pro-production-f885.up.railway.app/api';
+const RAILWAY_URL = 'https://smartpos-pro-production.up.railway.app/api';
 
 // Локальная БД
 const localPool = new pg.Pool({

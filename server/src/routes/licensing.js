@@ -2266,6 +2266,252 @@ router.post('/sync-employee', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PRODUCT: Receive single product from local server
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-product', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, code, name, category_id, unit, price_purchase, price_sale, price_retail,
+                vat_rate, description, barcode, image_url, is_active, min_stock, supplier, category_name } = req.body;
+
+        if (!license_key || !code) return res.status(400).json({ error: 'license_key and code required' });
+
+        // Resolve org from license_key
+        const lkRes = await pool.query(
+            `SELECT l.id as license_id, COALESCE(l.organization_id, o.id) as organization_id
+             FROM licenses l LEFT JOIN organizations o ON o.id = l.organization_id
+             WHERE l.license_key = $1 LIMIT 1`, [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+
+        const orgId = lkRes.rows[0].organization_id;
+
+        // Resolve or create category if category_name provided
+        let catId = category_id || null;
+        if (category_name && !catId) {
+            try {
+                const catRes = await pool.query(
+                    `INSERT INTO product_categories (name, organization_id) VALUES ($1, $2)
+                     ON CONFLICT (name, organization_id) DO UPDATE SET name = EXCLUDED.name
+                     RETURNING id`, [category_name, orgId]);
+                catId = catRes.rows[0]?.id || null;
+            } catch (e) {
+                try {
+                    const catFind = await pool.query('SELECT id FROM product_categories WHERE name = $1 AND organization_id = $2', [category_name, orgId]);
+                    catId = catFind.rows[0]?.id || null;
+                } catch (e2) { /* ignore */ }
+            }
+        }
+
+        // Upsert product by (code, organization_id)
+        const result = await pool.query(`
+            INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail,
+                                  vat_rate, description, barcode, image_url, is_active, min_stock, supplier, organization_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            ON CONFLICT (code) WHERE organization_id = $15
+            DO UPDATE SET name=EXCLUDED.name, category_id=EXCLUDED.category_id, unit=EXCLUDED.unit,
+                         price_purchase=EXCLUDED.price_purchase, price_sale=EXCLUDED.price_sale,
+                         price_retail=EXCLUDED.price_retail, vat_rate=EXCLUDED.vat_rate,
+                         description=EXCLUDED.description, barcode=EXCLUDED.barcode,
+                         image_url=EXCLUDED.image_url, is_active=EXCLUDED.is_active,
+                         min_stock=EXCLUDED.min_stock, supplier=EXCLUDED.supplier, updated_at=NOW()
+            RETURNING id`,
+            [code, name, catId, unit||'шт', price_purchase||0, price_sale||0, price_retail||0,
+             vat_rate||0, description, barcode, image_url, is_active!==false, min_stock||0, supplier, orgId]);
+
+        res.json({ success: true, product_id: result.rows[0]?.id });
+    } catch (error) {
+        console.error('[SYNC-PRODUCT] Error:', error.message);
+        // Fallback: try simple upsert without partial unique index
+        try {
+            const { license_key, code, name, unit, price_purchase, price_sale, price_retail, barcode, is_active, min_stock, supplier } = req.body;
+            const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+            const orgId = lkRes.rows[0]?.org_id;
+            if (orgId) {
+                const existing = await pool.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [code, orgId]);
+                if (existing.rows.length > 0) {
+                    await pool.query('UPDATE products SET name=$1, price_sale=$2, price_purchase=$3, barcode=$4, is_active=$5, updated_at=NOW() WHERE id=$6',
+                        [name, price_sale||0, price_purchase||0, barcode, is_active!==false, existing.rows[0].id]);
+                    return res.json({ success: true, product_id: existing.rows[0].id, action: 'updated' });
+                } else {
+                    const ins = await pool.query('INSERT INTO products (code,name,unit,price_purchase,price_sale,price_retail,barcode,is_active,min_stock,supplier,organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id',
+                        [code, name, unit||'шт', price_purchase||0, price_sale||0, price_retail||0, barcode, is_active!==false, min_stock||0, supplier, orgId]);
+                    return res.json({ success: true, product_id: ins.rows[0].id, action: 'created' });
+                }
+            }
+        } catch (e2) { /* final fallback failed */ }
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PRODUCTS-BULK: Receive batch of products from local
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-products-bulk', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, products } = req.body;
+        if (!license_key || !products || !Array.isArray(products)) {
+            return res.status(400).json({ error: 'license_key and products[] required' });
+        }
+
+        const lkRes = await pool.query(
+            `SELECT l.id as license_id, COALESCE(l.organization_id, o.id) as organization_id
+             FROM licenses l LEFT JOIN organizations o ON o.id = l.organization_id
+             WHERE l.license_key = $1 LIMIT 1`, [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].organization_id;
+
+        let synced = 0, errors = 0;
+
+        for (const p of products) {
+            try {
+                const existing = await pool.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [p.code, orgId]);
+                if (existing.rows.length > 0) {
+                    await pool.query(`UPDATE products SET name=$1, price_sale=$2, price_purchase=$3, price_retail=$4,
+                        barcode=$5, is_active=$6, min_stock=$7, unit=$8, description=$9, supplier=$10, updated_at=NOW() WHERE id=$11`,
+                        [p.name, p.price_sale||0, p.price_purchase||0, p.price_retail||0, p.barcode, p.is_active!==false,
+                         p.min_stock||0, p.unit||'шт', p.description, p.supplier, existing.rows[0].id]);
+                } else {
+                    await pool.query(`INSERT INTO products (code,name,unit,price_purchase,price_sale,price_retail,barcode,
+                        is_active,min_stock,supplier,description,organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                        [p.code, p.name, p.unit||'шт', p.price_purchase||0, p.price_sale||0, p.price_retail||0,
+                         p.barcode, p.is_active!==false, p.min_stock||0, p.supplier, p.description, orgId]);
+                }
+                synced++;
+            } catch (e) {
+                errors++;
+                console.error(`[SYNC-PRODUCTS-BULK] Error for code=${p.code}:`, e.message);
+            }
+        }
+
+        console.log(`[SYNC-PRODUCTS-BULK] org=${orgId}: synced=${synced}, errors=${errors}, total=${products.length}`);
+        res.json({ success: true, synced, errors, total: products.length });
+    } catch (error) {
+        console.error('[SYNC-PRODUCTS-BULK] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PRODUCT-DELETE: Delete product from cloud
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-product-delete', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, code } = req.body;
+        if (!license_key || !code) return res.status(400).json({ error: 'license_key and code required' });
+
+        const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].org_id;
+
+        // Delete dependent records first
+        const prod = await pool.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [code, orgId]);
+        if (prod.rows.length > 0) {
+            const pid = prod.rows[0].id;
+            const deps = ['inventory_movements','sale_items','stock_balances','stock_movements'];
+            for (const t of deps) { try { await pool.query(`DELETE FROM ${t} WHERE product_id = $1`, [pid]); } catch(e){} }
+            await pool.query('DELETE FROM products WHERE id = $1', [pid]);
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[SYNC-PRODUCT-DELETE] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-INVENTORY: Receive stock balance from local
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-inventory', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, product_code, quantity } = req.body;
+        if (!license_key || !product_code) return res.status(400).json({ error: 'license_key and product_code required' });
+
+        const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].org_id;
+
+        // Find product
+        const prod = await pool.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [product_code, orgId]);
+        if (prod.rows.length === 0) return res.status(404).json({ error: 'Product not found on cloud' });
+        const pid = prod.rows[0].id;
+
+        // Get current cloud stock
+        const stockRes = await pool.query(`SELECT COALESCE(SUM(
+            CASE WHEN document_type IN ('receipt','adjustment','inventory') THEN quantity
+                 WHEN document_type IN ('sale','write_off','transfer_out') THEN -quantity
+                 ELSE quantity END), 0) as total
+            FROM inventory_movements WHERE product_id = $1`, [pid]);
+        const currentStock = parseFloat(stockRes.rows[0]?.total || 0);
+        const diff = quantity - currentStock;
+
+        if (Math.abs(diff) > 0.001) {
+            // Get warehouse
+            let whId = 1;
+            try {
+                const wh = await pool.query('SELECT id FROM warehouses WHERE organization_id = $1 AND is_active = true LIMIT 1', [orgId]);
+                if (wh.rows.length > 0) whId = wh.rows[0].id;
+            } catch(e) {}
+
+            await pool.query(`INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, organization_id, notes)
+                VALUES ($1, $2, 'adjustment', $3, $4, 'Cloud sync adjustment')`, [pid, whId, diff, orgId]);
+        }
+
+        res.json({ success: true, product_id: pid, adjusted: diff });
+    } catch (error) {
+        console.error('[SYNC-INVENTORY] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-CATEGORIES: Receive categories from local
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-categories', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, categories } = req.body;
+        if (!license_key || !categories) return res.status(400).json({ error: 'license_key and categories required' });
+
+        const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].org_id;
+
+        let synced = 0;
+        for (const cat of categories) {
+            try {
+                await pool.query(`INSERT INTO product_categories (name, organization_id) VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING`, [cat.name, orgId]);
+                synced++;
+            } catch(e) { /* dup */ }
+        }
+
+        res.json({ success: true, synced });
+    } catch (error) {
+        console.error('[SYNC-CATEGORIES] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 /**
  * POST /api/license/admin-cleanup
  * Admin endpoint to delete products and reinitialize DB tables.

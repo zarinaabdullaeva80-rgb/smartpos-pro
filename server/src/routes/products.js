@@ -4,6 +4,7 @@ import { authenticate, authorize, logAudit } from '../middleware/auth.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { syncProductToCloud, syncProductDeleteToCloud, syncInventoryToCloud } from '../services/productSync.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,15 @@ const router = express.Router();
  */
 function getOrgId(req) {
     return req.user?.organization_id || req.organizationId || null;
+}
+
+/** Helper: get license_key for the user's organization */
+async function getLicenseKey(orgId) {
+    if (!orgId) return null;
+    try {
+        const res = await pool.query('SELECT license_key FROM licenses WHERE organization_id = $1 AND is_active = true LIMIT 1', [orgId]);
+        return res.rows[0]?.license_key || null;
+    } catch (e) { return null; }
 }
 
 /**
@@ -424,6 +434,12 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
         const io = req.app.get('io');
         if (io) io.emit('product:updated', { id: result.rows[0].id, action });
 
+        // ★ Cloud sync (non-blocking)
+        const licKey = await getLicenseKey(orgId);
+        if (licKey) {
+            syncProductToCloud(result.rows[0], licKey).catch(e => console.error('[SYNC] product sync error:', e.message));
+        }
+
         res.status(action === 'CREATE' ? 201 : 200).json({
             message: action === 'CREATE' ? 'Товар создан' : 'Товар обновлен',
             product: result.rows[0]
@@ -496,6 +512,12 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         // Emit real-time update
         const io = req.app.get('io');
         if (io) io.emit('product:updated', { id, action: 'UPDATE' });
+
+        // ★ Cloud sync (non-blocking)
+        const licKey = await getLicenseKey(orgId);
+        if (licKey) {
+            syncProductToCloud(result.rows[0], licKey).catch(e => console.error('[SYNC] product update sync error:', e.message));
+        }
 
         res.json({ message: 'Товар обновлен', product: result.rows[0] });
     } catch (error) {
@@ -635,7 +657,7 @@ router.delete('/:id', authenticate, async (req, res) => {
         const orgId = getOrgId(req);
         // Проверяем товар
         const check = await pool.query(
-            'SELECT id, name FROM products WHERE id = $1' + (orgId ? ' AND (organization_id = $2 OR organization_id IS NULL)' : ''),
+            'SELECT id, name, code FROM products WHERE id = $1' + (orgId ? ' AND (organization_id = $2 OR organization_id IS NULL)' : ''),
             orgId ? [id, orgId] : [id]
         );
         if (check.rows.length === 0) {
@@ -648,6 +670,12 @@ router.delete('/:id', authenticate, async (req, res) => {
 
         const io = req.app.get('io');
         if (io) io.emit('product:updated', { id, action: 'DELETE' });
+
+        // ★ Cloud sync delete (non-blocking)
+        const licKey = await getLicenseKey(orgId);
+        if (licKey && check.rows[0]?.code) {
+            syncProductDeleteToCloud(check.rows[0].code, licKey).catch(e => console.error('[SYNC] product delete sync error:', e.message));
+        }
 
         res.json({ message: 'Товар удалён' });
     } catch (error) {

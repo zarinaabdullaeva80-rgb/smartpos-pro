@@ -17,54 +17,62 @@ const DEFAULT_PORT = 5000;
 // Центральный сервер лицензирования (Railway cloud)
 const LICENSE_SERVER_URL = 'https://smartpos-pro-production.up.railway.app/api';
 
-// Режимы работы (упрощённые: 2 вместо 4)
+// Режимы работы
 export const SERVER_MODES = {
-    OWN: 'own',        // Свой сервер клиента (локальный + WiFi + мобильный интернет сотрудников)
-    CLOUD: 'cloud',    // Облако Railway (+ локальная копия на ПК)
-    // Обратная совместимость со старыми значениями
-    SERVER: 'own',     // alias → own
-    CLIENT: 'own',     // alias → own (WiFi клиент теперь часть "Свой сервер")
-    HYBRID: 'own',     // alias → own (гибрид теперь встроен в "Свой сервер")
+    OWN: 'own',        // Свой сервер клиента (локальный)
+    CLOUD: 'cloud',    // Только Облако
 };
 
 // Ключи localStorage
 const STORAGE_KEYS = {
     SERVER_MODE: 'server_mode',
     SERVER_URL: 'server_url',
+    CLOUD_URL: 'cloud_url',
     LICENSE_SERVER_URL: 'license_server_url',
     DEVICE_ID: 'device_id',
     DEVICE_NAME: 'device_name',
 };
 
 // ============================================================
-// Динамический URL
+// Динамические настройки
 // ============================================================
 
 let dynamicApiUrl = null;
+let dynamicCloudUrl = null;
 
 /**
  * Получить текущий режим сервера
  */
 export function getServerMode() {
     const saved = localStorage.getItem(STORAGE_KEYS.SERVER_MODE);
-    // Миграция старых значений на новые
-    if (saved === 'server' || saved === 'client' || saved === 'hybrid') return SERVER_MODES.OWN;
-    if (saved === 'cloud') return SERVER_MODES.CLOUD;
-    return saved || SERVER_MODES.OWN;
+    if (!saved) return SERVER_MODES.OWN;
+    return saved;
 }
 
 /**
  * Установить режим сервера
  */
 export function setServerMode(mode) {
-    // Принимаем только 'own' и 'cloud'
-    const validModes = [SERVER_MODES.OWN, SERVER_MODES.CLOUD];
-    if (!validModes.includes(mode)) {
-        console.error('[Settings] Invalid server mode:', mode, '— expected own or cloud');
-        return;
-    }
     localStorage.setItem(STORAGE_KEYS.SERVER_MODE, mode);
     console.log('[Settings] Server mode set to:', mode);
+}
+
+/**
+ * Получить URL облачного сервера
+ */
+export function getCloudUrl() {
+    if (dynamicCloudUrl) return dynamicCloudUrl;
+    return localStorage.getItem(STORAGE_KEYS.CLOUD_URL) || LICENSE_SERVER_URL;
+}
+
+/**
+ * Установить URL облачного сервера
+ */
+export function setCloudUrl(url) {
+    const cleanUrl = url.replace(/\/+$/, '');
+    const apiUrl = cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+    dynamicCloudUrl = apiUrl;
+    localStorage.setItem(STORAGE_KEYS.CLOUD_URL, apiUrl);
 }
 
 /**

@@ -70,12 +70,8 @@
     ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
+        "portable",
+        "dir"
       ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
@@ -95,7 +91,6 @@
           "**/*",
           "!node_modules/.cache/**",
           "!node_modules/**/test/**",
-          "!node_modules/**/docs/**",
           "!node_modules/**/example/**",
           "!logs/**",
           "!backups/**",
@@ -111,22 +106,6 @@
         "owner": "zarinaabdullaeva80-rgb",
         "repo": "smartpos-pro"
       }
-    ],
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "createDesktopShortcut": "always",
-      "createStartMenuShortcut": true,
-      "shortcutName": "SmartPOS Pro",
-      "runAfterFinish": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
-      "deleteAppDataOnUninstall": false,
-      "differentialPackage": false,
-      "unicode": true,
-      "license": null
-    }
+    ]
   }
 }
