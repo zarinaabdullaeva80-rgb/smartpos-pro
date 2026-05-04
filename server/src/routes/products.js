@@ -101,12 +101,12 @@ router.get('/', authenticate, async (req, res) => {
              p.vat_rate, p.description, p.barcode, p.image_url, 
              p.is_active, p.organization_id, p.min_stock, p.supplier, p.created_at, p.updated_at,
              pc.name as category_name,
-             COALESCE((
+             COALESCE(NULLIF((
                SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
                               WHEN im.document_type IN ('sale','write_off','transfer_out') THEN -im.quantity
                               ELSE im.quantity END)
                FROM inventory_movements im WHERE im.product_id = p.id
-             ), 0) AS quantity
+             ), 0), p.quantity, 0) AS quantity
       FROM products p
       LEFT JOIN product_categories pc ON p.category_id = pc.id
       WHERE (p.is_active = true OR p.is_active IS NULL)
