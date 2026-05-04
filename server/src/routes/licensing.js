@@ -2160,7 +2160,8 @@ router.post('/sync-employee', async (req, res) => {
 
         const {
             username, email, password_hash, full_name,
-            organization_id, license_id, user_type = 'employee',
+            organization_id, license_id, license_key,
+            user_type = 'employee',
             role = 'Кассир', action
         } = req.body;
 
@@ -2168,7 +2169,7 @@ router.post('/sync-employee', async (req, res) => {
             return res.status(400).json({ error: 'username is required' });
         }
 
-        console.log(`[SYNC-EMPLOYEE] Syncing employee "${username}" org=${organization_id} action=${action || 'upsert'}`);
+        console.log(`[SYNC-EMPLOYEE] Syncing employee "${username}" license_key=${license_key} org=${organization_id} action=${action || 'upsert'}`);
 
         // Обновление пароля
         if (action === 'update_password') {
@@ -2185,12 +2186,32 @@ router.post('/sync-employee', async (req, res) => {
             return res.status(404).json({ error: 'User not found for password update' });
         }
 
-        // Найти organization_id в облаке (может отличаться от локального)
-        let cloudOrgId = organization_id;
-        let cloudLicenseId = license_id;
+        // ★ Resolve cloud org/license IDs from license_key (local IDs ≠ cloud IDs)
+        let cloudOrgId = null;
+        let cloudLicenseId = null;
 
-        // Попробуем найти org по license_id
-        if (license_id) {
+        if (license_key) {
+            try {
+                const lkRes = await pool.query(
+                    `SELECT l.id as license_id, l.organization_id, o.id as org_id
+                     FROM licenses l
+                     LEFT JOIN organizations o ON o.license_key = $1
+                     WHERE l.license_key = $1
+                     LIMIT 1`,
+                    [license_key]
+                );
+                if (lkRes.rows.length > 0) {
+                    cloudLicenseId = lkRes.rows[0].license_id;
+                    cloudOrgId = lkRes.rows[0].organization_id || lkRes.rows[0].org_id;
+                    console.log(`[SYNC-EMPLOYEE] Resolved license_key="${license_key}" → org=${cloudOrgId}, license=${cloudLicenseId}`);
+                }
+            } catch (e) {
+                console.warn('[SYNC-EMPLOYEE] license_key lookup error:', e.message);
+            }
+        }
+
+        // Fallback: try raw IDs if license_key didn't resolve
+        if (!cloudOrgId && license_id) {
             try {
                 const licRes = await pool.query('SELECT id, organization_id FROM licenses WHERE id = $1', [license_id]);
                 if (licRes.rows.length > 0 && licRes.rows[0].organization_id) {
@@ -2200,7 +2221,6 @@ router.post('/sync-employee', async (req, res) => {
             } catch (e) { /* ignore */ }
         }
 
-        // Если всё ещё нет org — ищем по organization_id
         if (!cloudOrgId && organization_id) {
             try {
                 const orgRes = await pool.query('SELECT id FROM organizations WHERE id = $1', [organization_id]);

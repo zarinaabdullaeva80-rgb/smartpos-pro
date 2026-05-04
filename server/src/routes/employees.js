@@ -174,13 +174,23 @@ router.post('/', authenticate, requireClientAdmin, async (req, res) => {
         // Sync to cloud if license is cloud type
         let syncResult = { synced: false };
         if (req.user.organization_id) {
+            // Lookup license_key for cloud sync (cloud uses different IDs)
+            let licenseKey = null;
+            if (licenseId) {
+                try {
+                    const lkRes = await pool.query('SELECT license_key FROM licenses WHERE id = $1', [licenseId]);
+                    licenseKey = lkRes.rows[0]?.license_key || null;
+                } catch (e) { /* ignore */ }
+            }
+
             syncResult = await syncEmployeeCreate({
                 username,
                 email: email || `${username}@employee.local`,
-                password, // plain password for hashing on remote
-                fullName,
+                password_hash: passwordHash,
+                full_name: fullName,
                 phone,
-                role: role || 'Кассир'
+                role: role || 'Кассир',
+                license_key: licenseKey
             }, req.user.organization_id);
         }
 

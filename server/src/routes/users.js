@@ -73,14 +73,20 @@ router.post('/', authenticate, authorize('Администратор'), async (r
         // ★ Автоматическая синхронизация сотрудника в облако (Railway)
         let cloudSynced = false;
         try {
+            // Lookup license_key (cloud uses different IDs, so we must send the key)
+            let licenseKey = null;
+            if (licenseId) {
+                const lkRes = await pool.query('SELECT license_key FROM licenses WHERE id = $1', [licenseId]);
+                licenseKey = lkRes.rows[0]?.license_key || null;
+            }
+
             const { syncEmployeeToCloud } = await import('../services/employeeSync.js');
             const syncResult = await syncEmployeeToCloud({
                 username: newUser.username,
                 email: newUser.email,
                 password_hash: passwordHash,
                 full_name: newUser.full_name,
-                organization_id: orgId,
-                license_id: licenseId,
+                license_key: licenseKey,
                 user_type: 'employee',
                 role: 'Кассир'
             });
