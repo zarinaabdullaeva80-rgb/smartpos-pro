@@ -2512,6 +2512,70 @@ router.post('/sync-categories', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PULL-SALES: Send unsynced sales to local server
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-pull-sales', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, limit = 100 } = req.body;
+        if (!license_key) return res.status(400).json({ error: 'license_key required' });
+
+        const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].org_id;
+
+        // Get unsynced sales
+        const salesRes = await pool.query(
+            `SELECT s.*, 
+                    (SELECT json_agg(si.*) FROM sale_items si WHERE si.sale_id = s.id) as items
+             FROM sales s
+             WHERE s.organization_id = $1 
+             AND s.source_device = 'mobile'
+             AND (s.synced_to_desktop IS FALSE OR s.synced_to_desktop IS NULL)
+             ORDER BY s.created_at ASC
+             LIMIT $2`, [orgId, limit]);
+
+        res.json({ success: true, sales: salesRes.rows });
+    } catch (error) {
+        console.error('[SYNC-PULL-SALES] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-ACK-SALES: Mark sales as synced to desktop
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-ack-sales', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { license_key, sale_ids } = req.body;
+        if (!license_key || !Array.isArray(sale_ids)) return res.status(400).json({ error: 'license_key and sale_ids[] required' });
+
+        const lkRes = await pool.query('SELECT COALESCE(organization_id, id) as org_id FROM licenses WHERE license_key = $1', [license_key]);
+        if (lkRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        const orgId = lkRes.rows[0].org_id;
+
+        if (sale_ids.length > 0) {
+            await pool.query(
+                'UPDATE sales SET synced_to_desktop = TRUE, updated_at = NOW() WHERE id = ANY($1) AND organization_id = $2',
+                [sale_ids, orgId]
+            );
+        }
+
+        res.json({ success: true, acknowledged: sale_ids.length });
+    } catch (error) {
+        console.error('[SYNC-ACK-SALES] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 /**
  * POST /api/license/admin-cleanup
  * Admin endpoint to delete products and reinitialize DB tables.

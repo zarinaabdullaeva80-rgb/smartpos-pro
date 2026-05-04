@@ -2,6 +2,7 @@ import pool from '../config/database.js';
 import { syncToCloud } from './licenseSync.js';
 import { syncAllProductsToCloud, syncCategoriesToCloud } from './productSync.js';
 import { syncEmployeeToCloud } from './employeeSync.js';
+import { pullSalesFromCloud } from './cloudPull.js';
 
 /**
  * Синхронизирует все активные лицензии, сотрудников, категории и товары с облаком Railway.
@@ -18,7 +19,7 @@ export async function syncAllLicensesToCloud() {
         const licenses = result.rows;
         console.log(`[AUTO-SYNC] Found ${licenses.length} active licenses`);
         
-        let stats = { licenses: 0, employees: 0, products: 0, categories: 0, errors: 0 };
+        let stats = { licenses: 0, employees: 0, products: 0, categories: 0, sales_pulled: 0, errors: 0 };
         
         for (const license of licenses) {
             const licenseKey = license.license_key;
@@ -36,7 +37,13 @@ export async function syncAllLicensesToCloud() {
 
             if (!orgId) continue;
 
-            // 2. Sync employees for this org
+            // 2. Pull Sales from Cloud (NEW)
+            try {
+                const pullRes = await pullSalesFromCloud(licenseKey);
+                if (pullRes.success) stats.sales_pulled += pullRes.pulled || 0;
+            } catch (e) { console.error('[AUTO-SYNC] Pull Sales error:', e.message); }
+
+            // 3. Sync employees for this org
             try {
                 const empRes = await pool.query(
                     'SELECT username, email, password_hash, full_name, phone, role, user_type FROM users WHERE organization_id = $1',
@@ -89,7 +96,7 @@ export async function syncAllLicensesToCloud() {
             } catch (e) { console.error('[AUTO-SYNC] Products error:', e.message); }
         }
         
-        console.log(`[AUTO-SYNC] ═══ Done: licenses=${stats.licenses} employees=${stats.employees} categories=${stats.categories} products=${stats.products} errors=${stats.errors} ═══`);
+        console.log(`[AUTO-SYNC] ═══ Done: licenses=${stats.licenses} employees=${stats.employees} categories=${stats.categories} products=${stats.products} sales=${stats.sales_pulled} errors=${stats.errors} ═══`);
         return { success: true, ...stats };
     } catch (error) {
         console.error('[AUTO-SYNC] Failed:', error.message);
