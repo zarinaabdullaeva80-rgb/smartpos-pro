@@ -9,7 +9,7 @@ async function checkCloudProducts() {
         },
         body: JSON.stringify({
             action: 'run_sql',
-            sql: "SELECT id, name, code, organization_id FROM products LIMIT 10"
+            sql: "SELECT id, name, code, organization_id FROM products ORDER BY id DESC LIMIT 20"
         })
     });
     const data = await res.json();

@@ -8,9 +8,10 @@ const SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
 /**
  * Pulls sales from cloud and applies them locally.
  * @param {string} licenseKey 
+ * @param {number} localOrgId - LOCAL organization_id (cloud org IDs differ!)
  */
-export async function pullSalesFromCloud(licenseKey) {
-    console.log(`[CLOUD-PULL] Starting sales pull for license: ${licenseKey}`);
+export async function pullSalesFromCloud(licenseKey, localOrgId = null) {
+    console.log(`[CLOUD-PULL] Starting sales pull for license: ${licenseKey}, localOrgId: ${localOrgId}`);
     
     try {
         // 1. Fetch unsynced sales from cloud
@@ -43,13 +44,30 @@ export async function pullSalesFromCloud(licenseKey) {
 
         for (const cs of cloudSales) {
             const client = await pool.connect();
+            const orgId = localOrgId || cs.organization_id; // Use LOCAL org_id
             try {
                 await client.query('BEGIN');
+
+                // Find a valid local warehouse for this org
+                let warehouseId = cs.warehouse_id;
+                const whRes = await client.query(
+                    'SELECT id FROM warehouses WHERE organization_id = $1 LIMIT 1', [orgId]
+                );
+                if (whRes.rows.length > 0) {
+                    warehouseId = whRes.rows[0].id;
+                } else {
+                    // Create default warehouse if none exists
+                    const newWh = await client.query(
+                        `INSERT INTO warehouses (name, organization_id, is_default) 
+                         VALUES ('Основной склад', $1, true) RETURNING id`, [orgId]
+                    );
+                    warehouseId = newWh.rows[0].id;
+                }
 
                 // Check if already exists locally
                 const exists = await client.query(
                     'SELECT id FROM sales WHERE document_number = $1 AND organization_id = $2',
-                    [cs.document_number, cs.organization_id]
+                    [cs.document_number, orgId]
                 );
 
                 if (exists.rows.length === 0) {
@@ -57,7 +75,7 @@ export async function pullSalesFromCloud(licenseKey) {
                     const localItems = [];
                     for (const item of (cs.items || [])) {
                         // Find product by code (which is synced between cloud and local)
-                        const pRes = await client.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [item.code, cs.organization_id]);
+                        const pRes = await client.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [item.code, orgId]);
                         if (pRes.rows.length > 0) {
                             localItems.push({
                                 product_id: pRes.rows[0].id,
@@ -66,7 +84,7 @@ export async function pullSalesFromCloud(licenseKey) {
                                 total_price: item.total_price
                             });
                         } else {
-                            console.warn(`[CLOUD-PULL] Product code=${item.code} not found locally for org=${cs.organization_id}`);
+                            console.warn(`[CLOUD-PULL] Product code=${item.code} not found locally for org=${orgId}`);
                         }
                     }
 
@@ -82,8 +100,8 @@ export async function pullSalesFromCloud(licenseKey) {
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                         RETURNING id`,
                         [
-                            cs.document_number, cs.document_date, cs.customer_id, cs.warehouse_id || 1,
-                            cs.total_amount, cs.final_amount, 'confirmed', cs.user_id, cs.organization_id, 
+                            cs.document_number, cs.document_date, cs.customer_id, warehouseId,
+                            cs.total_amount, cs.final_amount, 'confirmed', cs.user_id, orgId, 
                             'cloud-mobile', cs.notes || 'Pulled from cloud'
                         ]
                     );
@@ -94,18 +112,18 @@ export async function pullSalesFromCloud(licenseKey) {
                         await client.query(
                             `INSERT INTO sale_items (sale_id, product_id, quantity, price, total_price, organization_id)
                              VALUES ($1, $2, $3, $4, $5, $6)`,
-                            [saleId, li.product_id, li.quantity, li.price, li.total_price, cs.organization_id]
+                            [saleId, li.product_id, li.quantity, li.price, li.total_price, orgId]
                         );
 
                         // Inventory movement
                         await client.query(
                             `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, organization_id, notes)
                              VALUES ($1, $2, 'sale', $3, $4, $5, $6)`,
-                            [li.product_id, cs.warehouse_id || 1, 'sale', saleId, li.quantity, cs.organization_id, `Cloud sale ${cs.document_number}`]
+                            [li.product_id, warehouseId, 'sale', saleId, li.quantity, orgId, `Cloud sale ${cs.document_number}`]
                         );
 
                         // Update balance
-                        await updateStockBalance(client, li.product_id, cs.warehouse_id || 1, -li.quantity);
+                        await updateStockBalance(client, li.product_id, warehouseId, -li.quantity);
                     }
 
                     pulled++;

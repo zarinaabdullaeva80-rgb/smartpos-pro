@@ -1,6 +1,6 @@
 const fetch = require('node-fetch');
 
-async function checkCloudProducts() {
+async function checkCloudLicenses() {
     const res = await fetch('https://smartpos-pro-production.up.railway.app/api/license/admin-cleanup', {
         method: 'POST',
         headers: {
@@ -9,11 +9,11 @@ async function checkCloudProducts() {
         },
         body: JSON.stringify({
             action: 'run_sql',
-            sql: "SELECT id, name, code, organization_id FROM products LIMIT 10"
+            sql: "SELECT license_key, organization_id, is_active FROM licenses"
         })
     });
     const data = await res.json();
     console.log(JSON.stringify(data, null, 2));
 }
 
-checkCloudProducts();
+checkCloudLicenses();

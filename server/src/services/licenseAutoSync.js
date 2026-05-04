@@ -3,12 +3,13 @@ import { syncToCloud } from './licenseSync.js';
 import { syncAllProductsToCloud, syncCategoriesToCloud } from './productSync.js';
 import { syncEmployeeToCloud } from './employeeSync.js';
 import { pullSalesFromCloud } from './cloudPull.js';
+import { logSyncEvent } from '../utils/syncLogger.js';
 
 /**
  * Синхронизирует все активные лицензии, сотрудников, категории и товары с облаком Railway.
  * Запускается при старте сервера и периодически.
  */
-export async function syncAllLicensesToCloud() {
+export async function syncAllLicensesToCloud(triggeredBy = 'system') {
     const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
     if (isCloud) return { skipped: true, reason: 'already cloud' };
 
@@ -39,7 +40,7 @@ export async function syncAllLicensesToCloud() {
 
             // 2. Pull Sales from Cloud (NEW)
             try {
-                const pullRes = await pullSalesFromCloud(licenseKey);
+                const pullRes = await pullSalesFromCloud(licenseKey, orgId);
                 if (pullRes.success) stats.sales_pulled += pullRes.pulled || 0;
             } catch (e) { console.error('[AUTO-SYNC] Pull Sales error:', e.message); }
 
@@ -94,6 +95,18 @@ export async function syncAllLicensesToCloud() {
                     if (syncResult.errors) stats.errors += syncResult.errors;
                 }
             } catch (e) { console.error('[AUTO-SYNC] Products error:', e.message); }
+
+            // ★ LOG SYNC EVENT
+            await logSyncEvent({
+                organization_id: orgId,
+                sync_type: 'full',
+                direction: 'bidirectional',
+                status: 'success',
+                records_total: stats.employees + stats.products + stats.categories + stats.sales_pulled,
+                records_success: stats.employees + stats.products + stats.categories + stats.sales_pulled,
+                details: { employees: stats.employees, products: stats.products, categories: stats.categories, sales: stats.sales_pulled },
+                triggered_by: triggeredBy
+            });
         }
         
         console.log(`[AUTO-SYNC] ═══ Done: licenses=${stats.licenses} employees=${stats.employees} categories=${stats.categories} products=${stats.products} sales=${stats.sales_pulled} errors=${stats.errors} ═══`);

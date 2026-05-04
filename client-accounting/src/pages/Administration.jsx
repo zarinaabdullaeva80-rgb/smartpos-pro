@@ -231,6 +231,7 @@ function Administration() {
         { id: 'sessions', label: 'Сессии', icon: Globe },
         { id: 'backups', label: 'Бэкапы', icon: HardDrive },
         { id: 'database', label: 'База данных', icon: Database },
+        { id: 'sync', label: 'Облако', icon: Cloud },
         { id: 'logs', label: 'Логи сервера', icon: Monitor }
     ];
 
@@ -577,6 +578,84 @@ function Administration() {
                         ))}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    );
+
+    const renderSync = () => (
+        <div>
+            <div className="card" style={{ padding: '30px', textAlign: 'center', background: 'linear-gradient(135deg, #3b82f610, #8b5cf610)' }}>
+                <div style={{
+                    width: '80px', height: '80px', borderRadius: '40px', background: '#3b82f6',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+                    boxShadow: '0 0 20px rgba(59, 130, 246, 0.4)'
+                }}>
+                    <Cloud size={40} color="white" />
+                </div>
+                <h2 style={{ margin: '0 0 10px' }}>Синхронизация с облаком Railway</h2>
+                <p style={{ color: '#666', maxWidth: '500px', margin: '0 auto 25px' }}>
+                    Синхронизация данных о товарах, категориях, остатках и продажах между локальным сервером и облачным хранилищем для мобильного приложения.
+                </p>
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                    <button 
+                        className="btn btn-primary" 
+                        style={{ padding: '12px 24px', fontSize: '16px' }}
+                        onClick={async () => {
+                            toast.info('Синхронизация запущена...');
+                            try {
+                                const res = await fetch('/api/sync/trigger', { 
+                                    method: 'POST',
+                                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                    toast.success(`Успешно! Синхронизировано продаж: ${data.result.sales_pulled || 0}`);
+                                } else {
+                                    toast.error('Ошибка: ' + data.error);
+                                }
+                            } catch (err) {
+                                toast.error('Ошибка соединения с сервером');
+                            }
+                        }}
+                    >
+                        <RefreshCw size={20} /> Синхронизировать сейчас
+                    </button>
+                </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginTop: '20px' }}>
+                <div className="card" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <Upload size={18} color="#10b981" />
+                        <span style={{ fontWeight: 'bold' }}>Локальный → Облако</span>
+                    </div>
+                    <ul style={{ fontSize: '13px', color: '#666', paddingLeft: '20px', margin: 0 }}>
+                        <li>Новые и измененные товары</li>
+                        <li>Категории товаров</li>
+                        <li>Актуальные остатки на складах</li>
+                        <li>Учетные записи сотрудников</li>
+                    </ul>
+                </div>
+                <div className="card" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <Download size={18} color="#3b82f6" />
+                        <span style={{ fontWeight: 'bold' }}>Облако → Локальный</span>
+                    </div>
+                    <ul style={{ fontSize: '13px', color: '#666', paddingLeft: '20px', margin: 0 }}>
+                        <li>Продажи из мобильного приложения</li>
+                        <li>Списание остатков по чекам</li>
+                        <li>Обновление статусов лицензий</li>
+                    </ul>
+                </div>
+                <div className="card" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                        <Clock size={18} color="#f59e0b" />
+                        <span style={{ fontWeight: 'bold' }}>Автоматизация</span>
+                    </div>
+                    <p style={{ fontSize: '13px', color: '#666', margin: 0 }}>
+                        Система автоматически выполняет полную синхронизацию каждые 30 минут, а также при создании или обновлении товаров.
+                    </p>
+                </div>
             </div>
         </div>
     );

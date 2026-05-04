@@ -397,4 +397,106 @@ router.post('/bulk-import', async (req, res) => {
     }
 });
 
+import { syncAllLicensesToCloud } from '../services/licenseAutoSync.js';
+
+/**
+ * POST /api/sync/trigger
+ * Manually trigger full cloud synchronization
+ */
+router.post('/trigger', authenticate, async (req, res) => {
+    try {
+        console.log(`[SYNC] Manual sync triggered by user ${req.user.username}`);
+        const result = await syncAllLicensesToCloud(req.user.username);
+        res.json({ success: true, result });
+    } catch (error) {
+        console.error('[SYNC] Manual sync failed:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/sync/products
+ * Cloud endpoint to receive products from desktop
+ */
+router.post('/products', async (req, res) => {
+    const licenseKey = req.headers['x-license-key'];
+    if (!licenseKey) return res.status(401).json({ error: 'x-license-key required' });
+
+    try {
+        const { products } = req.body;
+        const lkRes = await pool.query('SELECT organization_id FROM licenses WHERE license_key = $1 AND is_active = true', [licenseKey]);
+        if (lkRes.rows.length === 0) return res.status(403).json({ error: 'Invalid or inactive license' });
+        
+        const orgId = lkRes.rows[0].organization_id;
+        let synced = 0;
+        let errors = 0;
+
+        for (const p of products) {
+            try {
+                await pool.query(
+                    `INSERT INTO products (
+                        code, name, unit, price_purchase, price_sale, price_retail, 
+                        barcode, is_active, min_stock, supplier, description, organization_id
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    ON CONFLICT (code, organization_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        unit = EXCLUDED.unit,
+                        price_purchase = EXCLUDED.price_purchase,
+                        price_sale = EXCLUDED.price_sale,
+                        price_retail = EXCLUDED.price_retail,
+                        barcode = EXCLUDED.barcode,
+                        is_active = EXCLUDED.is_active,
+                        min_stock = EXCLUDED.min_stock,
+                        supplier = EXCLUDED.supplier,
+                        description = EXCLUDED.description`,
+                    [
+                        p.code, p.name, p.unit, p.price_purchase, p.price_sale, p.price_retail,
+                        p.barcode, p.is_active, p.min_stock, p.supplier, p.description, orgId
+                    ]
+                );
+                synced++;
+            } catch (e) {
+                console.error(`[CLOUD-SYNC] Product ${p.code} error:`, e.message);
+                errors++;
+            }
+        }
+
+        res.json({ success: true, synced, errors });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /api/sync/categories
+ * Cloud endpoint to receive categories from desktop
+ */
+router.post('/categories', async (req, res) => {
+    const licenseKey = req.headers['x-license-key'];
+    if (!licenseKey) return res.status(401).json({ error: 'x-license-key required' });
+
+    try {
+        const { categories } = req.body;
+        const lkRes = await pool.query('SELECT organization_id FROM licenses WHERE license_key = $1 AND is_active = true', [licenseKey]);
+        if (lkRes.rows.length === 0) return res.status(403).json({ error: 'Invalid or inactive license' });
+        
+        const orgId = lkRes.rows[0].organization_id;
+        let synced = 0;
+
+        for (const c of categories) {
+            await pool.query(
+                `INSERT INTO product_categories (name, organization_id) 
+                 VALUES ($1, $2)
+                 ON CONFLICT (name, organization_id) DO NOTHING`,
+                [c.name, orgId]
+            );
+            synced++;
+        }
+
+        res.json({ success: true, synced });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;
