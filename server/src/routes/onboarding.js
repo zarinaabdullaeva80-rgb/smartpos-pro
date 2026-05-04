@@ -85,17 +85,23 @@ router.post('/register', async (req, res) => {
         // Create admin user (auto-generate email if not provided)
         const email = admin_email || `${admin_username}@${company_name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'org'}.smartpos.local`;
         const hashedPassword = await bcrypt.hash(admin_password, 10);
+        
+        // Find license to link
+        const licRes = await client.query('SELECT id FROM licenses WHERE organization_id = $1 LIMIT 1', [org.id]);
+        const licenseId = licRes.rows[0]?.id || null;
+
         const userResult = await client.query(
-            `INSERT INTO users (username, email, password_hash, role, full_name, organization_id, is_active, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, true, CURRENT_TIMESTAMP)
-             RETURNING id, username, email, role, full_name, organization_id`,
-            [admin_username, email, hashedPassword, ADMIN_ROLE, admin_full_name || admin_username, org.id]
+            `INSERT INTO users (username, email, password_hash, role, full_name, organization_id, license_id, is_active, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, true, CURRENT_TIMESTAMP)
+             RETURNING id, username, email, role, full_name, organization_id, license_id`,
+            [admin_username, email, hashedPassword, ADMIN_ROLE, admin_full_name || admin_username, org.id, licenseId]
         );
 
         const user = userResult.rows[0];
 
         // --- CLONE SYSTEM DEFAULTS ---
         try {
+            await client.query('SAVEPOINT cloning_defaults');
             // 1. Referral Settings
             await client.query(`
                 INSERT INTO referral_settings (
@@ -151,8 +157,10 @@ router.post('/register', async (req, res) => {
                 SELECT name, type, subject, body, channel, $1
                 FROM notification_templates WHERE organization_id = 1
             `, [org.id]);
+            await client.query('RELEASE SAVEPOINT cloning_defaults');
         } catch (cloneErr) {
-            console.warn('[ONBOARDING] Failed to clone some defaults:', cloneErr.message);
+            console.warn('[ONBOARDING] Failed to clone some defaults (rolling back to savepoint):', cloneErr.message);
+            await client.query('ROLLBACK TO SAVEPOINT cloning_defaults');
             // Non-blocking error, we still want the registration to succeed
         }
 
@@ -241,6 +249,7 @@ router.post('/create-license', async (req, res) => {
                 max_users: maxUsers,
                 expires_at: expiresAt,
                 customer_username: 'admin', // Default for onboarding
+                customer_password_hash: 'SYSTEM_TEMP_HASH', // Avoid cloud DB constraint
                 is_active: true
             });
         } catch (syncErr) {

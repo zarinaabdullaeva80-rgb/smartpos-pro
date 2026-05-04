@@ -29,7 +29,22 @@ export async function syncEmployeeToCloud(employeeData) {
         });
 
         clearTimeout(timeoutId);
-        const result = await response.json();
+        
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[EMPLOYEE-SYNC] Cloud error ${response.status}:`, text.substring(0, 500));
+            return { success: false, error: `Cloud error ${response.status}` };
+        }
+
+        const responseText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (jsonErr) {
+            console.error('[EMPLOYEE-SYNC] Failed to parse JSON from cloud:', responseText.substring(0, 500));
+            return { success: false, error: 'Invalid JSON from cloud' };
+        }
+        
         console.log(`[EMPLOYEE-SYNC] Cloud response:`, result.success ? '✅ OK' : '⚠️ ' + (result.error || 'unknown'));
         return result;
     } catch (error) {
@@ -74,4 +89,37 @@ export async function syncEmployeePasswordToCloud(username, passwordHash, organi
         console.error('[EMPLOYEE-SYNC] Password sync failed (non-blocking):', error.message);
         return { success: false, error: error.message };
     }
+}
+/**
+ * Синхронизация создания сотрудника
+ */
+export async function syncEmployeeCreate(employeeData, organizationId) {
+    return await syncEmployeeToCloud({
+        ...employeeData,
+        organization_id: organizationId,
+        action: 'create'
+    });
+}
+
+/**
+ * Синхронизация обновления сотрудника
+ */
+export async function syncEmployeeUpdate(employeeId, updateData, organizationId) {
+    return await syncEmployeeToCloud({
+        ...updateData,
+        id: employeeId,
+        organization_id: organizationId,
+        action: 'update'
+    });
+}
+
+/**
+ * Синхронизация удаления сотрудника
+ */
+export async function syncEmployeeDelete(username, organizationId) {
+    return await syncEmployeeToCloud({
+        username,
+        organization_id: organizationId,
+        action: 'delete'
+    });
 }

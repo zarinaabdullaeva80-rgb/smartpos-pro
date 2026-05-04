@@ -68,7 +68,7 @@ router.post('/', authenticate, authorize('Администратор'), async (r
             } catch (e) { /* role table might not exist */ }
         }
 
-        await logAudit(req.user.id, 'CREATE', 'users', newUser.id, null, newUser, req.ip);
+        await logAudit(req.user.id, 'CREATE', 'users', newUser.id, null, newUser, req.ip, orgId);
 
         // ★ Автоматическая синхронизация сотрудника в облако (Railway)
         let cloudSynced = false;
