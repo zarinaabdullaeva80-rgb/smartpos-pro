@@ -7,6 +7,7 @@ import { updateStockBalance } from '../utils/stockBalance.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { syncAllProductsToCloud, syncCategoriesToCloud } from '../services/productSync.js';
 
 const router = express.Router();
 
@@ -714,6 +715,34 @@ router.post('/execute', authenticate, upload.single('file'), async (req, res) =>
         }
 
         await client.query('COMMIT');
+
+        // ★ Cloud sync after import (non-blocking)
+        if ((imported > 0 || updated > 0) && orgId) {
+            (async () => {
+                try {
+                    const licRes = await pool.query('SELECT license_key FROM licenses WHERE organization_id = $1 AND is_active = true LIMIT 1', [orgId]);
+                    const licenseKey = licRes.rows[0]?.license_key;
+                    if (licenseKey) {
+                        // Fetch all products for this org and sync them
+                        const allProducts = await pool.query(
+                            `SELECT code, name, unit, price_purchase, price_sale, price_retail, barcode, is_active, min_stock, supplier, description
+                             FROM products WHERE organization_id = $1 AND (is_active = true OR is_active IS NULL)`, [orgId]
+                        );
+                        if (allProducts.rows.length > 0) {
+                            console.log(`[IMPORT-SYNC] Syncing ${allProducts.rows.length} products to cloud after import...`);
+                            await syncAllProductsToCloud(allProducts.rows, licenseKey);
+                        }
+                        // Sync categories too
+                        const allCats = await pool.query('SELECT name FROM product_categories WHERE organization_id = $1 OR organization_id IS NULL', [orgId]);
+                        if (allCats.rows.length > 0) {
+                            await syncCategoriesToCloud(allCats.rows, licenseKey);
+                        }
+                    }
+                } catch (syncErr) {
+                    console.error('[IMPORT-SYNC] Cloud sync after import failed:', syncErr.message);
+                }
+            })();
+        }
 
         // Записать в лог импортов
         try {
