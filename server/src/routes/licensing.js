@@ -2375,14 +2375,14 @@ router.post('/sync-products-bulk', async (req, res) => {
                 const existing = await pool.query('SELECT id FROM products WHERE code = $1 AND organization_id = $2', [p.code, orgId]);
                 if (existing.rows.length > 0) {
                     await pool.query(`UPDATE products SET name=$1, price_sale=$2, price_purchase=$3, price_retail=$4,
-                        barcode=$5, is_active=$6, min_stock=$7, unit=$8, description=$9, supplier=$10, updated_at=NOW() WHERE id=$11`,
+                        barcode=$5, is_active=$6, min_stock=$7, unit=$8, description=$9, supplier=$10, quantity=$11, updated_at=NOW() WHERE id=$12`,
                         [p.name, p.price_sale||0, p.price_purchase||0, p.price_retail||0, p.barcode, p.is_active!==false,
-                         p.min_stock||0, p.unit||'шт', p.description, p.supplier, existing.rows[0].id]);
+                         p.min_stock||0, p.unit||'шт', p.description, p.supplier, p.quantity||0, existing.rows[0].id]);
                 } else {
                     await pool.query(`INSERT INTO products (code,name,unit,price_purchase,price_sale,price_retail,barcode,
-                        is_active,min_stock,supplier,description,organization_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                        is_active,min_stock,supplier,description,organization_id,quantity) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
                         [p.code, p.name, p.unit||'шт', p.price_purchase||0, p.price_sale||0, p.price_retail||0,
-                         p.barcode, p.is_active!==false, p.min_stock||0, p.supplier, p.description, orgId]);
+                         p.barcode, p.is_active!==false, p.min_stock||0, p.supplier, p.description, orgId, p.quantity||0]);
                 }
                 synced++;
             } catch (e) {
@@ -2471,9 +2471,12 @@ router.post('/sync-inventory', async (req, res) => {
 
             await pool.query(`INSERT INTO inventory_movements (product_id, warehouse_id, document_type, quantity, organization_id, notes)
                 VALUES ($1, $2, 'adjustment', $3, $4, 'Cloud sync adjustment')`, [pid, whId, diff, orgId]);
+            
+            // ★ ALSO UPDATE products.quantity for the mobile app
+            await pool.query('UPDATE products SET quantity = $1, updated_at = NOW() WHERE id = $2', [quantity, pid]);
         }
 
-        res.json({ success: true, product_id: pid, adjusted: diff });
+        res.json({ success: true, product_id: pid, adjusted: diff, new_quantity: quantity });
     } catch (error) {
         console.error('[SYNC-INVENTORY] Error:', error.message);
         res.status(500).json({ error: error.message });

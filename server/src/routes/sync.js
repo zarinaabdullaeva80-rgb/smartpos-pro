@@ -436,8 +436,8 @@ router.post('/products', async (req, res) => {
                 await pool.query(
                     `INSERT INTO products (
                         code, name, unit, price_purchase, price_sale, price_retail, 
-                        barcode, is_active, min_stock, supplier, description, organization_id
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        barcode, is_active, min_stock, supplier, description, organization_id, quantity
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     ON CONFLICT (code, organization_id) DO UPDATE SET
                         name = EXCLUDED.name,
                         unit = EXCLUDED.unit,
@@ -448,10 +448,11 @@ router.post('/products', async (req, res) => {
                         is_active = EXCLUDED.is_active,
                         min_stock = EXCLUDED.min_stock,
                         supplier = EXCLUDED.supplier,
-                        description = EXCLUDED.description`,
+                        description = EXCLUDED.description,
+                        quantity = EXCLUDED.quantity`,
                     [
                         p.code, p.name, p.unit, p.price_purchase, p.price_sale, p.price_retail,
-                        p.barcode, p.is_active, p.min_stock, p.supplier, p.description, orgId
+                        p.barcode, p.is_active, p.min_stock, p.supplier, p.description, orgId, p.quantity || 0
                     ]
                 );
                 synced++;
