@@ -293,6 +293,143 @@ function ensureServerSetup(serverPath) {
     }
 }
 
+// Auto-install PostgreSQL if not found (first launch on clean machine)
+async function ensurePostgreSQLInstalled() {
+    const { execSync } = require('child_process');
+    const { dialog } = require('electron');
+
+    console.log('[PostgreSQL] Checking installation...');
+
+    const pgVersions = [18, 17, 16, 15, 14];
+    for (const ver of pgVersions) {
+        const p = `C:\\Program Files\\PostgreSQL\\${ver}\\bin\\psql.exe`;
+        if (fs.existsSync(p)) {
+            console.log(`[PostgreSQL] Found version ${ver}`);
+            return p;
+        }
+    }
+
+    try {
+        execSync('psql --version', { stdio: 'pipe', timeout: 5000 });
+        console.log('[PostgreSQL] Found in PATH');
+        return 'psql';
+    } catch (e) { /* not in PATH */ }
+
+    console.log('[PostgreSQL] NOT found, prompting user...');
+
+    const ask = await dialog.showMessageBox({
+        type: 'question',
+        title: 'SmartPOS Pro \u2014 \u041F\u0435\u0440\u0432\u0430\u044F \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430',
+        message: 'PostgreSQL \u043D\u0435 \u043E\u0431\u043D\u0430\u0440\u0443\u0436\u0435\u043D',
+        detail: '\u0414\u043B\u044F \u0440\u0430\u0431\u043E\u0442\u044B SmartPOS Pro \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C PostgreSQL.\n\n\u0423\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438?\n(\u041F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u0437\u0430\u043F\u0440\u043E\u0441 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430)',
+        buttons: ['\u0423\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C', '\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u0442\u044C'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+    });
+
+    if (ask.response === 1) {
+        console.log('[PostgreSQL] User skipped');
+        return null;
+    }
+
+    // Progress window
+    const pw = new BrowserWindow({
+        width: 460, height: 200, frame: false, resizable: false,
+        alwaysOnTop: true, backgroundColor: '#1e293b',
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
+    });
+
+    const showMsg = (msg) => {
+        if (pw && !pw.isDestroyed()) {
+            pw.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+                '<html><body style="margin:0;padding:30px;background:#1e293b;color:#f1f5f9;font-family:Segoe UI,sans-serif;display:flex;flex-direction:column;justify-content:center;align-items:center;height:calc(100vh - 60px);-webkit-app-region:drag;">'
+                + '<h2 style="margin:0 0 12px;font-size:18px;">SmartPOS Pro</h2>'
+                + '<p style="margin:0;font-size:14px;color:#94a3b8;text-align:center;">' + msg + '</p>'
+                + '<div style="margin-top:20px;width:80%;height:4px;background:#334155;border-radius:2px;overflow:hidden;">'
+                + '<div style="width:40%;height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:2px;animation:l 1.5s ease-in-out infinite alternate;"></div>'
+                + '</div><style>@keyframes l{from{margin-left:0}to{margin-left:60%}}</style>'
+                + '</body></html>'
+            ));
+        }
+    };
+
+    try {
+        // Find installer
+        const serverPath = isDev ? path.join(__dirname, '../../server') : path.join(process.resourcesPath, 'server');
+        const userData = app.getPath('userData');
+        let installer = null;
+        const candidates = [
+            path.join(serverPath, 'tools', 'postgresql-installer.exe'),
+            path.join(path.dirname(process.execPath), 'postgresql-installer.exe'),
+            path.join(userData, 'postgresql-installer.exe'),
+        ];
+        for (const c of candidates) { if (fs.existsSync(c)) { installer = c; break; } }
+
+        // Download if not found
+        if (!installer) {
+            installer = path.join(userData, 'postgresql-installer.exe');
+            showMsg('\u0421\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435 PostgreSQL 17...<br>\u042D\u0442\u043E \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043D\u044F\u0442\u044C \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u043C\u0438\u043D\u0443\u0442');
+            console.log('[PostgreSQL] Downloading...');
+            try {
+                execSync(
+                    'powershell -Command "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference = \'SilentlyContinue\'; Invoke-WebRequest -Uri \'https://get.enterprisedb.com/postgresql/postgresql-17.4-1-windows-x64.exe\' -OutFile \'' + installer.replace(/'/g, "''") + '\' -UseBasicParsing }"',
+                    { stdio: 'pipe', timeout: 600000 }
+                );
+            } catch (e) {
+                console.error('[PostgreSQL] Download failed:', e.message);
+                if (pw && !pw.isDestroyed()) pw.close();
+                await dialog.showMessageBox({ type: 'error', title: 'SmartPOS Pro', message: '\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043A\u0430\u0447\u0430\u0442\u044C PostgreSQL', detail: '\u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442 \u0438\u043B\u0438 \u0441\u043A\u0430\u0447\u0430\u0439\u0442\u0435 PostgreSQL \u0432\u0440\u0443\u0447\u043D\u0443\u044E: postgresql.org' });
+                return null;
+            }
+        }
+
+        if (!fs.existsSync(installer)) { if (pw && !pw.isDestroyed()) pw.close(); return null; }
+
+        // Run installer with elevation via temp bat
+        showMsg('\u0423\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0430 PostgreSQL...<br>\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0437\u0430\u043F\u0440\u043E\u0441 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430');
+        console.log('[PostgreSQL] Running installer elevated...');
+
+        const tempBat = path.join(os.tmpdir(), 'smartpos-pg-install.bat');
+        fs.writeFileSync(tempBat, [
+            '@echo off',
+            '"' + installer + '" --mode unattended --unattendedmodeui minimal --superpassword postgres --servicename postgresql --servicepassword postgres --serverport 5432 --prefix "C:\\Program Files\\PostgreSQL\\17" --datadir "C:\\Program Files\\PostgreSQL\\17\\data"',
+            'exit /b %ERRORLEVEL%',
+        ].join('\r\n'), 'utf8');
+
+        try {
+            execSync('powershell -Command "Start-Process -FilePath \'"' + tempBat.replace(/'/g, "''") + '"\' -Verb RunAs -Wait"', { stdio: 'pipe', timeout: 300000 });
+        } catch (e) { console.log('[PostgreSQL] Installer finished (warnings OK)'); }
+
+        try { fs.unlinkSync(tempBat); } catch (e) { /* ignore */ }
+
+        showMsg('\u041E\u0436\u0438\u0434\u0430\u043D\u0438\u0435 \u0437\u0430\u043F\u0443\u0441\u043A\u0430 PostgreSQL...');
+        await new Promise(r => setTimeout(r, 7000));
+
+    } catch (err) {
+        console.error('[PostgreSQL] Install error:', err.message);
+    } finally {
+        if (pw && !pw.isDestroyed()) pw.close();
+    }
+
+    // Verify
+    for (const ver of pgVersions) {
+        const p = `C:\\Program Files\\PostgreSQL\\${ver}\\bin\\psql.exe`;
+        if (fs.existsSync(p)) {
+            console.log(`[PostgreSQL] Installed OK (v${ver})`);
+            return p;
+        }
+    }
+
+    console.warn('[PostgreSQL] Not found after install');
+    await dialog.showMessageBox({
+        type: 'warning', title: 'SmartPOS Pro',
+        message: 'PostgreSQL \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u043F\u043E\u0441\u043B\u0435 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438',
+        detail: '\u0423\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 PostgreSQL \u0432\u0440\u0443\u0447\u043D\u0443\u044E: postgresql.org',
+    });
+    return null;
+}
+
 // Убить процесс, занимающий указанный порт (Windows)
 function killPort(port) {
     try {
@@ -867,6 +1004,10 @@ app.on('ready', async () => {
 
         if (mode === 'own' || mode === 'server' || mode === 'hybrid') {
             console.log('[App] Mode:', mode, '— starting embedded server...');
+
+            // Auto-install PostgreSQL if not found (first launch)
+            await ensurePostgreSQLInstalled();
+
             try {
                 startServer();
                 console.log('[App] Server process started, window will wait for it...');
