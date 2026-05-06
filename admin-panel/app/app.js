@@ -609,7 +609,7 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
                             </div>` : ''}
                     </td>
                     <td style="text-align:right;white-space:nowrap">
-                        <button class="btn btn-sm btn-secondary btn-extend-license" data-id="${l.id}" data-name="${l.customer_name}" style="color:var(--success)" title="Продлить на 1 год">➕</button>
+                        <button class="btn btn-sm btn-secondary btn-extend-license" data-id="${l.id}" data-name="${l.customer_name}" data-expiry="${l.expires_at || ''}" style="color:var(--success)" title="Продлить лицензию">➕</button>
                         <button class="btn btn-sm btn-secondary btn-edit-license" data-id="${l.id}" data-status="${l.status}" data-devices="${l.max_devices}" data-users="${l.max_users}" data-server-type="${l.server_type || 'cloud'}" data-server-url="${l.server_url || ''}" title="Редактировать">✏️</button>
                         <button class="btn btn-sm btn-secondary btn-team" data-id="${l.id}" data-name="${l.customer_name}" data-key="${l.license_key}" title="Сотрудники">👥</button>
                         <button class="btn btn-sm btn-secondary btn-reset-creds" data-id="${l.id}" data-name="${l.customer_name}" title="Сбросить логин/пароль">🔑</button>
@@ -627,17 +627,88 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
     bindSortHeaders();
 
     // Extend license button
-    document.querySelectorAll('.btn-extend-license').forEach(btn => btn.addEventListener('click', async function () {
+    document.querySelectorAll('.btn-extend-license').forEach(btn => btn.addEventListener('click', function () {
         const id = this.dataset.id;
         const name = this.dataset.name;
-        if (!confirm(`Продлить лицензию "${name}" на 1 год?`)) return;
-        try {
-            const d = new Date();
-            d.setFullYear(d.getFullYear() + 1);
-            await apiPut('/license/admin/licenses/' + id, { expires_at: d.toISOString(), status: 'active' });
-            showToast('Лицензия продлена до ' + d.toLocaleDateString('ru-RU'), 'success');
-            refreshData();
-        } catch (e) { showToast('Ошибка: ' + e.message, 'error'); }
+        const currentExpiry = this.dataset.expiry;
+        
+        // Calculate default date (current expiry + 1 year, or now + 1 year)
+        const baseDate = currentExpiry ? new Date(currentExpiry) : new Date();
+        if (baseDate < new Date()) baseDate.setTime(Date.now()); // if expired, start from now
+        const defaultDate = new Date(baseDate);
+        defaultDate.setFullYear(defaultDate.getFullYear() + 1);
+        const defaultDateStr = defaultDate.toISOString().split('T')[0];
+        
+        showModal('➕ Продлить лицензию: ' + name, `
+            <div style="margin-bottom:16px;padding:12px;background:var(--bg-tertiary);border-radius:8px">
+                <div style="font-size:12px;color:var(--text-muted)">Текущий срок</div>
+                <div style="font-weight:600;margin-top:4px">${currentExpiry ? new Date(currentExpiry).toLocaleDateString('ru-RU') : '∞ Бессрочная'}</div>
+            </div>
+            <h4 style="margin-bottom:12px">Быстрый выбор</h4>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+                <button class="btn btn-secondary extend-quick" data-days="14">14 дней</button>
+                <button class="btn btn-secondary extend-quick" data-days="30">1 месяц</button>
+                <button class="btn btn-secondary extend-quick" data-days="90">3 месяца</button>
+                <button class="btn btn-secondary extend-quick" data-days="180">6 месяцев</button>
+                <button class="btn btn-secondary extend-quick" data-days="365" style="border-color:var(--success);color:var(--success)">1 год</button>
+                <button class="btn btn-secondary extend-quick" data-days="730">2 года</button>
+                <button class="btn btn-secondary extend-quick" data-days="1095">3 года</button>
+                <button class="btn btn-secondary extend-quick" data-days="0" style="border-color:var(--primary);color:var(--primary)">♾️ Бессрочная</button>
+            </div>
+            <hr style="border-color:var(--border);margin:16px 0">
+            <h4 style="margin-bottom:12px">Или укажите точную дату</h4>
+            <div class="form-group">
+                <label>Новая дата истечения</label>
+                <input type="date" id="extend-date" value="${defaultDateStr}" style="color-scheme:dark">
+            </div>
+            <div id="extend-preview" style="margin-top:8px;padding:8px;background:var(--bg-tertiary);border-radius:6px;font-size:13px;color:var(--text-muted)">
+                Новый срок: ${defaultDate.toLocaleDateString('ru-RU')}
+            </div>
+        `, async () => {
+            const dateVal = document.getElementById('extend-date').value;
+            if (!dateVal) {
+                // Бессрочная
+                await apiPut('/license/admin/licenses/' + id, { expires_at: null, status: 'active' });
+                showToast('Лицензия "' + name + '" теперь бессрочная ♾️', 'success');
+            } else {
+                const newDate = new Date(dateVal + 'T23:59:59');
+                await apiPut('/license/admin/licenses/' + id, { expires_at: newDate.toISOString(), status: 'active' });
+                showToast('Лицензия продлена до ' + newDate.toLocaleDateString('ru-RU'), 'success');
+            }
+            closeModal(); refreshData();
+        });
+
+        // Bind quick buttons after modal renders
+        setTimeout(() => {
+            document.querySelectorAll('.extend-quick').forEach(qb => qb.addEventListener('click', function() {
+                const days = parseInt(this.dataset.days);
+                const input = document.getElementById('extend-date');
+                const preview = document.getElementById('extend-preview');
+                if (days === 0) {
+                    input.value = '';
+                    preview.innerHTML = 'Новый срок: <strong style="color:var(--primary)">♾️ Бессрочная</strong>';
+                } else {
+                    const d = new Date(baseDate);
+                    d.setDate(d.getDate() + days);
+                    input.value = d.toISOString().split('T')[0];
+                    preview.innerHTML = 'Новый срок: <strong style="color:var(--success)">' + d.toLocaleDateString('ru-RU') + '</strong>';
+                }
+                // Highlight selected button
+                document.querySelectorAll('.extend-quick').forEach(b => b.style.background = '');
+                this.style.background = 'var(--primary)';
+                this.style.color = '#fff';
+            }));
+
+            document.getElementById('extend-date')?.addEventListener('change', function() {
+                const preview = document.getElementById('extend-preview');
+                if (this.value) {
+                    const d = new Date(this.value);
+                    preview.innerHTML = 'Новый срок: <strong style="color:var(--success)">' + d.toLocaleDateString('ru-RU') + '</strong>';
+                } else {
+                    preview.innerHTML = 'Новый срок: <strong style="color:var(--primary)">♾️ Бессрочная</strong>';
+                }
+            });
+        }, 100);
     }));
 
     // Trigger timer update immediately
