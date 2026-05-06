@@ -589,7 +589,7 @@ async function renderLicenses(area) {
             <input id="license-search" placeholder="🔍 Поиск по клиенту, компании, логину или ключу..." value="${escapeHtml(licenseSearch)}">
         </div>
         <div class="card" style="padding:0;overflow:hidden"><table>
-            <thead><tr>${thSort('customer_name', 'Клиент')}<th>Ключ</th><th>Логин</th>${thSort('license_type', 'Тип')}<th>Сервер</th>${thSort('active_devices', 'Устр.')}
+            <thead><tr>${thSort('customer_name', 'Клиент')}<th>Ключ</th><th>Логин</th>${thSort('license_type', 'Тип')}${thSort('active_devices', 'Устр.')}
 ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<th style="text-align:right">Действия</th></tr></thead>
             <tbody>
                 ${licenses.map(l => `<tr>
@@ -597,7 +597,6 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
                     <td style="font-family:monospace;font-size:11px;word-break:break-all;min-width:160px">${l.license_key || '—'}</td>
                     <td style="font-size:12px">${l.customer_username || '—'}</td>
                     <td><span class="badge ${licTypeBadge(l.license_type)}">${licTypeLabel(l.license_type)}${l.license_type === 'trial' ? ' (' + (l.trial_days || '?') + 'д)' : ''}</span></td>
-                    <td><span class="badge ${l.server_type === 'self_hosted' ? 'badge-info' : 'badge-purple'}">${l.server_type === 'self_hosted' ? '🖥️ Свой' : '☁️ Облако'}</span>${l.server_url ? '<div style="font-size:10px;color:var(--text-muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(l.server_url) + '">' + escapeHtml(l.server_url) + '</div>' : ''}</td>
                     <td style="text-align:center">${l.active_devices || 0}/${l.max_devices || 1}</td>
                     <td><span class="badge ${l.status === 'active' ? 'badge-success' : l.status === 'expired' ? 'badge-danger' : 'badge-warning'}">${l.status === 'active' ? 'Активна' : l.status === 'expired' ? 'Истекла' : l.status === 'suspended' ? 'Приост.' : l.status || '—'}</span></td>
                     <td style="padding: 10px 12px; min-width: 130px;">
@@ -610,6 +609,7 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
                             </div>` : ''}
                     </td>
                     <td style="text-align:right;white-space:nowrap">
+                        <button class="btn btn-sm btn-secondary btn-extend-license" data-id="${l.id}" data-name="${l.customer_name}" style="color:var(--success)" title="Продлить на 1 год">➕</button>
                         <button class="btn btn-sm btn-secondary btn-edit-license" data-id="${l.id}" data-status="${l.status}" data-devices="${l.max_devices}" data-users="${l.max_users}" data-server-type="${l.server_type || 'cloud'}" data-server-url="${l.server_url || ''}" title="Редактировать">✏️</button>
                         <button class="btn btn-sm btn-secondary btn-team" data-id="${l.id}" data-name="${l.customer_name}" data-key="${l.license_key}" title="Сотрудники">👥</button>
                         <button class="btn btn-sm btn-secondary btn-reset-creds" data-id="${l.id}" data-name="${l.customer_name}" title="Сбросить логин/пароль">🔑</button>
@@ -617,7 +617,7 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
                         <button class="btn btn-sm btn-secondary btn-delete-license" data-id="${l.id}" data-name="${l.customer_name}" data-key="${(l.license_key || '').substring(0, 12)}" style="color:var(--danger)" title="Удалить лицензию">🗑️</button>
                     </td>
                 </tr>`).join('')}
-                ${licenses.length === 0 ? '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted)">Нет результатов</td></tr>' : ''}
+                ${licenses.length === 0 ? '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted)">Нет результатов</td></tr>' : ''}
             </tbody>
         </table></div>
         ${renderPagination(licensePage, totalPages, 'licensePage')}`;
@@ -625,6 +625,20 @@ ${thSort('status', 'Статус')}${thSort('expires_at', 'Истекает')}<t
     // Bind all events
     document.getElementById('btn-create-license')?.addEventListener('click', showCreateLicenseModal);
     bindSortHeaders();
+
+    // Extend license button
+    document.querySelectorAll('.btn-extend-license').forEach(btn => btn.addEventListener('click', async function () {
+        const id = this.dataset.id;
+        const name = this.dataset.name;
+        if (!confirm(`Продлить лицензию "${name}" на 1 год?`)) return;
+        try {
+            const d = new Date();
+            d.setFullYear(d.getFullYear() + 1);
+            await apiPut('/license/admin/licenses/' + id, { expires_at: d.toISOString(), status: 'active' });
+            showToast('Лицензия продлена до ' + d.toLocaleDateString('ru-RU'), 'success');
+            refreshData();
+        } catch (e) { showToast('Ошибка: ' + e.message, 'error'); }
+    }));
 
     // Trigger timer update immediately
     updateLiveTimers();
@@ -895,20 +909,7 @@ function showCreateLicenseModal() {
             <div class="form-group"><label>Макс. устройств</label><input id="lic-devices" type="number" value="3" min="1" max="100"></div>
             <div class="form-group"><label>Макс. пользователей</label><input id="lic-max-users" type="number" value="5" min="1" max="100"></div>
         </div>
-        <hr style="border-color:var(--border);margin:16px 0">
-        <h4 style="margin-bottom:12px">🖥️ Сервер клиента</h4>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group"><label>Тип сервера</label>
-                <select id="lic-server-type">
-                    <option value="cloud">☁️ Облачный (Railway)</option>
-                    <option value="self_hosted">🖥️ Свой сервер</option>
-                </select>
-            </div>
-            <div class="form-group" id="server-url-group" style="display:none">
-                <label>URL сервера *</label>
-                <input id="lic-server-url" placeholder="http://192.168.1.100:5000">
-            </div>
-        </div>
+
         <div class="form-group"><label>Функции (JSON)</label><input id="lic-features" value='{"pos":true,"inventory":true,"reports":true}'></div>
     `, async () => {
         const licType = document.getElementById('lic-type').value;
@@ -922,7 +923,7 @@ function showCreateLicenseModal() {
             license_type: licType,
             max_devices: parseInt(document.getElementById('lic-devices').value) || 3,
             max_users: parseInt(document.getElementById('lic-max-users').value) || 5,
-            server_type: document.getElementById('lic-server-type').value,
+            server_type: 'cloud',
             features: document.getElementById('lic-features').value
         };
         // Trial days
@@ -930,11 +931,7 @@ function showCreateLicenseModal() {
             data.trial_days = parseInt(document.getElementById('lic-trial-days').value) || 14;
             if (data.trial_days < 1) { showToast('Укажите дни пробного периода', 'error'); return; }
         }
-        // Self-hosted URL
-        if (data.server_type === 'self_hosted') {
-            data.server_url = document.getElementById('lic-server-url').value;
-            if (!data.server_url) { showToast('Укажите URL сервера', 'error'); return; }
-        }
+
         if (!data.customer_name || !data.customer_username || !data.customer_password) { showToast('Заполните обязательные поля', 'error'); return; }
         if (data.customer_password.length < 6) { showToast('Пароль минимум 6 символов', 'error'); return; }
         try { data.features = JSON.parse(data.features); } catch { data.features = {}; }
