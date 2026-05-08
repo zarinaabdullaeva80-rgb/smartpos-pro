@@ -208,12 +208,20 @@ export const authAPI = {
     getCurrentUser: async () => {
         try {
             return await api.get('/auth/me');
-        } catch {
+        } catch (error) {
+            // Если сервер вернул 401 или 403 — значит сессия невалидна или лицензия истекла
+            // В этом случае НЕЛЬЗЯ использовать локальные данные
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                throw error;
+            }
+            
+            // Только при сетевой ошибке или 5xx можно попробовать локальные данные
             const userData = localStorage.getItem('user');
             if (userData) {
+                console.log('[API] Server error in /auth/me, using local user data fallback');
                 return { data: JSON.parse(userData) };
             }
-            throw new Error('Не удалось получить данные пользователя');
+            throw error;
         }
     }
 };

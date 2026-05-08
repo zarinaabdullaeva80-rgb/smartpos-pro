@@ -204,6 +204,10 @@ function App() {
                         if (data.license) {
                             localStorage.setItem('license_info', JSON.stringify(data.license));
                         }
+                    } else if (resp.status === 403) {
+                        // Сервер ЯВНО отклонил лицензию
+                        setLicenseExpired(true);
+                        return;
                     }
                 } catch (e) {
                     // Сервер недоступен — полагаемся на локальную проверку
@@ -215,12 +219,19 @@ function App() {
     };
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        setIsAuthenticated(!!token);
-        setLoading(false);
-
-        // Проверка лицензии при загрузке
-        if (token) checkLicense();
+        const init = async () => {
+            const token = localStorage.getItem('token');
+            setIsAuthenticated(!!token);
+            
+            // Проверка лицензии при загрузке (если есть токен)
+            if (token) {
+                await checkLicense();
+            }
+            
+            setLoading(false);
+        };
+        
+        init();
 
         // Периодическая проверка каждые 5 минут
         const interval = setInterval(() => {
