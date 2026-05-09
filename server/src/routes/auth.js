@@ -83,6 +83,50 @@ router.get('/test', (req, res) => {
     res.json({ message: 'Auth route is working! File loaded correctly.' });
 });
 
+// ★ ВРЕМЕННЫЙ ENDPOINT: Повышение пользователя до админа (для первоначальной настройки)
+// Защищён секретным ключом. УДАЛИТЬ ПОСЛЕ НАСТРОЙКИ!
+router.post('/bootstrap-admin', async (req, res) => {
+    try {
+        const { username, secret } = req.body;
+        const expectedSecret = (process.env.JWT_SECRET || 'default').substring(0, 16);
+        
+        if (!secret || secret !== expectedSecret) {
+            return res.status(403).json({ error: 'Invalid secret' });
+        }
+        
+        if (!username) {
+            return res.status(400).json({ error: 'Username required' });
+        }
+        
+        // Обновляем роль пользователя
+        const result = await pool.query(
+            `UPDATE users SET role = 'Администратор', is_active = true WHERE LOWER(username) = LOWER($1) RETURNING id, username, role`,
+            [username]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        console.log(`[BOOTSTRAP] User "${username}" promoted to Администратор`);
+        res.json({ message: 'User promoted', user: result.rows[0] });
+    } catch (e) {
+        console.error('[BOOTSTRAP] Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ★ ВРЕМЕННЫЙ ENDPOINT: Список пользователей для диагностики
+router.get('/debug-users', async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, username, role, is_active, organization_id, license_id FROM users ORDER BY id'
+        );
+        res.json({ users: result.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Регистрация (только для администратора)
 router.post('/register', async (req, res) => {
