@@ -87,7 +87,7 @@ router.get('/test', (req, res) => {
 // Защищён секретным ключом. УДАЛИТЬ ПОСЛЕ НАСТРОЙКИ!
 router.post('/bootstrap-admin', async (req, res) => {
     try {
-        const { username, secret } = req.body;
+        const { username, secret, organization_id, license_id } = req.body;
         const expectedSecret = (process.env.JWT_SECRET || 'default').substring(0, 16);
         
         if (!secret || secret !== expectedSecret) {
@@ -98,17 +98,30 @@ router.post('/bootstrap-admin', async (req, res) => {
             return res.status(400).json({ error: 'Username required' });
         }
         
-        // Обновляем роль пользователя
+        // Обновляем роль + привязку пользователя
+        const setClauses = ["role = 'Администратор'", "is_active = true"];
+        const params = [username];
+        let paramIdx = 2;
+        
+        if (organization_id) {
+            setClauses.push(`organization_id = $${paramIdx++}`);
+            params.push(organization_id);
+        }
+        if (license_id) {
+            setClauses.push(`license_id = $${paramIdx++}`);
+            params.push(license_id);
+        }
+        
         const result = await pool.query(
-            `UPDATE users SET role = 'Администратор', is_active = true WHERE LOWER(username) = LOWER($1) RETURNING id, username, role`,
-            [username]
+            `UPDATE users SET ${setClauses.join(', ')} WHERE LOWER(username) = LOWER($1) RETURNING id, username, role, organization_id, license_id`,
+            params
         );
         
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'User not found' });
         }
         
-        console.log(`[BOOTSTRAP] User "${username}" promoted to Администратор`);
+        console.log(`[BOOTSTRAP] User "${username}" promoted:`, result.rows[0]);
         res.json({ message: 'User promoted', user: result.rows[0] });
     } catch (e) {
         console.error('[BOOTSTRAP] Error:', e.message);
