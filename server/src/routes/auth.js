@@ -135,7 +135,34 @@ router.get('/debug-users', async (req, res) => {
         const result = await pool.query(
             'SELECT id, username, role, is_active, organization_id, license_id FROM users ORDER BY id'
         );
-        res.json({ users: result.rows });
+        const licenses = await pool.query(
+            'SELECT id, license_key, customer_username, status, license_type, expires_at FROM licenses ORDER BY id'
+        );
+        res.json({ users: result.rows, licenses: licenses.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ★ ВРЕМЕННЫЙ ENDPOINT: Продление лицензии
+router.post('/fix-license', async (req, res) => {
+    try {
+        const { secret, license_id } = req.body;
+        const expectedSecret = (process.env.JWT_SECRET || 'default').substring(0, 16);
+        if (!secret || secret !== expectedSecret) {
+            return res.status(403).json({ error: 'Invalid secret' });
+        }
+        
+        const result = await pool.query(
+            `UPDATE licenses SET status = 'active', expires_at = NOW() + INTERVAL '1 year' 
+             WHERE id = $1 RETURNING id, license_key, status, expires_at`,
+            [license_id]
+        );
+        
+        if (result.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        
+        console.log(`[BOOTSTRAP] License #${license_id} extended:`, result.rows[0]);
+        res.json({ message: 'License extended', license: result.rows[0] });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
