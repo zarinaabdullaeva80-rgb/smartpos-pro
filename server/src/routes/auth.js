@@ -83,6 +83,41 @@ router.get('/test', (req, res) => {
     res.json({ message: 'Auth route is working! File loaded correctly.' });
 });
 
+// ★ ВРЕМЕННЫЙ: Перепривязка пользователя к правильной лицензии
+router.post('/fix-user-license', async (req, res) => {
+    try {
+        const { username, license_key, secret } = req.body;
+        const expectedSecret = (process.env.JWT_SECRET || 'default').substring(0, 16);
+        if (!secret || secret !== expectedSecret) return res.status(403).json({ error: 'Denied' });
+        
+        // Найти лицензию по ключу
+        const normalizedKey = license_key.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const licRes = await pool.query(
+            "SELECT id, organization_id, status FROM licenses WHERE REPLACE(license_key, '-', '') = $1",
+            [normalizedKey]
+        );
+        if (licRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        
+        const lic = licRes.rows[0];
+        
+        // Продлить если истекла
+        if (lic.status !== 'active') {
+            await pool.query("UPDATE licenses SET status = 'active', expires_at = NOW() + INTERVAL '1 year' WHERE id = $1", [lic.id]);
+        }
+        
+        // Привязать пользователя
+        const result = await pool.query(
+            "UPDATE users SET license_id = $1, organization_id = $2 WHERE LOWER(username) = LOWER($3) RETURNING id, username, role, license_id, organization_id",
+            [lic.id, lic.organization_id, username]
+        );
+        
+        if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        
+        res.json({ message: 'User rebound', user: result.rows[0], license: lic });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Регистрация (только для администратора)
 router.post('/register', async (req, res) => {
