@@ -104,7 +104,7 @@ import auditRoutes from './routes/audit.js';
 import barcodeRoutes from './routes/barcode.js';
 import analyticsRoutes from './routes/analytics.js';
 import wmsRoutes from './routes/wms.js';
-import telegramRoutes from './routes/telegram.js';
+import telegramRoutes from './routes/telegram_safe.js';
 import documentsRoutes from './routes/documents.js';
 import sync1cRoutes from './routes/sync1c.js';
 import healthRoutes from './routes/health.js';

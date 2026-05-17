@@ -124,10 +124,18 @@ api.interceptors.response.use(
 
         if (error.response?.status === 401) {
             localStorage.removeItem('token');
+            // Dispatch custom event to notify App.jsx to update state
+            window.dispatchEvent(new Event('auth-unauthorized'));
+            
             // Только редиректим если мы НЕ на странице логина, чтобы избежать бесконечного релоада
-            if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
+            if (window.location.hash !== '#/login') {
+                window.location.hash = '#/login';
             }
+        }
+
+        // Если 403 Forbidden — это может быть блокировка лицензии
+        if (error.response?.status === 403) {
+            window.dispatchEvent(new Event('license-expired'));
         }
 
         // Отправляем ошибку на сервер для логирования
@@ -845,6 +853,10 @@ export const inventoryAPI = {
     ),
     getAdjustments: (id) => withFallback(
         () => api.get(`/warehouses/inventories/${id}/adjustments`),
+        () => ([])
+    ),
+    getHistory: () => withFallback(
+        () => api.get('/inventory/history'),
         () => ([])
     )
 };

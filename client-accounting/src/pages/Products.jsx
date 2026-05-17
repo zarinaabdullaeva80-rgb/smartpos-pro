@@ -33,6 +33,7 @@ function Products() {
     const [inlineBarcodeId, setInlineBarcodeId] = useState(null); // inline barcode edit
     const [inlineBarcodeValue, setInlineBarcodeValue] = useState('');
     const [moveCategoryForProductId, setMoveCategoryForProductId] = useState(null); // per-product category move
+    const [inlineBarcodePrintId, setInlineBarcodePrintId] = useState(null); // inline barcode printing settings
 
     // ── Новые состояния: режимы, сортировка, пагинация, фильтры ──
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('products_viewMode') || 'table');
@@ -501,6 +502,8 @@ function Products() {
                             name: 'Наименование',
                             category_name: 'Категория',
                             unit: 'Ед. изм.',
+                            quantity: 'Остаток',
+                            min_stock: 'Мин. остаток',
                             price_purchase: 'Цена закупки',
                             price_sale: 'Цена продажи',
                             price_retail: 'Цена розница',
@@ -1080,13 +1083,29 @@ function Products() {
                                                 <button
                                                     className="btn btn-info btn-sm"
                                                     style={{ fontSize: '11px', padding: '4px 10px' }}
-                                                    onClick={() => { setSelectedProductForBarcode({ ...product, barcode: inlineBarcodeValue }); setShowBarcodeModal(true); }}
+                                                    onClick={() => { 
+                                                        setSelectedProductForBarcode({ ...product, barcode: inlineBarcodeValue }); 
+                                                        setInlineBarcodePrintId(inlineBarcodePrintId === product.id ? null : product.id);
+                                                    }}
                                                 >
-                                                    Печать
+                                                    {inlineBarcodePrintId === product.id ? 'Скрыть настройки' : 'Печать'}
                                                 </button>
                                                 <button className="btn btn-secondary btn-sm" onClick={() => setInlineBarcodeId(null)} style={{ fontSize: '11px', padding: '4px 8px' }}>
                                                     <X size={12} />
                                                 </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                                {inlineBarcodePrintId === product.id && (
+                                    <tr>
+                                        <td colSpan="12" style={{ padding: '0', borderLeft: '3px solid var(--primary)', background: 'rgba(255,255,255,0.02)' }}>
+                                            <div style={{ padding: '20px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                                <BarcodeGenerator 
+                                                    product={selectedProductForBarcode} 
+                                                    isInline={true} 
+                                                    onClose={() => setInlineBarcodePrintId(null)} 
+                                                />
                                             </div>
                                         </td>
                                     </tr>

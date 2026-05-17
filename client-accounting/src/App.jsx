@@ -168,16 +168,21 @@ function App() {
     // Проверка лицензии
     const checkLicense = async () => {
         try {
+            console.log('[App] Starting license verification...');
             const licenseInfo = JSON.parse(localStorage.getItem('license_info') || 'null');
             const user = JSON.parse(localStorage.getItem('user') || 'null');
 
             // Если нет лицензии (super_admin) — пропускаем
-            if (!licenseInfo && (!user || user.user_type === 'super_admin')) return;
+            if (!licenseInfo && (!user || user.user_type === 'super_admin')) {
+                console.log('[App] License bypass: super_admin or no info');
+                return;
+            }
 
             // Локальная проверка expires_at
             if (licenseInfo && licenseInfo.expires_at) {
                 const expiresAt = new Date(licenseInfo.expires_at);
                 if (expiresAt < new Date()) {
+                    console.warn('[App] Local license expired');
                     setLicenseExpired(true);
                     setLicenseExpiryDate(licenseInfo.expires_at);
                     return;
@@ -190,12 +195,24 @@ function App() {
                 try {
                     const apiUrl = localStorage.getItem('server_url') || 'http://localhost:5000/api';
                     const baseUrl = apiUrl.replace(/\/api\/?$/, '');
+                    
+                    console.log('[App] Fetching cloud license status...');
+                    
+                    // Таймаут 5 секунд для проверки лицензии, чтобы не висеть на черном экране
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
                     const resp = await fetch(`${baseUrl}/api/license/check-expiry`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
+                    
                     if (resp.ok) {
                         const data = await resp.json();
                         if (data.expired) {
+                            console.error('[App] Cloud license check: EXPIRED');
                             setLicenseExpired(true);
                             setLicenseExpiryDate(data.expires_at);
                             return;
@@ -205,22 +222,28 @@ function App() {
                             localStorage.setItem('license_info', JSON.stringify(data.license));
                         }
                     } else if (resp.status === 403) {
-                        // Сервер ЯВНО отклонил лицензию
+                        console.error('[App] Cloud license check: FORBIDDEN');
                         setLicenseExpired(true);
                         return;
                     }
                 } catch (e) {
-                    // Сервер недоступен — полагаемся на локальную проверку
+                    if (e.name === 'AbortError') {
+                        console.warn('[App] Cloud license check timed out after 5s');
+                    } else {
+                        console.warn('[App] Cloud license server unreachable, using local status:', e.message);
+                    }
                 }
             }
         } catch (e) {
-            console.error('License check error:', e);
+            console.error('[App] License check fatal error:', e);
         }
     };
 
     useEffect(() => {
         const init = async () => {
+            console.log('[App] --- Initialization Start ---');
             const token = localStorage.getItem('token');
+            console.log('[App] Token exists:', !!token);
             setIsAuthenticated(!!token);
             
             // Проверка лицензии при загрузке (если есть токен)
@@ -228,53 +251,92 @@ function App() {
                 await checkLicense();
             }
             
+            console.log('[App] --- Initialization Complete ---');
             setLoading(false);
         };
         
         init();
+
+        // Слушатели внешних событий (из api.js)
+        const handleAuthError = () => {
+            console.warn('[App] Auth unauthorized event received');
+            setIsAuthenticated(false);
+        };
+        
+        const handleLicenseError = () => {
+            console.error('[App] License expired event received');
+            setLicenseExpired(true);
+        };
+
+        window.addEventListener('auth-unauthorized', handleAuthError);
+        window.addEventListener('license-expired', handleLicenseError);
 
         // Периодическая проверка каждые 5 минут
         const interval = setInterval(() => {
             if (localStorage.getItem('token')) checkLicense();
         }, 5 * 60 * 1000);
 
-        return () => clearInterval(interval);
+        return () => {
+            window.removeEventListener('auth-unauthorized', handleAuthError);
+            window.removeEventListener('license-expired', handleLicenseError);
+            clearInterval(interval);
+        };
     }, []);
 
-    // Повторная проверка при логине
+    // Повторная проверка при логине (если init прошел без токена)
     useEffect(() => {
-        if (isAuthenticated) checkLicense();
-    }, [isAuthenticated]);
-
-    if (loading) {
-        return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-                <div className="spinner"></div>
-            </div>
-        );
-    }
-
-    // Блокировка при истечении лицензии
-    if (licenseExpired) {
-        return <LicenseExpired expiryDate={licenseExpiryDate} />;
-    }
+        if (isAuthenticated && !loading) {
+            checkLicense();
+        }
+    }, [isAuthenticated, loading]);
 
     return (
         <I18nProvider>
-        <ErrorBoundary>
-            <ConfirmProvider>
-                <ToastProvider>
-                    <HashRouter>
-                        <Suspense fallback={<LoadingSpinner />}>
-                            <Routes>
-                                <Route path="/login" element={
-                                    isAuthenticated ? <Navigate to="/" /> : <Login onLogin={() => setIsAuthenticated(true)} />
-                                } />
+            <ErrorBoundary>
+                <ConfirmProvider>
+                    <ToastProvider>
+                        {loading ? (
+                            <div style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                justifyContent: 'center', 
+                                alignItems: 'center', 
+                                height: '100vh', 
+                                background: '#0a0010',
+                                color: '#ffffff',
+                                fontFamily: 'sans-serif'
+                            }}>
+                                <h2 style={{ marginBottom: '20px', fontWeight: '300', letterSpacing: '2px' }}>SmartPOS Pro</h2>
+                                <div className="spinner" style={{ 
+                                    width: '40px', 
+                                    height: '40px', 
+                                    border: '3px solid rgba(255, 0, 128, 0.1)',
+                                    borderTop: '3px solid #ff0080',
+                                    borderRadius: '50%',
+                                    animation: 'spin 1s linear infinite'
+                                }}></div>
+                                <p style={{ marginTop: '20px', fontSize: '14px', opacity: 0.7 }}>Загрузка системы...</p>
+                                <style>{`
+                                    @keyframes spin {
+                                        0% { transform: rotate(0deg); }
+                                        100% { transform: rotate(360deg); }
+                                    }
+                                `}</style>
+                            </div>
+                        ) : licenseExpired ? (
+                            <LicenseExpired expiryDate={licenseExpiryDate} />
+                        ) : (
+                            <HashRouter>
+                                <Suspense fallback={<LoadingSpinner />}>
+                                    <Routes>
+                                        <Route path="/login" element={
+                                            isAuthenticated ? <Navigate to="/" /> : <Login onLogin={() => setIsAuthenticated(true)} />
+                                        } />
 
-                                <Route path="/" element={
-                                    isAuthenticated ? <Layout onLogout={() => setIsAuthenticated(false)} /> : <Navigate to="/login" />
-                                }>
-                                    <Route index element={<Dashboard />} />
+                                        <Route path="/" element={
+                                            isAuthenticated ? <Layout onLogout={() => setIsAuthenticated(false)} /> : <Navigate to="/login" />
+                                        }>
+                                            <Route index element={<Dashboard />} />
                                     <Route path="products" element={<Products />} />
                                     <Route path="sales" element={<Sales />} />
                                     <Route path="purchases" element={<Purchases />} />
@@ -433,7 +495,8 @@ function App() {
                             </Routes>
                         </Suspense>
                     </HashRouter>
-                </ToastProvider>
+                )}
+            </ToastProvider>
             </ConfirmProvider>
         </ErrorBoundary>
         </I18nProvider>

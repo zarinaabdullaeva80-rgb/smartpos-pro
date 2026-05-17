@@ -5,32 +5,35 @@
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>SmartPOS Pro Mobile</title>
-    <!-- PWA iOS -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SmartPOS">
-    <meta name="theme-color" content="#6366f1">
-    <meta name="description" content="Мобильная POS-система для бизнеса">
-    <link rel="manifest" href="/mobile/manifest.json">
-    <link rel="icon" href="/favicon.ico" />
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
-      html, body { height: 100%; }
-      body { overflow: hidden; }
-      #root { display: flex; height: 100%; flex: 1; }
-    </style>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <script src="./_expo/static/js/web/AppEntry-2d2dcf5636715445e9d0c1ea5426676f.js" defer></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/mobile/sw.js')
-            .then(reg => console.log('[PWA] SW registered:', reg.scope))
-            .catch(err => console.warn('[PWA] SW failed:', err));
-        });
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
       }
-    </script>
-  </body>
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  <meta name="theme-color" content="#6366f1">
+<meta name="description" content="Мобильная POS-система для бизнеса">
+<link rel="icon" href="/mobile/favicon.ico" /></head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  <script src="/mobile/_expo/static/js/web/AppEntry-eec8a5b10f7b871ed79d68d7e2d33012.js" defer></script>
+</body>
 </html>

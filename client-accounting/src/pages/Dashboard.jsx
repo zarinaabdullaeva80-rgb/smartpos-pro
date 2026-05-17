@@ -61,14 +61,21 @@ function Dashboard() {
     const loadDashboardData = async () => {
         try {
             setRefreshing(true);
-            const { dateFrom, dateTo, groupBy } = getPeriodDates();
+            
+            // Добавляем таймаут для всех запросов дашборда
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const fetchOptions = { signal: controller.signal };
 
             const [dashboardRes, analyticsRes, productsRes, financialRes] = await Promise.all([
-                reportsAPI.getDashboard(),
-                reportsAPI.getSalesAnalytics({ dateFrom, dateTo, groupBy }),
-                reportsAPI.getTopProducts({ dateFrom, dateTo, limit: 10 }),
-                reportsAPI.getFinancialSummary({ dateFrom, dateTo })
+                reportsAPI.getDashboard(fetchOptions),
+                reportsAPI.getSalesAnalytics({ ...getPeriodDates(), ...fetchOptions }),
+                reportsAPI.getTopProducts({ ...getPeriodDates(), limit: 10, ...fetchOptions }),
+                reportsAPI.getFinancialSummary({ ...getPeriodDates(), ...fetchOptions })
             ]);
+
+            clearTimeout(timeoutId);
 
             setDashboard(dashboardRes.data?.dashboard || {});
             setSalesAnalytics((analyticsRes.data?.analytics || []).reverse());
@@ -92,8 +99,16 @@ function Dashboard() {
 
     if (loading) {
         return (
-            <div className="loading-container">
-                <div className="spinner"></div>
+            <div className="loading-container" style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                height: '60vh',
+                color: 'var(--color-text-secondary)'
+            }}>
+                <div className="spinner" style={{ marginBottom: '20px' }}></div>
+                <p style={{ fontSize: '14px', opacity: 0.8 }}>Загрузка аналитики...</p>
             </div>
         );
     }

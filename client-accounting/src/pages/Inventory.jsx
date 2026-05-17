@@ -23,10 +23,46 @@ const Inventory = () => {
     const scanInputRef = useRef(null);
     const debounceTimers = useRef({});
 
+    const [activeTab, setActiveTab] = useState('documents'); // 'documents' or 'history'
+    const [historyLog, setHistoryLog] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historySearch, setHistorySearch] = useState('');
+
+    const loadHistoryLog = async () => {
+        setHistoryLoading(true);
+        try {
+            const response = await inventoryAPI.getHistory();
+            setHistoryLog(response.data || response || []);
+        } catch (error) {
+            console.error('Error loading inventory history:', error);
+            handleError('Не удалось загрузить историю корректировок');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const filteredHistoryLog = useMemo(() => {
+        if (!historySearch) return historyLog;
+        const q = historySearch.toLowerCase();
+        return historyLog.filter(item =>
+            item.product_name?.toLowerCase().includes(q) ||
+            item.sku?.toLowerCase().includes(q) ||
+            item.barcode?.includes(q) ||
+            item.notes?.toLowerCase().includes(q) ||
+            item.full_name?.toLowerCase().includes(q)
+        );
+    }, [historyLog, historySearch]);
+
     useEffect(() => {
         loadInventories();
         loadWarehouses();
     }, []);
+
+    useEffect(() => {
+        if (activeTab === 'history') {
+            loadHistoryLog();
+        }
+    }, [activeTab]);
 
     const loadInventories = async () => {
         setLoading(true);
@@ -345,7 +381,46 @@ const Inventory = () => {
                 </div>
             </div>
 
-            <div className="inventory-layout">
+            {/* Табы */}
+            <div className="tabs-navigation" style={{ display: 'flex', gap: '15px', marginBottom: '15px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
+                <button
+                    className={`tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('documents')}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'documents' ? '2px solid var(--primary-color)' : '2px solid transparent',
+                        padding: '8px 16px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        color: activeTab === 'documents' ? 'var(--primary-color)' : 'var(--text-color)',
+                        opacity: activeTab === 'documents' ? 1 : 0.7,
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    📁 Документы
+                </button>
+                <button
+                    className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('history')}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: activeTab === 'history' ? '2px solid var(--primary-color)' : '2px solid transparent',
+                        padding: '8px 16px',
+                        cursor: 'pointer',
+                        fontWeight: 'bold',
+                        color: activeTab === 'history' ? 'var(--primary-color)' : 'var(--text-color)',
+                        opacity: activeTab === 'history' ? 1 : 0.7,
+                        transition: 'all 0.2s'
+                    }}
+                >
+                    📜 История корректировок
+                </button>
+            </div>
+
+            {activeTab === 'documents' ? (
+                <div className="inventory-layout">
                 {/* Список инвентаризаций */}
                 <div className="card inventories-list">
                     <h3>{t('inventory.documents', 'Документы')}</h3>
@@ -592,10 +667,94 @@ const Inventory = () => {
                 ) : (
                     <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '10px', opacity: 0.5, minHeight: '300px' }}>
                         <Package size={48} />
-                        <p>{t('inventory.vyberite_inventarizatsiyu_iz_spiska_sleva', 'Выберите инвентаризацию из списка слева или создайте новую')}</p>
                     </div>
                 )}
             </div>
+            ) : (
+                <div className="card inventory-history-container" style={{ padding: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
+                        <div>
+                            <h2>📜 История корректировок остатков</h2>
+                            <p style={{ opacity: 0.7, fontSize: '13px' }}>Все изменения, проведённые в процессе инвентаризаций</p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginLeft: 'auto' }}>
+                            <div style={{ position: 'relative', width: '300px' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
+                                <input
+                                    type="text"
+                                    placeholder="Поиск по товару, коду, сотруднику..."
+                                    value={historySearch}
+                                    onChange={e => setHistorySearch(e.target.value)}
+                                    style={{ width: '100%', padding: '8px 8px 8px 32px', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'var(--input-bg)', color: 'var(--text-color)' }}
+                                />
+                                {historySearch && (
+                                    <button onClick={() => setHistorySearch('')} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5 }}>
+                                        <X size={16} />
+                                    </button>
+                                )}
+                            </div>
+                            <button className="btn btn-secondary" onClick={loadHistoryLog} disabled={historyLoading}>
+                                <RefreshCw size={16} className={historyLoading ? 'spin' : ''} /> Обновить
+                            </button>
+                        </div>
+                    </div>
+
+                    {historyLoading ? (
+                        <div style={{ textAlign: 'center', padding: '50px' }}>
+                            <RefreshCw size={30} className="spin" style={{ marginBottom: '10px' }} />
+                            <div>Загрузка истории корректировок...</div>
+                        </div>
+                    ) : filteredHistoryLog.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '50px', opacity: 0.5 }}>
+                            История корректировок пуста или ничего не найдено
+                        </div>
+                    ) : (
+                        <div style={{ overflowX: 'auto' }}>
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style={{ width: '150px' }}>Дата / Время</th>
+                                        <th>Товар</th>
+                                        <th>Код</th>
+                                        <th>Склад</th>
+                                        <th style={{ textAlign: 'center', width: '120px' }}>Изменение</th>
+                                        <th>Примечание</th>
+                                        <th>Сотрудник</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredHistoryLog.map((log) => {
+                                        const dateObj = new Date(log.created_at);
+                                        const formattedDate = !isNaN(dateObj) ? 
+                                            `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()} ${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}` : 
+                                            '—';
+                                        
+                                        const qty = parseFloat(log.quantity);
+                                        const isPositive = qty > 0;
+                                        const isNegative = qty < 0;
+                                        
+                                        return (
+                                            <tr key={log.id} className={isPositive ? 'surplus' : isNegative ? 'shortage' : ''}>
+                                                <td style={{ fontSize: '13px', opacity: 0.8 }}>{formattedDate}</td>
+                                                <td><strong>{log.product_name}</strong></td>
+                                                <td style={{ fontSize: '13px', opacity: 0.7 }}>{log.sku || log.code || '-'}</td>
+                                                <td>{log.warehouse_name}</td>
+                                                <td style={{ textAlign: 'center', fontWeight: 'bold' }}>
+                                                    <span className={isPositive ? 'text-success' : isNegative ? 'text-danger' : ''}>
+                                                        {isPositive ? `+${qty}` : qty} {log.unit || 'шт.'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ fontSize: '13px', opacity: 0.8 }}>{log.notes || '—'}</td>
+                                                <td>👤 {log.full_name || 'Неизвестно'}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Модальное окно создания */}
             {

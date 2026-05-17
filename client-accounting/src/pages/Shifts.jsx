@@ -18,6 +18,18 @@ function Shifts() {
     const [closingCash, setClosingCash] = useState('');
     const [message, setMessage] = useState(null);
 
+    const formatDate = (dateStr) => {
+        if (!dateStr) return '—';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '—';
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} ${hours}:${minutes}`;
+    };
+
     useEffect(() => {
         loadShifts();
         checkCurrentShift();
@@ -244,7 +256,7 @@ function Shifts() {
                         <div>
                             <h3 style={{ margin: 0 }}>{t('shifts.smena_otkryta', '🟢 Смена открыта')}</h3>
                             <p style={{ margin: '8px 0 0', opacity: 0.9 }}>
-                                Начало: {new Date(currentShift.opened_at).toLocaleString('ru-RU')} |
+                                Начало: {formatDate(currentShift.opened_at)} |
                                 Длительность: {formatDuration(currentShift.opened_at, null)}
                             </p>
                         </div>
@@ -288,9 +300,9 @@ function Shifts() {
                         <tbody>
                             {shifts.map((shift) => (
                                 <tr key={shift.id}>
-                                    <td>{shift.username || 'Не указан'}</td>
-                                    <td>{new Date(shift.opened_at).toLocaleString('ru-RU')}</td>
-                                    <td>{shift.closed_at ? new Date(shift.closed_at).toLocaleString('ru-RU') : '—'}</td>
+                                    <td>{shift.user_name || shift.username || 'Не указан'}</td>
+                                    <td>{formatDate(shift.opened_at)}</td>
+                                    <td>{formatDate(shift.closed_at)}</td>
                                     <td>{formatDuration(shift.opened_at, shift.closed_at)}</td>
                                     <td><strong>{shift.sales_count || 0}</strong></td>
                                     <td><strong>{formatCurrency(shift.total_sales || 0)}</strong></td>
@@ -412,7 +424,7 @@ function Shifts() {
                             <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                                 <div>
                                     <label className="text-muted">Кассир</label>
-                                    <p><strong>{selectedShift.username}</strong></p>
+                                    <p><strong>{selectedShift.user_name || selectedShift.username}</strong></p>
                                 </div>
                                 <div>
                                     <label className="text-muted">{t('shifts.status', 'Статус')}</label>
@@ -420,11 +432,11 @@ function Shifts() {
                                 </div>
                                 <div>
                                     <label className="text-muted">{t('shifts.otkryta', 'Открыта')}</label>
-                                    <p>{new Date(selectedShift.opened_at).toLocaleString('ru-RU')}</p>
+                                    <p>{formatDate(selectedShift.opened_at)}</p>
                                 </div>
                                 <div>
                                     <label className="text-muted">{t('shifts.zakryta', 'Закрыта')}</label>
-                                    <p>{selectedShift.closed_at ? new Date(selectedShift.closed_at).toLocaleString('ru-RU') : '—'}</p>
+                                    <p>{formatDate(selectedShift.closed_at)}</p>
                                 </div>
                                 <div>
                                     <label className="text-muted">{t('shifts.nachalnaya_summa', 'Начальная сумма')}</label>

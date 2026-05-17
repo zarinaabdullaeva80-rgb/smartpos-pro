@@ -201,6 +201,36 @@ router.post('/save', authenticate, async (req, res) => {
 });
 
 /**
+ * GET /api/inventory/history
+ * Получить историю инвентаризаций (движений с типом inventory)
+ */
+router.get('/history', authenticate, async (req, res) => {
+    try {
+        const orgId = req.user.organization_id;
+        const result = await pool.query(`
+            SELECT 
+                im.id, im.product_id, im.warehouse_id, im.document_type,
+                im.quantity, im.notes, im.created_at,
+                p.name AS product_name,
+                p.code AS product_code,
+                w.name AS warehouse_name,
+                u.full_name AS user_name
+            FROM inventory_movements im
+            LEFT JOIN products p ON im.product_id = p.id
+            LEFT JOIN warehouses w ON im.warehouse_id = w.id
+            LEFT JOIN users u ON im.user_id = u.id
+            WHERE im.document_type = 'inventory' AND im.organization_id = $1
+            ORDER BY im.created_at DESC
+            LIMIT 100
+        `, [orgId]);
+        res.json({ history: result.rows });
+    } catch (error) {
+        console.error('Ошибка получения истории инвентаризаций:', error);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+/**
  * GET /api/inventory/movements/:productId
  * История движений конкретного товара
  */

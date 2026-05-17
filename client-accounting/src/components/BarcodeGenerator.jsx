@@ -9,24 +9,37 @@ import { Printer, X, Download, QrCode, Barcode } from 'lucide-react';
  * Поддерживает: EAN-13, EAN-8, Code128, QR-код
  * Печать: обычные принтеры (A4), термопринтеры (57mm, 80mm)
  */
-function BarcodeGenerator({ product, onClose, isOpen }) {
+function BarcodeGenerator({ product, onClose, isOpen, isInline = false }) {
     const printRef = useRef();
     const barcodeRef = useRef();
     const qrRef = useRef();
 
-    const [barcodeType, setBarcodeType] = useState('CODE128');
-    const [labelSize, setLabelSize] = useState('thermal57'); // thermal57, thermal80, a4
-    const [showPrice, setShowPrice] = useState(true);
-    const [showName, setShowName] = useState(true);
+    const [barcodeType, setBarcodeType] = useState(() => localStorage.getItem('barcode_type') || 'CODE128');
+    const [labelSize, setLabelSize] = useState(() => localStorage.getItem('barcode_labelSize') || 'thermal57'); // thermal57, thermal80, a4
+    const [showPrice, setShowPrice] = useState(() => localStorage.getItem('barcode_showPrice') !== 'false');
+    const [showName, setShowName] = useState(() => localStorage.getItem('barcode_showName') !== 'false');
     const [copies, setCopies] = useState(1);
     const [qrDataUrl, setQrDataUrl] = useState('');
     const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
     const [storeName, setStoreName] = useState(localStorage.getItem('priceTagStoreName') || '');
-    const [showStoreName, setShowStoreName] = useState(true);
-    const [storeNamePosition, setStoreNamePosition] = useState('top');
-    const [nameFontSize, setNameFontSize] = useState(10);
-    const [priceFontSize, setPriceFontSize] = useState(14);
+    const [showStoreName, setShowStoreName] = useState(() => localStorage.getItem('barcode_showStoreName') !== 'false');
+    const [storeNamePosition, setStoreNamePosition] = useState(() => localStorage.getItem('barcode_storeNamePosition') || 'top');
+    const [nameFontSize, setNameFontSize] = useState(() => parseInt(localStorage.getItem('barcode_nameFontSize')) || 10);
+    const [priceFontSize, setPriceFontSize] = useState(() => parseInt(localStorage.getItem('barcode_priceFontSize')) || 14);
 
+    // Сохранение настроек при их изменении
+    useEffect(() => {
+        localStorage.setItem('barcode_type', barcodeType);
+        localStorage.setItem('barcode_labelSize', labelSize);
+        localStorage.setItem('barcode_showPrice', showPrice);
+        localStorage.setItem('barcode_showName', showName);
+        localStorage.setItem('barcode_showStoreName', showStoreName);
+        localStorage.setItem('barcode_storeNamePosition', storeNamePosition);
+        localStorage.setItem('barcode_nameFontSize', nameFontSize);
+        localStorage.setItem('barcode_priceFontSize', priceFontSize);
+    }, [barcodeType, labelSize, showPrice, showName, showStoreName, storeNamePosition, nameFontSize, priceFontSize]);
+
+    // ... (rest of the logic remains same, skipping for brevity in this replacement chunk)
     // Размеры этикеток
     const labelSizes = {
         thermal30x20: { width: '30mm', height: '20mm', name: 'Термо 30×20мм' },
@@ -68,7 +81,6 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
                 setBarcodeDataUrl(canvas.toDataURL('image/png'));
             } catch (error) {
                 console.error('Ошибка генерации штрихкода:', error);
-                // Fallback to CODE128 if format fails
                 try {
                     JsBarcode(canvas, product.barcode || product.code, {
                         format: 'CODE128',
@@ -107,11 +119,6 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
         }
     }, [product]);
 
-    // Размер этикетки для печати (всегда 57x30mm для A4)
-    const getLabelSizeForPrint = () => {
-        return { width: '57mm', height: '30mm' };
-    };
-
     // Печать
     const handlePrint = useReactToPrint({
         contentRef: printRef,
@@ -136,8 +143,8 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
                     align-content: flex-start !important;
                 }
                 .label-container {
-                    width: 57mm !important;
-                    height: 30mm !important;
+                    width: ${labelSizes[labelSize].width} !important;
+                    height: ${labelSizes[labelSize].height} !important;
                     page-break-inside: avoid !important;
                     break-inside: avoid !important;
                     box-sizing: border-box !important;
@@ -146,7 +153,6 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
         `
     });
 
-    // Экспорт как PNG
     const handleExportPng = () => {
         if (barcodeDataUrl) {
             const link = document.createElement('a');
@@ -156,261 +162,159 @@ function BarcodeGenerator({ product, onClose, isOpen }) {
         }
     };
 
-    if (!isOpen || !product) return null;
+    if (!isInline && (!isOpen || !product)) return null;
 
     const currentSize = labelSizes[labelSize];
 
-    return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal glass" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+    const content = (
+        <div className={isInline ? "" : "modal glass"} onClick={e => e.stopPropagation()} style={isInline ? { width: '100%', maxWidth: '100%' } : { maxWidth: '600px' }}>
+            {!isInline && (
                 <div className="modal-header">
                     <h2>🏷️ Печать штрихкода</h2>
                     <button onClick={onClose} className="btn-close">
                         <X size={20} />
                     </button>
                 </div>
+            )}
 
-                <div className="modal-body">
-                    {/* Настройки */}
-                    <div className="grid grid-2" style={{ gap: '15px', marginBottom: '20px' }}>
-                        <div className="form-group">
-                            <label>Тип штрихкода</label>
-                            <select
-                                value={barcodeType}
-                                onChange={e => setBarcodeType(e.target.value)}
-                            >
-                                <option value="CODE128">Code 128 (универсальный)</option>
-                                <option value="EAN13">EAN-13 (13 цифр)</option>
-                                <option value="EAN8">EAN-8 (8 цифр)</option>
-                                <option value="UPC">UPC (12 цифр)</option>
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Размер этикетки</label>
-                            <select
-                                value={labelSize}
-                                onChange={e => setLabelSize(e.target.value)}
-                            >
-                                {Object.entries(labelSizes).map(([key, val]) => (
-                                    <option key={key} value={key}>{val.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-3" style={{ gap: '15px', marginBottom: '20px' }}>
-                        <div className="form-group">
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={showPrice}
-                                    onChange={e => setShowPrice(e.target.checked)}
-                                />
-                                Показать цену
-                            </label>
-                        </div>
-                        <div className="form-group">
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                    type="checkbox"
-                                    checked={showName}
-                                    onChange={e => setShowName(e.target.checked)}
-                                />
-                                Показать название
-                            </label>
-                        </div>
-                        <div className="form-group">
-                            <label>Копий</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="100"
-                                value={copies}
-                                onChange={e => setCopies(parseInt(e.target.value) || 1)}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Настройки магазина и шрифтов */}
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={showStoreName} onChange={e => setShowStoreName(e.target.checked)} />
-                            Магазин
-                        </label>
-                        <input
-                            type="text"
-                            placeholder="Название магазина"
-                            value={storeName}
-                            onChange={e => {
-                                setStoreName(e.target.value);
-                                localStorage.setItem('priceTagStoreName', e.target.value);
-                            }}
-                            style={{ width: '150px', padding: '4px 8px', fontSize: '12px' }}
-                        />
-                        <select value={storeNamePosition} onChange={e => setStoreNamePosition(e.target.value)} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                            <option value="top">Сверху</option>
-                            <option value="bottom">Снизу</option>
+            <div className={isInline ? "inline-barcode-content" : "modal-body"}>
+                {/* Настройки */}
+                <div className="grid grid-2" style={{ gap: '15px', marginBottom: '20px' }}>
+                    <div className="form-group">
+                        <label>Тип штрихкода</label>
+                        <select value={barcodeType} onChange={e => setBarcodeType(e.target.value)}>
+                            <option value="CODE128">Code 128 (универсальный)</option>
+                            <option value="EAN13">EAN-13 (13 цифр)</option>
+                            <option value="EAN8">EAN-8 (8 цифр)</option>
+                            <option value="UPC">UPC (12 цифр)</option>
                         </select>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '12px' }}>Шрифт:</span>
-                            <input type="range" min="7" max="18" value={nameFontSize} onChange={e => setNameFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
-                            <span style={{ fontSize: '11px', minWidth: '28px' }}>{nameFontSize}px</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '12px' }}>Цена:</span>
-                            <input type="range" min="8" max="24" value={priceFontSize} onChange={e => setPriceFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
-                            <span style={{ fontSize: '11px', minWidth: '28px' }}>{priceFontSize}px</span>
-                        </div>
                     </div>
-
-                    {/* Предпросмотр */}
-                    <div style={{
-                        background: '#f5f5f5',
-                        padding: '20px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        marginBottom: '20px',
-                        overflowY: 'auto',
-                        maxHeight: '400px'
-                    }}>
-                        <div ref={printRef} className="print-wrapper" style={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: '10px',
-                            justifyContent: 'center'
-                        }}>
-                            {[...Array(copies)].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className="label-container"
-                                    style={{
-                                        width: currentSize.width,
-                                        minHeight: currentSize.height,
-                                        background: 'white',
-                                        padding: '5px',
-                                        boxSizing: 'border-box',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        border: '1px dashed #ccc'
-                                    }}
-                                >
-                                    {showStoreName && storeName && storeNamePosition === 'top' && (
-                                        <div style={{
-                                            fontSize: `${Math.max(nameFontSize - 2, 7)}px`,
-                                            fontWeight: 600,
-                                            textAlign: 'center',
-                                            maxWidth: '100%',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                            marginBottom: '2px',
-                                            color: '#333',
-                                            borderBottom: '1px solid #ddd',
-                                            paddingBottom: '1px'
-                                        }}>
-                                            {storeName}
-                                        </div>
-                                    )}
-
-                                    {showName && (
-                                        <div style={{
-                                            fontSize: `${nameFontSize}px`,
-                                            fontWeight: 'bold',
-                                            textAlign: 'center',
-                                            maxWidth: '100%',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                            marginBottom: '3px',
-                                            color: '#000'
-                                        }}>
-                                            {product.name}
-                                        </div>
-                                    )}
-
-                                    {barcodeDataUrl && (
-                                        <img
-                                            src={barcodeDataUrl}
-                                            alt="Barcode"
-                                            style={{ maxWidth: '100%', height: 'auto' }}
-                                        />
-                                    )}
-
-                                    {showPrice && (
-                                        <div style={{
-                                            fontSize: `${priceFontSize}px`,
-                                            fontWeight: 'bold',
-                                            marginTop: '3px',
-                                            color: '#000'
-                                        }}>
-                                            {new Intl.NumberFormat('ru-RU').format(product.price_sale || product.price_retail || 0)} сум
-                                        </div>
-                                    )}
-
-                                    {showStoreName && storeName && storeNamePosition === 'bottom' && (
-                                        <div style={{
-                                            fontSize: `${Math.max(nameFontSize - 2, 7)}px`,
-                                            fontWeight: 600,
-                                            textAlign: 'center',
-                                            maxWidth: '100%',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                            marginTop: '2px',
-                                            color: '#333',
-                                            borderTop: '1px solid #ddd',
-                                            paddingTop: '1px'
-                                        }}>
-                                            {storeName}
-                                        </div>
-                                    )}
-                                </div>
+                    <div className="form-group">
+                        <label>Размер этикетки</label>
+                        <select value={labelSize} onChange={e => setLabelSize(e.target.value)}>
+                            {Object.entries(labelSizes).map(([key, val]) => (
+                                <option key={key} value={key}>{val.name}</option>
                             ))}
-                        </div>
-                    </div>
-
-                    {/* QR-код секция */}
-                    <div style={{
-                        background: '#f0f8ff',
-                        padding: '15px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '15px'
-                    }}>
-                        <QrCode size={24} />
-                        <div style={{ flex: 1 }}>
-                            <strong>QR-код товара</strong>
-                            <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>
-                                Содержит: код, название, цену
-                            </p>
-                        </div>
-                        {qrDataUrl && (
-                            <img src={qrDataUrl} alt="QR Code" style={{ width: '60px', height: '60px' }} />
-                        )}
+                        </select>
                     </div>
                 </div>
 
-                <div className="modal-footer">
-                    <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={handleExportPng}
-                    >
-                        <Download size={16} /> PNG
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={handlePrint}
-                    >
-                        <Printer size={16} /> Печать
-                    </button>
+                <div className="grid grid-3" style={{ gap: '15px', marginBottom: '20px' }}>
+                    <div className="form-group">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
+                            Показать цену
+                        </label>
+                    </div>
+                    <div className="form-group">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input type="checkbox" checked={showName} onChange={e => setShowName(e.target.checked)} />
+                            Показать название
+                        </label>
+                    </div>
+                    <div className="form-group">
+                        <label>Копий</label>
+                        <input type="number" min="1" max="100" value={copies} onChange={e => setCopies(parseInt(e.target.value) || 1)} />
+                    </div>
+                </div>
+
+                {/* Настройки магазина и шрифтов */}
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={showStoreName} onChange={e => setShowStoreName(e.target.checked)} />
+                        Магазин
+                    </label>
+                    <input
+                        type="text"
+                        placeholder="Название магазина"
+                        value={storeName}
+                        onChange={e => {
+                            setStoreName(e.target.value);
+                            localStorage.setItem('priceTagStoreName', e.target.value);
+                        }}
+                        style={{ width: '150px', padding: '4px 8px', fontSize: '12px' }}
+                    />
+                    <select value={storeNamePosition} onChange={e => setStoreNamePosition(e.target.value)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                        <option value="top">Сверху</option>
+                        <option value="bottom">Снизу</option>
+                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '12px' }}>Шрифт:</span>
+                        <input type="range" min="7" max="18" value={nameFontSize} onChange={e => setNameFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
+                        <span style={{ fontSize: '11px', minWidth: '28px' }}>{nameFontSize}px</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '12px' }}>Цена:</span>
+                        <input type="range" min="8" max="24" value={priceFontSize} onChange={e => setPriceFontSize(parseInt(e.target.value))} style={{ width: '60px' }} />
+                        <span style={{ fontSize: '11px', minWidth: '28px' }}>{priceFontSize}px</span>
+                    </div>
+                </div>
+
+                {/* Предпросмотр */}
+                <div style={{ background: '#f5f5f5', padding: '20px', borderRadius: '8px', display: 'flex', justifyContent: 'center', marginBottom: '20px', overflowY: 'auto', maxHeight: '400px' }}>
+                    <div ref={printRef} className="print-wrapper" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
+                        {[...Array(copies)].map((_, i) => (
+                            <div key={i} className="label-container" style={{ width: currentSize.width, minHeight: currentSize.height, background: 'white', padding: '5px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px dashed #ccc' }}>
+                                {showStoreName && storeName && storeNamePosition === 'top' && (
+                                    <div style={{ fontSize: `${Math.max(nameFontSize - 2, 7)}px`, fontWeight: 600, textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '2px', color: '#333', borderBottom: '1px solid #ddd', paddingBottom: '1px' }}>
+                                        {storeName}
+                                    </div>
+                                )}
+                                {showName && (
+                                    <div style={{ fontSize: `${nameFontSize}px`, fontWeight: 'bold', textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: '3px', color: '#000' }}>
+                                        {product.name}
+                                    </div>
+                                )}
+                                {barcodeDataUrl && (
+                                    <img src={barcodeDataUrl} alt="Barcode" style={{ maxWidth: '100%', height: 'auto' }} />
+                                )}
+                                {showPrice && (
+                                    <div style={{ fontSize: `${priceFontSize}px`, fontWeight: 'bold', marginTop: '3px', color: '#000' }}>
+                                        {new Intl.NumberFormat('ru-RU').format(product.price_sale || product.price_retail || 0)} сум
+                                    </div>
+                                )}
+                                {showStoreName && storeName && storeNamePosition === 'bottom' && (
+                                    <div style={{ fontSize: `${Math.max(nameFontSize - 2, 7)}px`, fontWeight: 600, textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px', color: '#333', borderTop: '1px solid #ddd', paddingTop: '1px' }}>
+                                        {storeName}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* QR-код секция */}
+                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '15px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '15px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <QrCode size={24} />
+                    <div style={{ flex: 1 }}>
+                        <strong>QR-код товара</strong>
+                        <p style={{ fontSize: '12px', color: '#666', margin: 0 }}>Содержит: код, название, цену</p>
+                    </div>
+                    {qrDataUrl && <img src={qrDataUrl} alt="QR Code" style={{ width: '60px', height: '60px' }} />}
                 </div>
             </div>
+
+            <div className={isInline ? "inline-barcode-footer" : "modal-footer"} style={isInline ? { marginTop: '15px', display: 'flex', gap: '10px' } : {}}>
+                <button type="button" className="btn btn-secondary" onClick={handleExportPng}>
+                    <Download size={16} /> PNG
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handlePrint} style={isInline ? { flex: 1 } : {}}>
+                    <Printer size={16} /> Печать
+                </button>
+                {isInline && (
+                    <button type="button" className="btn btn-secondary" onClick={onClose}>
+                        <X size={16} /> Закрыть
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+
+    if (isInline) return content;
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            {content}
         </div>
     );
 }

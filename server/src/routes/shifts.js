@@ -143,14 +143,22 @@ router.get('/current', authenticate, async (req, res) => {
 router.get('/', authenticate, async (req, res) => {
     try {
         const { status, start_date, end_date } = req.query;
+        const orgId = req.user?.organization_id || 1;
+        const isAdmin = req.user.role === 'admin' || req.user.role === 'Администратор';
 
-        let query = `SELECT s.*, u.username 
+        let query = `SELECT s.*, u.username, u.full_name AS user_name 
              FROM shifts s 
              LEFT JOIN users u ON s.user_id = u.id 
-             WHERE s.user_id = $1`;
+             WHERE s.organization_id = $1`;
 
-        const params = [req.user.id];
+        const params = [orgId];
         let paramCount = 2;
+
+        if (!isAdmin) {
+            query += ` AND s.user_id = $${paramCount}`;
+            params.push(req.user.id);
+            paramCount++;
+        }
 
         if (status) {
             query += ` AND s.status = $${paramCount}`;

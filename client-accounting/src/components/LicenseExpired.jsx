@@ -62,15 +62,34 @@ export default function LicenseExpired({ expiryDate }) {
                     Для продления лицензии свяжитесь с администратором
                 </p>
 
-                <button onClick={handleExit} style={{
-                    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                    color: 'white', border: 'none', borderRadius: '12px',
-                    padding: '14px 40px', fontSize: '16px', fontWeight: 600,
-                    cursor: 'pointer', transition: 'all 0.2s',
-                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
-                }}>
-                    Закрыть приложение
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <button onClick={handleExit} style={{
+                        background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                        color: 'white', border: 'none', borderRadius: '12px',
+                        padding: '14px 40px', fontSize: '16px', fontWeight: 600,
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        boxShadow: '0 4px 15px rgba(239, 68, 68, 0.3)',
+                    }}>
+                        Закрыть приложение
+                    </button>
+
+                    <button 
+                        onClick={() => {
+                            localStorage.clear();
+                            window.location.reload();
+                        }}
+                        style={{
+                            background: 'transparent',
+                            color: '#94a3b8', 
+                            border: '1px solid #334155', 
+                            borderRadius: '12px',
+                            padding: '10px 40px', fontSize: '14px', fontWeight: 500,
+                            cursor: 'pointer', transition: 'all 0.2s',
+                        }}
+                    >
+                        Сменить лицензию / Войти заново
+                    </button>
+                </div>
             </div>
         </div>
     );

@@ -3,7 +3,8 @@ import {
     Users, Shield, Activity, Clock, LogOut, CheckCircle, AlertCircle, 
     ArrowRight, History, Settings, RefreshCw, Key, Monitor, Cloud,
     Globe, HardDrive, Database, Cpu, MemoryStick, Zap, Pause, BarChart3,
-    Download, Upload, Trash2, UserPlus, EyeOff, Eye, X, Check
+    Download, Upload, Trash2, UserPlus, EyeOff, Eye, X, Check,
+    Plus, Play, Copy
 } from 'lucide-react';
 import LicenseTimer from '../components/LicenseTimer';
 import { systemAdminAPI, usersAdminAPI, sessionsAPI, backupAdminAPI, databaseAdminAPI, licenseAdminAPI } from '../services/api';
@@ -740,6 +741,22 @@ function Administration() {
         toast.success('Ключ скопирован');
     };
 
+    const handleExtendLicense = async (id, name) => {
+        if (await confirm({ 
+            message: `Продлить лицензию для ${name} на 1 год?`, 
+            confirmText: 'Продлить',
+            variant: 'primary' 
+        })) {
+            try {
+                await licenseAdminAPI.extend(id);
+                toast.success('Лицензия успешно продлена на 1 год');
+                loadData();
+            } catch (err) {
+                toast.error('Ошибка продления: ' + (err.response?.data?.error || err.message));
+            }
+        }
+    };
+
     const toggleKeyVisibility = (licId) => {
         setVisibleKeys(prev => ({ ...prev, [licId]: !prev[licId] }));
     };
@@ -941,6 +958,13 @@ function Administration() {
                                         </td>
                                         <td style={{ padding: '12px', textAlign: 'right' }}>
                                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                                <button className="btn btn-sm btn-secondary"
+                                                    style={{ color: '#00ff88' }}
+                                                    onClick={() => handleExtendLicense(lic.id, lic.customer_name || lic.license_key)}
+                                                    title="Продлить на 1 год">
+                                                    <Plus size={14} />
+                                                </button>
+
                                                 {(lic.status === 'active' || lic.status === 'suspended') && (
                                                     <button className="btn btn-sm btn-secondary"
                                                         style={{ color: lic.status === 'active' ? '#ff9500' : '#00ff88' }}

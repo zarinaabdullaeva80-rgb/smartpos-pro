@@ -2759,24 +2759,9 @@ router.post('/admin-cleanup', async (req, res) => {
                 if (fs.existsSync(target)) {
                     results.files = fs.readdirSync(target);
                     results.cwd = process.cwd();
-                    results.exists = true;
-                } else {
-                    results.exists = false;
                 }
             } catch (e) {
                 results.error = e.message;
-            }
-        } else if (action === 'run_sql') {
-            const { sql } = req.body;
-            if (!sql) return res.status(400).json({ error: 'sql required' });
-            try {
-                const sqlResult = await pool.query(sql);
-                results.rowCount = sqlResult.rowCount;
-                results.rows = sqlResult.rows?.slice(0, 50);
-                results.success = true;
-            } catch (e) {
-                results.error = e.message;
-                results.success = false;
             }
         }
 
@@ -2785,6 +2770,29 @@ router.post('/admin-cleanup', async (req, res) => {
     } catch (error) {
         console.error('[ADMIN-CLEANUP] Error:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Extend license by 1 year
+router.post('/extend/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const currentRes = await pool.query('SELECT expires_at, status FROM licenses WHERE id = $1', [id]);
+        if (currentRes.rows.length === 0) return res.status(404).json({ error: 'License not found' });
+        
+        let currentExpiry = new Date(currentRes.rows[0].expires_at);
+        let now = new Date();
+        let baseDate = (currentExpiry < now) ? now : currentExpiry;
+        let newExpiry = new Date(baseDate);
+        newExpiry.setFullYear(newExpiry.getFullYear() + 1);
+        
+        const result = await pool.query(
+            `UPDATE licenses SET expires_at = $1, status = 'active', updated_at = NOW() WHERE id = $2 RETURNING *`,
+            [newExpiry, id]
+        );
+        res.json({ success: true, license: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

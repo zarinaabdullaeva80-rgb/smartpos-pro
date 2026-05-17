@@ -5,11 +5,18 @@ setlocal
 set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
 set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.18.8-hotspot
 
-:: Navigate to android directory
-cd /d "%~dp0android"
+:: Create virtual drive to avoid Cyrillic path issues
+subst Z: /D >nul 2>&1
+subst Z: "%~dp0"
+Z:
 
-:: Clean previous build
-echo Cleaning previous build...
+:: Navigate to android directory
+cd /d "Z:\android"
+
+:: Clean previous build and cache
+echo Cleaning previous build and Gradle cache...
+if exist ".gradle" rd /s /q ".gradle"
+if exist "android\.gradle" rd /s /q "android\.gradle"
 call gradlew.bat clean
 
 :: Build Release APK

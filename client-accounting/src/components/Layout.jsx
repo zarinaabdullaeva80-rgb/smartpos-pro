@@ -11,7 +11,15 @@ import '../styles/Layout.css';
 function Layout({ onLogout }) {
     const location = useLocation();
     const navigate = useNavigate();
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    let user = { role: 'Кассир', full_name: 'Пользователь' };
+    try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            user = JSON.parse(storedUser);
+        }
+    } catch (e) {
+        console.error('[Layout] Error parsing user data:', e);
+    }
     const [searchQuery, setSearchQuery] = useState('');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [expandedCategories, setExpandedCategories] = useState(['main']);
@@ -256,7 +264,7 @@ function Layout({ onLogout }) {
     // === МОБИЛЬНЫЙ LAYOUT ===
     if (isMobile) {
         return (
-            <div className="layout-mobile">
+            <div className="layout-mobile" style={{ background: 'var(--color-bg, #0a0010)' }}>
                 {/* Мобильный хедер */}
                 <header className="mobile-header">
                     <div className="mobile-header-left">

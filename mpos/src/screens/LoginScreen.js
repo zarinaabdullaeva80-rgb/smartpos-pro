@@ -370,34 +370,8 @@ export default function LoginScreen({ onLogin, onChangeServer, onActivateLicense
 
     // Рендер статуса сервера
     const renderServerStatus = () => {
-        const statusConfig = {
-            searching: { icon: null, text: 'Поиск сервера...', color: colors.primary, loading: true },
-            found: { icon: '✅', text: serverName ? `${serverName}` : serverUrl, color: '#22c55e', loading: false },
-            not_found: { icon: '❌', text: 'Сервер не найден', color: '#ef4444', loading: false },
-            cloud: { icon: '☁️', text: 'Облачный сервер', color: colors.textSecondary, loading: false },
-        };
-        const config = statusConfig[serverStatus] || statusConfig.not_found;
-
-        return (
-            <TouchableOpacity
-                onPress={() => {
-                    setNewServerUrl(serverUrl || 'http://192.168.1.45:5000');
-                    setNewServerName('');
-                    setShowServerDialog(true);
-                }}
-                style={styles.serverStatusBtn}
-            >
-                <View style={styles.serverStatus}>
-                    {config.loading && <ActivityIndicator size="small" color={config.color} />}
-                    <Paragraph style={[styles.statusText, { color: config.color }]}>
-                        {config.icon ? `${config.icon} ` : ''}{config.text}
-                    </Paragraph>
-                </View>
-                <Paragraph style={[styles.tapHint, dynamicStyles.textSecondary]}>
-                    ⚙️ Нажмите для настройки сервера
-                </Paragraph>
-            </TouchableOpacity>
-        );
+        // Убрано по требованию: система выбора сервера полностью удалена
+        return null;
     };
 
     // Рендер списка серверов
@@ -701,61 +675,7 @@ export default function LoginScreen({ onLogin, onChangeServer, onActivateLicense
                 </Card>
 
                 <Paragraph style={[styles.version, dynamicStyles.textSecondary]}>Версия {APP_VERSION}</Paragraph>
-
-                {/* Кнопка смены сервера */}
-                {onChangeServer && (
-                    <Button
-                        mode="text"
-                        onPress={async () => {
-                            await AsyncStorage.removeItem('server_url');
-                            await AsyncStorage.removeItem('server_name');
-                            onChangeServer();
-                        }}
-                        icon="server-network"
-                        labelStyle={[dynamicStyles.textSecondary, { fontSize: 12 }]}
-                        style={{ marginTop: 4 }}
-                    >
-                        Сменить сервер
-                    </Button>
-                )}
             </View>
-
-            {/* Диалоги */}
-            {renderServerSettingsDialog()}
-            {renderServerListDialog()}
-            {renderAddServerDialog()}
-
-            {/* QR-сканер полноэкранный */}
-            <Portal>
-                {showQRScanner && CameraView && (
-                    <View style={StyleSheet.absoluteFillObject}>
-                        <CameraView
-                            style={StyleSheet.absoluteFillObject}
-                            facing="back"
-                            onBarcodeScanned={qrScanned ? undefined : handleQRScanned}
-                            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                        />
-                        <View style={styles.qrOverlay}>
-                            <View style={styles.qrFrame}>
-                                <View style={[styles.corner, styles.topLeft]} />
-                                <View style={[styles.corner, styles.topRight]} />
-                                <View style={[styles.corner, styles.bottomLeft]} />
-                                <View style={[styles.corner, styles.bottomRight]} />
-                            </View>
-                            <Paragraph style={styles.qrHint}>
-                                Наведите камеру на QR-код{'\n'}в веб-панели SmartPOS Pro
-                            </Paragraph>
-                            <Button
-                                mode="contained"
-                                onPress={() => setShowQRScanner(false)}
-                                style={{ marginTop: 40, backgroundColor: 'rgba(0,0,0,0.6)' }}
-                            >
-                                Закрыть
-                            </Button>
-                        </View>
-                    </View>
-                )}
-            </Portal>
         </KeyboardAvoidingView>
     );
 }

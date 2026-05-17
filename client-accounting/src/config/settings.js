@@ -15,7 +15,7 @@ const DEFAULT_SERVER_URL = 'http://127.0.0.1:5000/api';
 const DEFAULT_PORT = 5000;
 
 // Центральный сервер лицензирования (Railway cloud)
-const LICENSE_SERVER_URL = 'https://smartpos-pro-production.up.railway.app/api';
+const LICENSE_SERVER_URL = 'https://smartpos-pro-production-f885.up.railway.app/api';
 
 // Режимы работы
 export const SERVER_MODES = {
@@ -45,7 +45,7 @@ let dynamicCloudUrl = null;
  */
 export function getServerMode() {
     const saved = localStorage.getItem(STORAGE_KEYS.SERVER_MODE);
-    if (!saved) return SERVER_MODES.OWN;
+    if (!saved) return SERVER_MODES.CLOUD;
     return saved;
 }
 
@@ -82,8 +82,17 @@ export function setCloudUrl(url) {
 export function getApiUrl() {
     if (dynamicApiUrl) return dynamicApiUrl;
     if (window.CUSTOM_API_URL) return window.CUSTOM_API_URL;
+    
+    // Если режим cloud — всегда использовать облачный URL (игнорируем кэшированный localhost)
+    const mode = localStorage.getItem(STORAGE_KEYS.SERVER_MODE);
+    if (mode === 'cloud' || !mode) {
+        return dynamicCloudUrl || LICENSE_SERVER_URL;
+    }
+    
+    // Режим own — использовать сохранённый URL или localhost
     const savedUrl = localStorage.getItem(STORAGE_KEYS.SERVER_URL);
     if (savedUrl) return savedUrl;
+    
     return import.meta.env.VITE_API_URL || DEFAULT_SERVER_URL;
 }
 

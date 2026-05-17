@@ -83,21 +83,6 @@
         "filter": [
           "icon.ico"
         ]
-      },
-      {
-        "from": "../server",
-        "to": "server",
-        "filter": [
-          "**/*",
-          "!node_modules/.cache/**",
-          "!node_modules/**/test/**",
-          "!node_modules/**/example/**",
-          "!logs/**",
-          "!backups/**",
-          "!temp/**",
-          "!*.log",
-          "!*.sql"
-        ]
       }
     ],
     "publish": [
