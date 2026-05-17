@@ -362,6 +362,18 @@ export async function initDatabase(pool) {
         `);
         console.log('  ✓ telegram_chats');
 
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS telegram_admins (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                chat_id VARCHAR(100) UNIQUE NOT NULL,
+                username VARCHAR(100),
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('  ✓ telegram_admins');
+
         // ============================================
         // ВОЗВРАТЫ
         // ============================================

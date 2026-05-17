@@ -11,6 +11,7 @@ import { initGoogleSheets, syncAllData } from './services/googleSheets.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import bcrypt from 'bcrypt';
+import { initTelegramAdminBot } from './services/telegramAdminBot.js';
 
 const execAsync = promisify(exec);
 
@@ -629,6 +630,9 @@ async function startServer() {
         await tryClearPort(PORT);
 
         server.listen(PORT, HOST, async () => {
+            // Инициализация Telegram-бота администрирования
+            initTelegramAdminBot().catch(err => console.error('[TELEGRAM-BOT] Init failed:', err));
+
             // Получение всех локальных IP-адресов для удобства подключения
             const os = await import('os');
             const nets = os.networkInterfaces();

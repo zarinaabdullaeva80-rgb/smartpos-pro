@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { authenticate } from '../middleware/auth.js';
+import { handleTelegramUpdate } from '../services/telegramAdminBot.js';
 
 const router = express.Router();
 
@@ -196,6 +197,17 @@ router.post('/test-message', authenticate, async (req, res) => {
     } catch (error) {
         console.error('Error sending test message:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/telegram/webhook/admin - Webhook for the system admin Telegram bot
+router.post('/webhook/admin', async (req, res) => {
+    try {
+        await handleTelegramUpdate(req.body);
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('[TELEGRAM-BOT] Webhook receiver error:', err.message);
+        res.sendStatus(500);
     }
 });
 

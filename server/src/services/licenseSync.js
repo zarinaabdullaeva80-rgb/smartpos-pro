@@ -10,16 +10,29 @@ const CLOUD_URLS = [
 
 /**
  * Синхронизация лицензии на ОБА облачных сервера Railway
- * Вызывается автоматически после создания лицензии на локальном сервере
+ * Вызывается автоматически после создания/обновления лицензии
  */
-export async function syncToCloud(licenseData) {
-    // Не синхронизировать если МЫ и есть облако
+export async function syncToCloud(licenseData, req = null) {
     const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
-    if (isCloud) return { skipped: true, reason: 'already cloud' };
+    
+    // Получаем хост текущего сервера для предотвращения бесконечных петель
+    let currentHost = '';
+    if (req) {
+        currentHost = req.get('host') || '';
+    } else if (process.env.RAILWAY_STATIC_URL) {
+        currentHost = process.env.RAILWAY_STATIC_URL;
+    }
 
     const results = [];
     for (const cloudUrl of CLOUD_URLS) {
+        // Если это облако и адрес совпадает с хостом текущего сервера, то пропускаем его
+        if (isCloud && currentHost && cloudUrl.toLowerCase().includes(currentHost.toLowerCase())) {
+            console.log(`[SYNC] 🔁 Skipping self sync for ${cloudUrl} (current host: ${currentHost})`);
+            continue;
+        }
+
         try {
+            console.log(`[SYNC] 🚀 Syncing license to cloud node: ${cloudUrl}`);
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 15000);
             
@@ -42,22 +55,34 @@ export async function syncToCloud(licenseData) {
             results.push({ url: cloudUrl, error: error.message });
         }
     }
-    // Возвращаем успех если хотя бы один deployment отработал
+    
     const anySuccess = results.some(r => r.success);
-    return { success: anySuccess, results };
+    return { success: anySuccess || results.length === 0, results };
 }
 
 /**
  * Синхронизация УДАЛЕНИЯ лицензии на ОБА облачных сервера Railway
- * Вызывается автоматически после удаления лицензии на локальном сервере
+ * Вызывается автоматически после удаления лицензии
  */
-export async function deleteFromCloud(licenseKey) {
-    // Не синхронизировать если МЫ и есть облако
+export async function deleteFromCloud(licenseKey, req = null) {
     const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID;
-    if (isCloud) return { skipped: true, reason: 'already cloud' };
+    
+    // Получаем хост текущего сервера для предотвращения бесконечных петель
+    let currentHost = '';
+    if (req) {
+        currentHost = req.get('host') || '';
+    } else if (process.env.RAILWAY_STATIC_URL) {
+        currentHost = process.env.RAILWAY_STATIC_URL;
+    }
 
     const results = [];
     for (const cloudUrl of CLOUD_URLS) {
+        // Если это облако и адрес совпадает с хостом текущего сервера, то пропускаем его
+        if (isCloud && currentHost && cloudUrl.toLowerCase().includes(currentHost.toLowerCase())) {
+            console.log(`[SYNC-DELETE] 🔁 Skipping self sync-delete for ${cloudUrl} (current host: ${currentHost})`);
+            continue;
+        }
+
         try {
             console.log(`[SYNC-DELETE] 🚀 Notifying ${cloudUrl} about deleted license: ${licenseKey}`);
             
@@ -83,5 +108,5 @@ export async function deleteFromCloud(licenseKey) {
             results.push({ url: cloudUrl, error: error.message });
         }
     }
-    return { success: results.some(r => r.success), results };
+    return { success: results.some(r => r.success) || results.length === 0, results };
 }

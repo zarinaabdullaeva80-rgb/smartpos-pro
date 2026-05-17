@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import pool from '../config/database.js';
 import { authenticate, checkPermission } from '../middleware/auth.js';
 import { auditLog } from '../middleware/audit.js';
+import { createLicenseInternal } from '../services/licensingService.js';
 
 const router = express.Router();
 
@@ -569,181 +570,18 @@ router.get('/admin/licenses', authenticate, async (req, res) => {
  */
 router.post('/admin/licenses', authenticate, auditLog('license'), async (req, res) => {
     try {
-        const {
-            customer_name,
-            customer_email,
-            customer_phone,
-            customer_username,
-            customer_password,
-            company_name,
-            license_type,
-            max_devices = 1,
-            max_users = 5,
-            max_pos_terminals = 1,
-            trial_days = 0,
-            features = {},
-            // Server configuration
-            server_type = 'cloud',  // 'cloud' or 'self_hosted'
-            server_url = null,      // URL for self-hosted servers
-            server_api_key = null   // Optional API key for self-hosted
-        } = req.body;
+        const result = await createLicenseInternal({
+            ...req.body,
+            created_by: req.user.id
+        }, req);
 
-        // Validate customer credentials
-        if (!customer_username || !customer_password) {
-            return res.status(400).json({
-                error: 'Требуются customer_username и customer_password'
-            });
+        if (result.error) {
+            return res.status(400).json({ error: result.error });
         }
 
-        // Validate server configuration
-        if (server_type === 'self_hosted' && !server_url) {
-            return res.status(400).json({
-                error: 'Для self_hosted требуется указать server_url'
-            });
-        }
-
-        // Check username uniqueness
-        const existingUser = await pool.query(
-            'SELECT id FROM licenses WHERE customer_username = $1',
-            [customer_username]
-        );
-
-        if (existingUser.rows.length > 0) {
-            return res.status(400).json({
-                error: 'Логин уже используется другой лицензией'
-            });
-        }
-
-        // Hash password
-        const bcryptModule = await import('bcrypt');
-        const bcrypt = bcryptModule.default || bcryptModule;
-        const customer_password_hash = await bcrypt.hash(customer_password, 10);
-
-        // Генерировать ключ
-        const keyResult = await pool.query('SELECT generate_license_key()');
-        const license_key = keyResult.rows[0].generate_license_key;
-
-        // Вычислить срок действия (истекает в конце последнего дня 23:59:59)
-        let expires_at = null;
-        if (license_type === 'trial' && trial_days > 0) {
-            expires_at = new Date();
-            expires_at.setDate(expires_at.getDate() + trial_days);
-            expires_at.setHours(23, 59, 59, 999);
-        } else if (license_type === 'monthly') {
-            expires_at = new Date();
-            expires_at.setMonth(expires_at.getMonth() + 1);
-            expires_at.setHours(23, 59, 59, 999);
-        } else if (license_type === 'yearly') {
-            expires_at = new Date();
-            expires_at.setFullYear(expires_at.getFullYear() + 1);
-            expires_at.setHours(23, 59, 59, 999);
-        }
-        // lifetime = null
-
-        const result = await pool.query(`
-            INSERT INTO licenses (
-                license_key, customer_name, customer_email, customer_phone,
-                customer_username, customer_password_hash,
-                company_name, license_type, max_devices, max_users,
-                max_pos_terminals, expires_at, trial_days, features, created_by,
-                server_type, server_url, server_api_key
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            RETURNING *
-        `, [
-            license_key, customer_name, customer_email, customer_phone,
-            customer_username, customer_password_hash,
-            company_name, license_type, max_devices, max_users,
-            max_pos_terminals, expires_at, trial_days, JSON.stringify(features), req.user.id,
-            server_type, server_url, server_api_key
-        ]);
-
-        // Логирование
-        await pool.query(`
-            INSERT INTO license_history (license_id, action, performed_by)
-            VALUES ($1, 'created', $2)
-        `, [result.rows[0].id, req.user.id]);
-
-        // ★ Авто-создание организации для новой лицензии
-        const licenseId = result.rows[0].id;
-        const orgCode = 'ORG-' + Date.now().toString(36).toUpperCase();
-        const orgName = company_name || customer_name || customer_username;
-        let organizationId = null;
-
-        try {
-            const orgResult = await pool.query(`
-                INSERT INTO organizations (name, code, license_key, is_active)
-                VALUES ($1, $2, $3, true) RETURNING id
-            `, [orgName, orgCode, license_key]);
-            organizationId = orgResult.rows[0].id;
-
-            // Привязать лицензию к организации
-            try {
-                await pool.query('UPDATE licenses SET organization_id = $1 WHERE id = $2', [organizationId, licenseId]);
-            } catch (e) { /* organization_id column may not exist */ }
-
-            // Создать пользователя-владельца и привязать к организации
-            await pool.query(`
-                INSERT INTO users (username, email, password_hash, full_name, role,
-                                   license_id, organization_id, user_type, is_active)
-                VALUES ($1, $2, $3, $4, 'Администратор', $5, $6, 'owner', true)
-                ON CONFLICT (username) DO UPDATE SET organization_id = $6, license_id = $5
-            `, [
-                customer_username,
-                customer_email || customer_username + '@smartpos.local',
-                customer_password_hash,
-                customer_name || customer_username,
-                licenseId, organizationId
-            ]);
-
-            // Создать склад по умолчанию
-            await pool.query(`
-                INSERT INTO warehouses (name, code, is_active, organization_id)
-                VALUES ('Основной склад', $1, true, $2)
-            `, ['WH-' + organizationId, organizationId]);
-
-            console.log(`[LICENSE] Created org #${organizationId} "${orgName}" + warehouse + owner for license #${licenseId}`);
-        } catch (orgErr) {
-            console.error('[LICENSE] Org creation error (license still created):', orgErr.message);
-        }
-
-        // ★ Автоматическая синхронизация на Railway Cloud
-        let syncResult = null;
-        try {
-            syncResult = await syncToCloud({
-                license_key,
-                customer_name,
-                customer_email,
-                customer_phone,
-                customer_username,
-                customer_password_hash,
-                company_name: company_name || customer_name || customer_username,
-                license_type,
-                max_devices,
-                max_users,
-                max_pos_terminals,
-                expires_at,
-                trial_days,
-                features,
-                server_type,
-                server_url,
-                server_api_key
-            });
-            console.log('[LICENSE] Cloud sync result:', syncResult?.success ? '✅ OK' : '⚠️ ' + (syncResult?.error || 'unknown'));
-        } catch (syncErr) {
-            console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
-        }
-
-        res.json({
-            success: true,
-            license: result.rows[0],
-            organization_id: organizationId,
-            cloud_synced: syncResult?.success || false,
-            message: `Лицензия создана. Организация "${orgName}" создана. Передайте клиенту логин: ${customer_username}`
-        });
-
+        res.json(result);
     } catch (error) {
-        console.error('Error creating license:', error);
+        console.error('Error in POST /admin/licenses route:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -816,7 +654,7 @@ router.put('/admin/licenses/:id', authenticate, auditLog('license'), async (req,
 
         // ★ Автоматическая синхронизация на Railway Cloud
         try {
-            await syncToCloud(result.rows[0]);
+            await syncToCloud(result.rows[0], req);
         } catch (syncErr) {
             console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
         }
@@ -902,7 +740,7 @@ router.post('/admin/licenses/:id/reset-credentials', authenticate, auditLog('lic
 
         // ★ Автоматическая синхронизация на Railway Cloud
         try {
-            await syncToCloud(result.rows[0]);
+            await syncToCloud(result.rows[0], req);
         } catch (syncErr) {
             console.warn('[LICENSE] Cloud sync error (non-blocking):', syncErr.message);
         }
