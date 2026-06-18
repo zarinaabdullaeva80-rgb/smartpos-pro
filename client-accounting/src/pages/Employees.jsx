@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Edit, Trash2, DollarSign, Calendar, Check, X, AlertCircle } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, DollarSign, Calendar, Check, X, AlertCircle, Package, Clock } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
-import { employeesAPI } from '../services/api';
+import { employeesAPI, inventoryAPI } from '../services/api';
+import api from '../services/api';
 import useActionHandler from '../hooks/useActionHandler';
 import ExportButton from '../components/ExportButton';
 import { useToast } from '../components/ToastProvider';
-
+
 import { useConfirm } from '../components/ConfirmDialog';
 import { useI18n } from '../i18n';
 const Employees = () => {
@@ -15,6 +16,8 @@ const Employees = () => {
     const [activeTab, setActiveTab] = useState('employees');
     const [employees, setEmployees] = useState([]);
     const [payroll, setPayroll] = useState([]);
+    const [inventories, setInventories] = useState([]);
+    const [shiftsHistory, setShiftsHistory] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [modalType, setModalType] = useState(''); // 'employee' or 'payroll'
@@ -40,6 +43,39 @@ const Employees = () => {
         status: ''
     });
 
+    const formatDate = (d) => {
+        if (!d) return '—';
+        return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const loadInventories = async () => {
+        setLoading(true);
+        try {
+            const res = await inventoryAPI.getAll();
+            const data = res?.data || res;
+            setInventories(data?.inventories || data || []);
+        } catch (e) {
+            console.error('Ошибка загрузки инвентаризаций:', e);
+            setInventories([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loadShiftsHistory = async () => {
+        setLoading(true);
+        try {
+            const res = await api.get('/shifts');
+            const data = res?.data || res;
+            setShiftsHistory(data?.shifts || data || []);
+        } catch (e) {
+            console.error('Ошибка загрузки смен:', e);
+            setShiftsHistory([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         loadEmployees();
     }, []);
@@ -47,6 +83,10 @@ const Employees = () => {
     useEffect(() => {
         if (activeTab === 'payroll') {
             loadPayroll();
+        } else if (activeTab === 'inventories') {
+            loadInventories();
+        } else if (activeTab === 'shifts') {
+            loadShiftsHistory();
         }
     }, [activeTab, payrollFilters]);
 
@@ -265,13 +305,29 @@ const Employees = () => {
                     className={`tab ${activeTab === 'employees' ? 'active' : ''}`}
                     onClick={() => setActiveTab('employees')}
                 >
+                    <Users size={15} style={{ marginRight: 6 }} />
                     {t('employees.employees', 'Сотрудники')}
                 </button>
                 <button
                     className={`tab ${activeTab === 'payroll' ? 'active' : ''}`}
                     onClick={() => setActiveTab('payroll')}
                 >
+                    <DollarSign size={15} style={{ marginRight: 6 }} />
                     {t('employees.payroll', 'Зарплата')}
+                </button>
+                <button
+                    className={`tab ${activeTab === 'inventories' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('inventories')}
+                >
+                    <Package size={15} style={{ marginRight: 6 }} />
+                    История инвентаризаций
+                </button>
+                <button
+                    className={`tab ${activeTab === 'shifts' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('shifts')}
+                >
+                    <Clock size={15} style={{ marginRight: 6 }} />
+                    История смен
                 </button>
             </div>
 
@@ -438,6 +494,127 @@ const Employees = () => {
                                         </td>
                                     </tr>
                                 ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Вкладка инвентаризаций */}
+            {activeTab === 'inventories' && (
+                <div className="content-section">
+                    <div className="section-header">
+                        <h2 className="section-title">📦 История инвентаризаций сотрудников</h2>
+                        <button className="btn btn-secondary" onClick={loadInventories}><Package size={16} /> Обновить</button>
+                    </div>
+                    <div className="table-container">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>№ документа</th>
+                                    <th>Ответственный</th>
+                                    <th>Склад</th>
+                                    <th>Дата</th>
+                                    <th>Статус</th>
+                                    <th>Позиций</th>
+                                    <th>Расхождений</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="7" style={{ textAlign: 'center', padding: '2rem' }}>Загрузка...</td></tr>
+                                ) : inventories.length === 0 ? (
+                                    <tr><td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
+                                        <Package size={36} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
+                                        Инвентаризаций не найдено
+                                    </td></tr>
+                                ) : inventories.map(inv => (
+                                    <tr key={inv.id}>
+                                        <td><strong>{inv.document_number || `#${inv.id}`}</strong></td>
+                                        <td>{inv.responsible_name || inv.responsible_user_id || '—'}</td>
+                                        <td>{inv.warehouse_name || '—'}</td>
+                                        <td>{formatDate(inv.document_date || inv.created_at)}</td>
+                                        <td>
+                                            <span className={`badge ${
+                                                inv.status === 'completed' ? 'badge-success' :
+                                                inv.status === 'in_progress' ? 'badge-warning' : 'badge-secondary'
+                                            }`}>
+                                                {inv.status === 'completed' ? '✅ Завершена' :
+                                                 inv.status === 'in_progress' ? '🔄 В процессе' : '📋 Черновик'}
+                                            </span>
+                                        </td>
+                                        <td>{inv.items_count ?? '—'}</td>
+                                        <td>
+                                            {inv.items_with_difference > 0
+                                                ? <span style={{ color: '#ef4444', fontWeight: 600 }}>{inv.items_with_difference}</span>
+                                                : <span style={{ color: '#22c55e' }}>0</span>}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Вкладка истории смен */}
+            {activeTab === 'shifts' && (
+                <div className="content-section">
+                    <div className="section-header">
+                        <h2 className="section-title">🕐 История смен сотрудников</h2>
+                        <button className="btn btn-secondary" onClick={loadShiftsHistory}><Clock size={16} /> Обновить</button>
+                    </div>
+                    <div className="table-container">
+                        <table className="table">
+                            <thead>
+                                <tr>
+                                    <th>Смена №</th>
+                                    <th>Сотрудник</th>
+                                    <th>Начало</th>
+                                    <th>Конец</th>
+                                    <th>Длительность</th>
+                                    <th>Нач. касса</th>
+                                    <th>Кон. касса</th>
+                                    <th>Продаж</th>
+                                    <th>Статус</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {loading ? (
+                                    <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem' }}>Загрузка...</td></tr>
+                                ) : shiftsHistory.length === 0 ? (
+                                    <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
+                                        <Clock size={36} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
+                                        Смен не найдено
+                                    </td></tr>
+                                ) : shiftsHistory.map(shift => {
+                                    const start = shift.started_at ? new Date(shift.started_at) : null;
+                                    const end = shift.ended_at ? new Date(shift.ended_at) : null;
+                                    let duration = '—';
+                                    if (start && end) {
+                                        const mins = Math.round((end - start) / 60000);
+                                        duration = mins >= 60 ? `${Math.floor(mins / 60)}ч ${mins % 60}м` : `${mins}м`;
+                                    } else if (start) {
+                                        duration = '🟢 Активна';
+                                    }
+                                    return (
+                                        <tr key={shift.id}>
+                                            <td><strong>{shift.shift_number || `#${shift.id}`}</strong></td>
+                                            <td>{shift.user_name || shift.username || '—'}</td>
+                                            <td>{formatDate(shift.started_at)}</td>
+                                            <td>{shift.ended_at ? formatDate(shift.ended_at) : <span style={{ color: '#22c55e' }}>Активна</span>}</td>
+                                            <td>{duration}</td>
+                                            <td>{shift.initial_cash != null ? formatCurrencyUZS(shift.initial_cash) : '—'}</td>
+                                            <td>{shift.final_cash != null ? formatCurrencyUZS(shift.final_cash) : '—'}</td>
+                                            <td>{shift.total_sales != null ? formatCurrencyUZS(shift.total_sales) : '—'}</td>
+                                            <td>
+                                                <span className={`badge ${shift.status === 'closed' ? 'badge-secondary' : 'badge-success'}`}>
+                                                    {shift.status === 'closed' ? '🔴 Закрыта' : '🟢 Открыта'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Edit, Trash2, Key, Check, X, Search, UserPlus } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Key, Check, X, Search, UserPlus, Smartphone, Copy, Server } from 'lucide-react';
 import { employeesAPI } from '../services/api';
-
+import { getApiUrl } from '../config/settings';
 
 import { useConfirm } from '../components/ConfirmDialog';
 import { useI18n } from '../i18n';
@@ -15,6 +15,7 @@ function StaffManagement() {
     const [searchQuery, setSearchQuery] = useState('');
     const [message, setMessage] = useState(null);
     const [newPassword, setNewPassword] = useState(null);
+    const [copiedLink, setCopiedLink] = useState(false);
 
     const [formData, setFormData] = useState({
         username: '',
@@ -195,6 +196,36 @@ function StaffManagement() {
                             style={{ paddingLeft: '40px' }}
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* Mobile App Link for Employees */}
+            <div className="card mb-4" style={{ padding: '14px 16px', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                        <Smartphone size={16} style={{ color: 'var(--color-primary)' }} />
+                        <span style={{ fontWeight: 500 }}>Ссылка для сотрудников:</span>
+                        <a 
+                            href={`${getApiUrl().replace('/api', '')}/mobile`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={{ color: 'var(--color-primary)', textDecoration: 'underline', fontFamily: 'monospace', fontSize: '12px' }}
+                        >
+                            {`${getApiUrl().replace('/api', '')}/mobile`}
+                        </a>
+                    </div>
+                    <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                            navigator.clipboard.writeText(`${getApiUrl().replace('/api', '')}/mobile`);
+                            setCopiedLink(true);
+                            setTimeout(() => setCopiedLink(false), 2000);
+                        }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', fontSize: '12px' }}
+                    >
+                        {copiedLink ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedLink ? 'Скопировано!' : 'Копировать'}
+                    </button>
                 </div>
             </div>
 
@@ -380,5 +411,4 @@ function StaffManagement() {
         </div>
     );
 }
-
 export default StaffManagement;

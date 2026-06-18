@@ -320,10 +320,33 @@ router.post('/login', async (req, res) => {
             if (expectedLicenseId) {
                 // license_key передан И найден в локальной БД — строгая проверка
                 if (userLicenseId && userLicenseId !== expectedLicenseId) {
-                    console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
-                    return res.status(401).json({ 
-                        error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
-                    });
+                    // Разрешаем авто-миграцию пользователя на новую активную лицензию, если его старая лицензия истекла или была пробной
+                    try {
+                        const oldLicRes = await pool.query('SELECT status, license_type FROM licenses WHERE id = $1', [userLicenseId]);
+                        const oldLic = oldLicRes.rows[0];
+                        if (oldLic && (oldLic.status === 'expired' || oldLic.license_type === 'trial')) {
+                            const newLicRes = await pool.query('SELECT organization_id FROM licenses WHERE id = $1', [expectedLicenseId]);
+                            const newOrgId = newLicRes.rows[0]?.organization_id || null;
+                            
+                            console.log(`[AUTH] Auto-migrating user "${username}" (id=${user.id}) from expired/trial license #${userLicenseId} to new active license #${expectedLicenseId}`);
+                            await pool.query(
+                                'UPDATE users SET license_id = $1, organization_id = $2 WHERE id = $3',
+                                [expectedLicenseId, newOrgId, user.id]
+                            );
+                            userLicenseId = expectedLicenseId;
+                            user.organization_id = newOrgId;
+                        } else {
+                            console.warn(`[AUTH] License mismatch! User "${username}" (license_id=${userLicenseId}) tried to login with license #${expectedLicenseId}`);
+                            return res.status(401).json({ 
+                                error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
+                            });
+                        }
+                    } catch (migrationErr) {
+                        console.error('[AUTH] Auto-migration failed:', migrationErr.message);
+                        return res.status(401).json({ 
+                            error: 'Этот логин привязан к другой лицензии. Проверьте лицензионный ключ.' 
+                        });
+                    }
                 }
                 if (!userLicenseId) {
                     // Пользователь НЕ привязан — проверяем, это его лицензия?

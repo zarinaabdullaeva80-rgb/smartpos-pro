@@ -179,18 +179,19 @@ function App() {
             }
 
             // Локальная проверка expires_at
+            let isLocallyExpired = false;
             if (licenseInfo && licenseInfo.expires_at) {
                 const expiresAt = new Date(licenseInfo.expires_at);
                 if (expiresAt < new Date()) {
                     console.warn('[App] Local license expired');
-                    setLicenseExpired(true);
-                    setLicenseExpiryDate(licenseInfo.expires_at);
-                    return;
+                    isLocallyExpired = true;
                 }
             }
 
             // Проверка через сервер (если есть токен)
             const token = localStorage.getItem('token');
+            let serverCheckSuccess = false;
+
             if (token && licenseInfo && licenseInfo.id) {
                 try {
                     const apiUrl = localStorage.getItem('server_url') || 'http://localhost:5000/api';
@@ -211,28 +212,43 @@ function App() {
                     
                     if (resp.ok) {
                         const data = await resp.json();
+                        serverCheckSuccess = true;
                         if (data.expired) {
                             console.error('[App] Cloud license check: EXPIRED');
                             setLicenseExpired(true);
-                            setLicenseExpiryDate(data.expires_at);
+                            setLicenseExpiryDate(data.expires_at || licenseInfo.expires_at);
                             return;
                         }
                         // Обновить локальные данные лицензии
                         if (data.license) {
                             localStorage.setItem('license_info', JSON.stringify(data.license));
+                            setLicenseExpired(false);
+                            setLicenseExpiryDate(data.license.expires_at);
                         }
                     } else if (resp.status === 403) {
                         console.error('[App] Cloud license check: FORBIDDEN');
                         setLicenseExpired(true);
+                        serverCheckSuccess = true;
                         return;
                     }
                 } catch (e) {
                     if (e.name === 'AbortError') {
                         console.warn('[App] Cloud license check timed out after 5s');
                     } else {
-                        console.warn('[App] Cloud license server unreachable, using local status:', e.message);
+                        console.warn('[App] Cloud license server unreachable:', e.message);
                     }
                 }
+            }
+
+            // Если проверка через сервер не проводилась или не удалась, используем локальный статус
+            if (!serverCheckSuccess && isLocallyExpired) {
+                console.warn('[App] Server check failed/unavailable, enforcing local expired status');
+                setLicenseExpired(true);
+                setLicenseExpiryDate(licenseInfo.expires_at);
+                return;
+            } else if (!isLocallyExpired) {
+                // Если локально не истекла и сервер недоступен — всё ок (работаем офлайн)
+                setLicenseExpired(false);
             }
         } catch (e) {
             console.error('[App] License check fatal error:', e);

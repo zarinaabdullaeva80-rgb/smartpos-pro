@@ -146,7 +146,7 @@ router.delete('/user/:userId', authenticate, authorize('admin', 'superadmin'), a
 // ============= IP БЛОКИРОВКА =============
 
 // Получить заблокированные IP
-router.get('/blocked-ips', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+router.get('/blocked-ips', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT b.*, u.username as blocked_by_name
@@ -163,7 +163,7 @@ router.get('/blocked-ips', authenticate, authorize('admin', 'superadmin'), async
 });
 
 // Заблокировать IP
-router.post('/block-ip', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+router.post('/block-ip', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
         const { ip_address, reason, duration_hours } = req.body;
         const userId = req.user.id;
@@ -194,7 +194,7 @@ router.post('/block-ip', authenticate, authorize('admin', 'superadmin'), async (
 });
 
 // Разблокировать IP
-router.delete('/block-ip/:ip', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+router.delete('/block-ip/:ip', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
         const { ip } = req.params;
 
@@ -210,7 +210,7 @@ router.delete('/block-ip/:ip', authenticate, authorize('admin', 'superadmin'), a
 // ============= ПОПЫТКИ ВХОДА =============
 
 // Получить попытки входа
-router.get('/login-attempts', authenticate, authorize('admin', 'superadmin'), async (req, res) => {
+router.get('/login-attempts', authenticate, authorize('admin', 'superadmin', 'Администратор'), async (req, res) => {
     try {
         const { hours = 24, failed_only } = req.query;
 

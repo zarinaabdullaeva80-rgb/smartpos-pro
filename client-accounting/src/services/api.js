@@ -1037,7 +1037,7 @@ export const sessionsAPI = {
         () => ({ sessions: [] })
     ),
     terminate: (id) => api.delete(`/sessions/${id}`),
-    terminateAll: () => api.delete('/sessions'),
+    terminateAll: () => api.post('/sessions/terminate-all'),
     terminateUser: (userId) => api.delete(`/sessions/user/${userId}`),
     getBlockedIps: () => withFallback(
         () => api.get('/sessions/blocked-ips'),

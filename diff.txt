@@ -1,0 +1,375 @@
+﻿diff --git a/client-accounting/src/pages/Login.jsx b/client-accounting/src/pages/Login.jsx
+index 4be93ce..9a8cd74 100644
+--- a/client-accounting/src/pages/Login.jsx
++++ b/client-accounting/src/pages/Login.jsx
+@@ -60,23 +60,25 @@ function Login({ onLogin }) {
+         fetchServerInfo();
+     }, [srvMode]);
+ 
+-    // ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å ╨║ ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â
++    // ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░ ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å ╨║ ╨╛╨▒╨╗╨░╤ç╨╜╨╛╨╝╤â ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â Railway
++    const CLOUD_API_URL = 'https://smartpos-pro-production-f885.up.railway.app/api';
++
+     const checkServerConnection = async () => {
+         setServerChecking(true);
+         try {
+-            const apiUrl = getApiUrl();
+-            const baseUrl = apiUrl.replace(/\/api\/?$/, '');
++            // ╨Æ╤ü╨╡╨│╨┤╨░ ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨░╨╡╨╝╤ü╤Å ╨║ ╨╛╨▒╨╗╨░╤ç╨╜╨╛╨╝╤â ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â Railway
+             const controller = new AbortController();
+-            const timeoutId = setTimeout(() => controller.abort(), 5000);
++            const timeoutId = setTimeout(() => controller.abort(), 8000);
+ 
+-            const response = await fetch(`${baseUrl}/api/health`, {
++            const response = await fetch(`${CLOUD_API_URL}/health`, {
+                 method: 'GET',
+                 signal: controller.signal,
+             });
+             clearTimeout(timeoutId);
+ 
+             if (response.ok) {
+-                console.log('[Server] Connected to:', baseUrl);
++                console.log('[Server] Connected to Railway cloud');
++                setApiUrl(CLOUD_API_URL);
+                 setServerConnected(true);
+                 setConnectionStatus('connected');
+                 setServerChecking(false);
+@@ -84,36 +86,13 @@ function Login({ onLogin }) {
+                 return true;
+             }
+         } catch (err) {
+-            console.log('[Server] Not available:', err.message);
+-        }
+-
+-        // ╨ƒ╨╛╨┐╤Ç╨╛╨▒╨╛╨▓╨░╤é╤î ╨░╨▓╤é╨╛╨┐╨╛╨╕╤ü╨║ ╨╜╨░ 127.0.0.1:5000
+-        try {
+-            const controller = new AbortController();
+-            const timeoutId = setTimeout(() => controller.abort(), 3000);
+-            const response = await fetch('http://127.0.0.1:5000/api/health', {
+-                method: 'GET',
+-                signal: controller.signal,
+-            });
+-            clearTimeout(timeoutId);
+-
+-            if (response.ok) {
+-                console.log('[Server] Auto-discovered at 127.0.0.1:5000');
+-                setApiUrl('http://127.0.0.1:5000/api');
+-                setServerUrl('http://127.0.0.1:5000/api');
+-                setServerConnected(true);
+-                setConnectionStatus('connected');
+-                setServerChecking(false);
+-                setError('');
+-                return true;
+-            }
+-        } catch (err) {
+-            // localhost:5000 ╤é╨╛╨╢╨╡ ╨╜╨╡ ╨┤╨╛╤ü╤é╤â╨┐╨╡╨╜
++            console.log('[Server] Railway not available:', err.message);
+         }
+ 
+         setServerConnected(false);
+         setConnectionStatus('error');
+         setServerChecking(false);
++        setError('╨¥╨╡╤é ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å ╨║ ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â. ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╤î╤é╨╡ ╨╕╨╜╤é╨╡╤Ç╨╜╨╡╤é-╤ü╨╛╨╡╨┤╨╕╨╜╨╡╨╜╨╕╨╡.');
+         return false;
+     };
+ 
+@@ -124,26 +103,26 @@ function Login({ onLogin }) {
+         if (savedLicense) setLicenseKey(savedLicense);
+         if (savedServer) setServerUrl(savedServer);
+ 
+-        // ╨É╨▓╤é╨╛╨╝╨░╤é╨╕╤ç╨╡╤ü╨║╨░╤Å ╨╕╨╜╨╕╤å╨╕╨░╨╗╨╕╨╖╨░╤å╨╕╤Å: ╤ü╨╡╤Ç╨▓╨╡╤Ç ΓåÆ ╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Å ΓåÆ ╨░╨▓╤é╨╛╨▓╤à╨╛╨┤
++        // ╨É╨▓╤é╨╛╨╝╨░╤é╨╕╤ç╨╡╤ü╨║╨░╤Å ╨╕╨╜╨╕╤å╨╕╨░╨╗╨╕╨╖╨░╤å╨╕╤Å: cloud ΓåÆ ╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Å ΓåÆ ╨░╨▓╤é╨╛╨▓╤à╨╛╨┤
++        // ╨û╤æ╤ü╤é╨║╨╛ ╤â╤ü╤é╨░╨╜╨░╨▓╨╗╨╕╨▓╨░╨╡╨╝ ╨╛╨▒╨╗╨░╤ç╨╜╤ï╨╣ URL ╨┐╤Ç╨╕ ╨║╨░╨╢╨┤╨╛╨╝ ╨╖╨░╨┐╤â╤ü╨║╨╡
++        setApiUrl('https://smartpos-pro-production-f885.up.railway.app/api');
++        setServerMode(SERVER_MODES.CLOUD);
++
+         const init = async () => {
+             const connected = await checkServerConnection();
+ 
+             // ╨£╨╛╨▒╨╕╨╗╤î╨╜╨╛╨╡ ╤â╤ü╤é╤Ç╨╛╨╣╤ü╤é╨▓╨╛ ΓÇö ╨┐╤Ç╨╛╨┐╤â╤ü╨║╨░╨╡╨╝ ╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Ä (╤ü╨╡╤Ç╨▓╨╡╤Ç ╤ü╨░╨╝ ╨┐╤Ç╨╛╨▓╨╡╤Ç╤Å╨╡╤é)
+-            // Γÿà ╨₧╨▒╨╗╨░╤ç╨╜╤ï╨╣ ╤ü╨╡╤Ç╨▓╨╡╤Ç ΓÇö ╤é╨╛╨╢╨╡ ╨┐╤Ç╨╛╨┐╤â╤ü╨║╨░╨╡╨╝ (╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Å ╨┐╤Ç╨╛╨▓╨╡╤Ç╤Å╨╡╤é╤ü╤Å ╨╜╨░ ╤ü╤é╨╛╤Ç╨╛╨╜╨╡ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░)
+-            const currentApiUrl = getApiUrl();
+-            const isCloudServer = currentApiUrl.includes('railway.app') || currentApiUrl.includes('render.com') || currentApiUrl.includes('herokuapp.com');
+-
+-            if (isMobile || isCloudServer) {
++            if (isMobile) {
+                 setLicenseChecking(false);
+                 setLicenseValid(true);
+                 if (connected) {
+                     setMode('login');
+                 } else {
+-                    setMode(isMobile ? 'settings' : 'login');
++                    setMode('settings');
+                 }
+-                if (isCloudServer) console.log('[Login] Cloud server detected, skipping license validation');
+             } else if (savedLicense) {
+-                await checkSavedLicense(savedLicense);
++                const isValid = await checkSavedLicense(savedLicense);
++                if (!isValid) return; // ╨₧╤ü╤é╨░╨╜╨╛╨▓╨║╨░ ╨╡╤ü╨╗╨╕ ╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Å ╨╜╨╡╨▓╨░╨╗╨╕╨┤╨╜╨░
+             } else {
+                 setLicenseChecking(false);
+                 setMode('license');
+@@ -218,6 +197,7 @@ function Login({ onLogin }) {
+                         setServerUrl(data.license.server_url);
+                     }
+                 }
++                return true;
+             } else if (response.status === 403 && data.error && (data.error.includes('╨╕╤ü╤é╨╡╨║╨╗╨░') || data.error.includes('revoked'))) {
+                 // ╨¢╨╕╤å╨╡╨╜╨╖╨╕╤Å ╨»╨Æ╨¥╨₧ ╨╛╤é╨╛╨╖╨▓╨░╨╜╨░ ╨╕╨╗╨╕ ╨╕╤ü╤é╨╡╨║╨╗╨░ ΓÇö ╤â╨┤╨░╨╗╤Å╨╡╨╝
+                 console.warn('[License] License explicitly expired/revoked, removing');
+@@ -225,6 +205,7 @@ function Login({ onLogin }) {
+                 setMode('license');
+                 localStorage.removeItem('license_key');
+                 localStorage.removeItem('license_info');
++                return false;
+             } else {
+                 // 404 ╨╕╨╗╨╕ ╨┤╤Ç╤â╨│╨░╤Å ╨╛╤ê╨╕╨▒╨║╨░ ΓÇö ╨¥╨ò ╤â╨┤╨░╨╗╤Å╨╡╨╝ ╨║╨╗╤Ä╤ç, ╨┐╤Ç╨╛╨▒╤â╨╡╨╝ ╨╛╤ä╨╗╨░╨╣╨╜ ╨║╤ì╤ê
+                 console.warn('[License] Validation returned non-valid, keeping key. Status:', response.status);
+@@ -233,10 +214,12 @@ function Login({ onLogin }) {
+                     setLicenseInfo(JSON.parse(savedInfo));
+                     setLicenseValid(true);
+                     setMode('login');
++                    return true;
+                 } else {
+                     setLicenseValid(false);
+                     setMode('license');
+                     setError(data.error || '╨¥╨╡ ╤â╨┤╨░╨╗╨╛╤ü╤î ╨┐╤Ç╨╛╨▓╨╡╤Ç╨╕╤é╤î ╨╗╨╕╤å╨╡╨╜╨╖╨╕╤Ä');
++                    return false;
+                 }
+             }
+         } catch (err) {
+@@ -247,9 +230,11 @@ function Login({ onLogin }) {
+                 setLicenseInfo(JSON.parse(savedInfo));
+                 setLicenseValid(true);
+                 setMode('login');
++                return true;
+             } else {
+                 setLicenseValid(false);
+                 setMode('license');
++                return false;
+             }
+         } finally {
+             setLicenseChecking(false);
+@@ -472,7 +457,7 @@ function Login({ onLogin }) {
+                         <Monitor size={42} strokeWidth={1.5} />
+                     </div>
+                     <h1>SmartPOS Pro</h1>
+-                    <p>{mode === 'license' ? '╨É╨║╤é╨╕╨▓╨░╤å╨╕╤Å ╨╗╨╕╤å╨╡╨╜╨╖╨╕╨╕' : mode === 'settings' ? '╨ƒ╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╨╡ ╨║ ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â' : '╨Æ╨╛╨╣╨┤╨╕╤é╨╡ ╨▓ ╤ü╨╕╤ü╤é╨╡╨╝╤â'}</p>
++                    <p>{mode === 'license' ? '╨É╨║╤é╨╕╨▓╨░╤å╨╕╤Å ╨╗╨╕╤å╨╡╨╜╨╖╨╕╨╕' : '╨Æ╨╛╨╣╨┤╨╕╤é╨╡ ╨▓ ╤ü╨╕╤ü╤é╨╡╨╝╤â'}</p>
+                 </div>
+ 
+                 {/* ╨ó╨░╨▒╤ï ╨┐╨╡╤Ç╨╡╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å ╤Ç╨╡╨╢╨╕╨╝╨░ */}
+@@ -503,18 +488,6 @@ function Login({ onLogin }) {
+                             <Key size={16} /> ╨¢╨╕╤å╨╡╨╜╨╖╨╕╤Å {licenseValid && <CheckCircle size={12} color="#22c55e" />}
+                         </button>
+                     )}
+-                    <button
+-                        type="button"
+-                        className={`btn btn-sm ${mode === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
+-                        onClick={() => {
+-                            setError('');
+-                            setSuccess('');
+-                            setMode('settings');
+-                        }}
+-                        style={{ flex: 1 }}
+-                    >
+-                        <Settings size={16} /> ╨í╨╡╤Ç╨▓╨╡╤Ç
+-                    </button>
+                 </div>
+ 
+                 {/* ╨í╤é╨░╤é╤â╤ü ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░ */}
+@@ -707,194 +680,7 @@ function Login({ onLogin }) {
+                     </div>
+                 )}
+ 
+-                {/* ╨¥╨░╤ü╤é╤Ç╨╛╨╣╨║╨╕ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░ */}
+-                {mode === 'settings' && (
+-                    <div className="login-form">
+-                        {/* ╨Æ╤ï╨▒╨╛╤Ç ╤Ç╨╡╨╢╨╕╨╝╨░ ΓÇö 2 ╨┐╨╗╨╕╤é╨║╨╕ */}
+-                        <label style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 600, fontSize: '1rem' }}>
+-                            {t('login.rezhim_podklyucheniya', '╨á╨╡╨╢╨╕╨╝ ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å')}
+-                        </label>
+-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+-                            {/* ╨ƒ╨╗╨╕╤é╨║╨░: ╨₧╨▒╨╗╨░╨║╨╛ */}
+-                            <button
+-                                type="button"
+-                                onClick={() => {
+-                                    setSrvMode(SERVER_MODES.CLOUD);
+-                                    setError('');
+-                                    setSuccess('');
+-                                    setConnectionStatus(null);
+-                                }}
+-                                style={{
+-                                    padding: '1rem 0.75rem',
+-                                    borderRadius: '12px',
+-                                    border: srvMode === SERVER_MODES.CLOUD ? '2px solid #3b82f6' : '2px solid rgba(255,255,255,0.1)',
+-                                    backgroundColor: srvMode === SERVER_MODES.CLOUD ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.03)',
+-                                    cursor: 'pointer',
+-                                    display: 'flex',
+-                                    flexDirection: 'column',
+-                                    alignItems: 'center',
+-                                    gap: '0.5rem',
+-                                    transition: 'all 0.2s ease',
+-                                    color: srvMode === SERVER_MODES.CLOUD ? '#3b82f6' : 'var(--color-text-muted)',
+-                                }}
+-                            >
+-                                <Cloud size={28} />
+-                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>╨₧╨▒╨╗╨░╨║╨╛</span>
+-                                <span style={{ fontSize: '0.7rem', opacity: 0.7, textAlign: 'center', lineHeight: 1.3 }}>
+-                                    ╨ƒ╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╨╡ ╨║ ╨╜╨░╤ê╨╡╨╝╤â{'\n'}╤ü╨╡╤Ç╨▓╨╡╤Ç╤â Railway
+-                                </span>
+-                            </button>
+-
+-                            {/* ╨ƒ╨╗╨╕╤é╨║╨░: ╨í╨▓╨╛╨╣ ╤ü╨╡╤Ç╨▓╨╡╤Ç */}
+-                            <button
+-                                type="button"
+-                                onClick={() => {
+-                                    setSrvMode(SERVER_MODES.OWN);
+-                                    setError('');
+-                                    setSuccess('');
+-                                    setConnectionStatus(null);
+-                                }}
+-                                style={{
+-                                    padding: '1rem 0.75rem',
+-                                    borderRadius: '12px',
+-                                    border: srvMode === SERVER_MODES.OWN ? '2px solid var(--color-primary)' : '2px solid rgba(255,255,255,0.1)',
+-                                    backgroundColor: srvMode === SERVER_MODES.OWN ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255,255,255,0.03)',
+-                                    cursor: 'pointer',
+-                                    display: 'flex',
+-                                    flexDirection: 'column',
+-                                    alignItems: 'center',
+-                                    gap: '0.5rem',
+-                                    transition: 'all 0.2s ease',
+-                                    color: srvMode === SERVER_MODES.OWN ? 'var(--color-primary)' : 'var(--color-text-muted)',
+-                                }}
+-                            >
+-                                <Monitor size={28} />
+-                                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>╨í╨╡╤Ç╨▓╨╡╤Ç</span>
+-                                <span style={{ fontSize: '0.7rem', opacity: 0.7, textAlign: 'center', lineHeight: 1.3 }}>
+-                                    ╨ö╨░╨╜╨╜╤ï╨╡ ╤ü╨╛╤à╤Ç╨░╨╜╤Å╤Ä╤é╤ü╤Å{'\n'}╨╜╨░ ╨▓╨░╤ê╨╡╨╝ ╨ƒ╨Ü
+-                                </span>
+-                            </button>
+-                        </div>
+-
+-                        {/* ===== ╨ƒ╨░╨╜╨╡╨╗╤î: ╨í╨▓╨╛╨╣ ╤ü╨╡╤Ç╨▓╨╡╤Ç ===== */}
+-                        {srvMode === SERVER_MODES.OWN && (
+-                            <>
+-                                <div style={{ padding: '0.75rem', backgroundColor: 'rgba(168, 85, 247, 0.1)', borderRadius: '10px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+-                                        <Server size={16} color="var(--color-primary)" />
+-                                        <span style={{ fontWeight: 600 }}>╨í╨╡╤Ç╨▓╨╡╤Ç ╨║╨╗╨╕╨╡╨╜╤é╨░</span>
+-                                    </div>
+-                                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+-                                        ΓÇó ╨Æ╤ü╨╡ ╨┤╨░╨╜╨╜╤ï╨╡ ╨╛╤é╨┐╤Ç╨░╨▓╨╗╤Å╤Ä╤é╤ü╤Å ╨╕ ╤à╤Ç╨░╨╜╤Å╤é╤ü╤Å ╨╜╨░ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨╡ ╨║╨╗╨╕╨╡╨╜╤é╨░<br/>
+-                                        ΓÇó ╨Æ╨▓╨╡╨┤╨╕╤é╨╡ ╨░╨┤╤Ç╨╡╤ü ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░, ╤â╨║╨░╨╖╨░╨╜╨╜╤ï╨╣ ╨▓ ╨╗╨╕╤å╨╡╨╜╨╖╨╕╨╕
+-                                    </div>
+-                                </div>
+-
+-                                <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+-                                    <label style={{ fontSize: '0.85rem' }}>╨É╨┤╤Ç╨╡╤ü ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░</label>
+-                                    <input
+-                                        type="text"
+-                                        value={serverUrl}
+-                                        onChange={(e) => setServerUrl(e.target.value)}
+-                                        placeholder="http://192.168.1.50:5000/api"
+-                                    />
+-                                </div>
+-
+-                                <button
+-                                    type="button"
+-                                    className="btn btn-secondary w-full"
+-                                    onClick={handleTestConnection}
+-                                    disabled={testing}
+-                                    style={{ marginBottom: '0.75rem' }}
+-                                >
+-                                    {testing ? (
+-                                        <><RefreshCw size={16} className="spin" /> ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░...</>
+-                                    ) : (
+-                                        <><Wifi size={16} /> ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨╕╤é╤î ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╨╡</>
+-                                    )}
+-                                </button>
+-
+-                                {connectionStatus && (
+-                                    <div style={{
+-                                        padding: '0.5rem 0.75rem',
+-                                        borderRadius: '8px',
+-                                        marginBottom: '0.75rem',
+-                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+-                                        backgroundColor: connectionStatus === 'connected' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+-                                        color: connectionStatus === 'connected' ? '#22c55e' : '#ef4444',
+-                                    }}>
+-                                        {connectionStatus === 'connected' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+-                                        {connectionStatus === 'connected' ? 'Γ£à ╨í╨╡╤Ç╨▓╨╡╤Ç ╨┤╨╛╤ü╤é╤â╨┐╨╡╨╜' : 'Γ¥î ╨¥╨╡╤é ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å'}
+-                                    </div>
+-                                )}
+-                            </>
+-                        )}
+-
+-                        {/* ===== ╨ƒ╨░╨╜╨╡╨╗╤î: ╨₧╨▒╨╗╨░╨║╨╛ ===== */}
+-                        {srvMode === SERVER_MODES.CLOUD && (
+-                            <>
+-                                <div style={{ padding: '0.75rem', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: '10px', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+-                                        <Cloud size={16} color="#3b82f6" />
+-                                        <span style={{ fontWeight: 600 }}>╨₧╨▒╨╗╨░╤ç╨╜╤ï╨╣ ╤ü╨╡╤Ç╨▓╨╡╤Ç</span>
+-                                    </div>
+-                                    <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+-                                        ΓÇó ╨ƒ╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╨╡ ╨║ ╨╜╨░╤ê╨╡╨╝╤â ╤ü╨╡╤Ç╨▓╨╡╤Ç╤â Railway<br/>
+-                                        ΓÇó ╨á╨░╨▒╨╛╤é╨░╨╡╤é ╤ç╨╡╤Ç╨╡╨╖ ╨╕╨╜╤é╨╡╤Ç╨╜╨╡╤é ╤ü ╨╗╤Ä╨▒╨╛╨│╨╛ ╤â╤ü╤é╤Ç╨╛╨╣╤ü╤é╨▓╨░
+-                                    </div>
+-                                </div>
+-
+-                                <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+-                                    <label style={{ fontSize: '0.85rem' }}>URL ╨╛╨▒╨╗╨░╤ç╨╜╨╛╨│╨╛ ╤ü╨╡╤Ç╨▓╨╡╤Ç╨░</label>
+-                                    <input
+-                                        type="url"
+-                                        value={cloudUrl}
+-                                        onChange={(e) => setCloudUrlInput(e.target.value)}
+-                                        placeholder="https://your-server.up.railway.app/api"
+-                                    />
+-                                </div>
+-
+-                                <button
+-                                    type="button"
+-                                    className="btn btn-secondary w-full"
+-                                    onClick={handleTestConnection}
+-                                    disabled={testing}
+-                                    style={{ marginBottom: '0.75rem' }}
+-                                >
+-                                    {testing ? (
+-                                        <><RefreshCw size={16} className="spin" /> ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨║╨░...</>
+-                                    ) : (
+-                                        <><Cloud size={16} /> ╨ƒ╤Ç╨╛╨▓╨╡╤Ç╨╕╤é╤î ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╨╡</>
+-                                    )}
+-                                </button>
+ 
+-                                {connectionStatus && (
+-                                    <div style={{
+-                                        padding: '0.5rem 0.75rem',
+-                                        borderRadius: '8px',
+-                                        marginBottom: '0.75rem',
+-                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+-                                        backgroundColor: connectionStatus === 'connected' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+-                                        color: connectionStatus === 'connected' ? '#22c55e' : '#ef4444',
+-                                    }}>
+-                                        {connectionStatus === 'connected' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+-                                        {connectionStatus === 'connected' ? 'Γ£à ╨₧╨▒╨╗╨░╨║╨╛ ╨┤╨╛╤ü╤é╤â╨┐╨╜╨╛' : 'Γ¥î ╨¥╨╡╤é ╨┐╨╛╨┤╨║╨╗╤Ä╤ç╨╡╨╜╨╕╤Å'}
+-                                    </div>
+-                                )}
+-                            </>
+-                        )}
+-
+-                        <button
+-                            type="button"
+-                            className="btn btn-primary w-full"
+-                            onClick={saveServerSettings}
+-                            style={{ marginTop: '0.5rem' }}
+-                        >
+-                            <Server size={20} />
+-                            ╨í╨╛╤à╤Ç╨░╨╜╨╕╤é╤î ╨╜╨░╤ü╤é╤Ç╨╛╨╣╨║╨╕
+-                        </button>
+-                    </div>
+-                )}
+ 
+                 {/* ╨ƒ╨╡╤Ç╨╡╨║╨╗╤Ä╤ç╨░╤é╨╡╨╗╤î ╤Å╨╖╤ï╨║╨░ */}
+                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'center' }}>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, ShoppingBag, Users2, Wallet, Warehouse, Users, FileText, Target, BarChart3, LogOut, Settings as SettingsIcon, TrendingUp, Gift, MapPin, Clock, Mail, Zap, TestTube, CreditCard, Search, X, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Globe, Key, Printer } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, ShoppingBag, Users2, Wallet, Warehouse, Users, FileText, Target, BarChart3, LogOut, Settings as SettingsIcon, TrendingUp, Gift, MapPin, Clock, Mail, Zap, TestTube, CreditCard, Search, X, ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, Globe, Key, Printer, Monitor } from 'lucide-react';
 import Notifications from './Notifications';
 import SyncIndicator from './SyncIndicator';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -213,6 +213,7 @@ function Layout({ onLogout }) {
                 { name: t('nav.admin'), path: '/administration', icon: SettingsIcon, allowedRoles: ['Администратор', 'client_admin', 'super_admin'] },
                 { name: t('nav.staffManagement', 'Управление сотрудниками'), path: '/staff-management', icon: Users },
                 { name: t('nav.generalSettings', 'Общие настройки'), path: '/settings', icon: SettingsIcon },
+                { name: t('nav.userSessions', 'Устройства'), path: '/user-sessions', icon: Monitor },
                 { name: t('nav.receiptSettings', 'Настройка чеков'), path: '/receipt-settings', icon: Printer },
                 { name: t('nav.googleSheets'), path: '/google-sheets', icon: BarChart3 },
                 { name: t('nav.notifications'), path: '/notifications', icon: Mail },
