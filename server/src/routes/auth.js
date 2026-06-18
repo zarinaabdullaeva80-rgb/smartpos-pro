@@ -135,6 +135,8 @@ router.post('/login', async (req, res) => {
             return res.status(400).json({ error: 'Логин и пароль обязательны' });
         }
 
+        const clientIp = req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
+        const clientAgent = req.headers['user-agent'] || 'unknown';
         console.log('Login attempt for:', username, license_key ? `(license: ${license_key.substring(0, 8)}...)` : '(no license key)');
 
         // 0. Если клиент передал license_key — определить license_id для проверки принадлежности
@@ -249,6 +251,8 @@ router.post('/login', async (req, res) => {
             }
 
             if (licenseResult.rows.length === 0) {
+                // Запись неудачной попытки входа
+                try { await pool.query('INSERT INTO login_attempts (ip_address, username, success, user_agent, failure_reason) VALUES ($1, $2, $3, $4, $5)', [clientIp, username, false, clientAgent, 'user_not_found']); } catch(e) {}
                 return res.status(401).json({ error: 'Неверные учетные данные' });
             }
 
@@ -272,6 +276,7 @@ router.post('/login', async (req, res) => {
 
             const validLicensePassword = await bcrypt.compare(password, licenseData.customer_password_hash);
             if (!validLicensePassword) {
+                try { await pool.query('INSERT INTO login_attempts (ip_address, username, success, user_agent, failure_reason) VALUES ($1, $2, $3, $4, $5)', [clientIp, username, false, clientAgent, 'wrong_password']); } catch(e) {}
                 return res.status(401).json({ error: 'Неверные учетные данные' });
             }
 
@@ -313,6 +318,7 @@ router.post('/login', async (req, res) => {
 
             const validPassword = await bcrypt.compare(password, user.password_hash);
             if (!validPassword) {
+                try { await pool.query('INSERT INTO login_attempts (ip_address, username, success, user_agent, failure_reason) VALUES ($1, $2, $3, $4, $5)', [clientIp, username, false, clientAgent, 'wrong_password']); } catch(e) {}
                 return res.status(401).json({ error: 'Неверные учетные данные' });
             }
 
@@ -523,6 +529,21 @@ router.post('/login', async (req, res) => {
         );
 
         console.log('Login successful for:', username);
+
+        // Записать успешную попытку входа
+        try { await pool.query('INSERT INTO login_attempts (ip_address, username, success, user_agent) VALUES ($1, $2, $3, $4)', [clientIp, username, true, clientAgent]); } catch(e) {}
+
+        // Записать сессию
+        try {
+            const crypto = await import('crypto');
+            const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+            await pool.query(
+                `INSERT INTO user_sessions (user_id, token_hash, ip_address, user_agent, is_active, last_activity, expires_at)
+                 VALUES ($1, $2, $3, $4, true, NOW(), NOW() + INTERVAL '30 days')
+                 ON CONFLICT DO NOTHING`,
+                [user.id, tokenHash, clientIp, clientAgent]
+            );
+        } catch(e) { console.log('Session record error:', e.message); }
 
         // Получить полные данные лицензии для клиента
         let licenseData = null;

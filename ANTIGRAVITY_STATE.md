@@ -59,10 +59,10 @@
 
 ### 🌿 Версионирование (Git):
 - **Активная Ветка**: `main`
-- **Состояние репозитория**: 🟢 Полностью синхронизировано и отправлено в облако! Все локальные изменения, скрипты и PWA-бандлы закомичены и запушены на GitHub.
+- **Состояние репозитория**: 🟢 Полностью синхронизировано и отправлено в облако!
 - **Последний коммит**:
 ```text
-build: compile latest mobile PWA and save diagnostic scratch scripts
+feat: add Devices tab to Settings with sessions, login history and IP blocking
 ```
 
 ### ☁️ Облачные Эндпоинты (Railway):

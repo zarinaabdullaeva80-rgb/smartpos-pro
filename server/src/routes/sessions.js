@@ -39,11 +39,16 @@ const initSecurityTables = async () => {
                 username VARCHAR(255),
                 success BOOLEAN,
                 user_agent TEXT,
+                failure_reason VARCHAR(100),
                 created_at TIMESTAMP DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address);
             CREATE INDEX IF NOT EXISTS idx_login_attempts_created ON login_attempts(created_at);
         `);
+        // Add failure_reason column if it doesn't exist (for upgrades from older versions)
+        try {
+            await pool.query(`ALTER TABLE login_attempts ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(100)`);
+        } catch(e) {}
         console.log('✓ Таблицы безопасности готовы');
     } catch (error) {
         console.error('Security tables error:', error.message);
