@@ -304,62 +304,53 @@ async function handleMessage(message) {
 
     if (text.startsWith('/editlicense')) {
         const parts = text.split(/\s+/);
-        if (parts.length < 4) {
-            await sendMessage(
-                chatId, 
-                `⚠️ <b>Неверный формат!</b> Используйте:\n` +
-                `<code>/editlicense KEY ПОЛЕ ЗНАЧЕНИЕ</code>\n\n` +
-                `<b>Доступные поля:</b>\n` +
-                `• <code>expires</code> (дата в формате YYYY-MM-DD или lifetime)\n` +
-                `• <code>devices</code> (макс. устройств)\n` +
-                `• <code>users</code> (макс. пользователей)\n` +
-                `• <code>status</code> (active или suspended)\n` +
-                `• <code>company</code> (название организации в кавычках или без)\n\n` +
-                `<i>Пример: /editlicense B5F3-87E6-20F4-7B7A expires 2028-05-02</i>`
-            );
-            return;
-        }
-
-        const key = parts[1];
-        const field = parts[2].toLowerCase();
-        const value = parts.slice(3).join(' ').replace(/^["']|["']$/g, ''); // убираем внешние кавычки
-
-        const allowedFieldsMap = {
-            expires: 'expires_at',
-            expires_at: 'expires_at',
-            devices: 'max_devices',
-            max_devices: 'max_devices',
-            users: 'max_users',
-            max_users: 'max_users',
-            company: 'company_name',
-            company_name: 'company_name',
-            status: 'status',
-            type: 'license_type',
-            license_type: 'license_type'
-        };
-
-        if (!allowedFieldsMap[field]) {
-            await sendMessage(chatId, `⚠️ Неизвестное поле <code>${field}</code>. Доступные поля: expires, devices, users, status, company.`);
-            return;
-        }
-
-        const dbField = allowedFieldsMap[field];
-        const updatePayload = { [dbField]: value };
-
-        await sendMessage(chatId, '⏳ <i>Обновляем данные лицензии и синхронизируем облако...</i>');
-        const result = await updateLicenseFieldsInternal(key, updatePayload);
         
-        if (result.error) {
-            await sendMessage(chatId, `❌ <b>Ошибка обновления:</b>\n${result.error}`);
-        } else {
-            const syncStatus = result.cloud_synced ? '✅ Успешно синхронизировано с облаком' : '⚠️ Ошибка синхронизации с облаком';
-            await sendMessage(
-                chatId, 
-                `🎉 <b>Лицензия успешно обновлена!</b>\n` +
-                `Ключ: <code>${result.license.license_key}</code>\n` +
-                `Изменено поле: <b>${field}</b> → <code>${value}</code>\n\n` +
-                `☁️ ${syncStatus}`
+        // Если команда с полными аргументами — сразу применяем
+        if (parts.length >= 4) {
+            const key = parts[1];
+            const field = parts[2].toLowerCase();
+            const value = parts.slice(3).join(' ').replace(/^["']|["']$/g, '');
+            await applyEditLicense(chatId, key, field, value);
+            return;
+        }
+
+        // Если указан только ключ — показываем кнопки полей
+        if (parts.length === 2) {
+            const key = parts[1];
+            await showEditFieldButtons(chatId, key);
+            return;
+        }
+
+        // Без аргументов — показываем список лицензий для выбора
+        try {
+            const result = await pool.query(
+                `SELECT license_key, company_name, customer_name, status 
+                 FROM licenses ORDER BY created_at DESC LIMIT 10`
             );
+
+            if (result.rows.length === 0) {
+                await sendMessage(chatId, '📋 Нет лицензий для редактирования.', { reply_markup: adminKeyboard });
+                return;
+            }
+
+            const buttons = result.rows.map(row => {
+                const statusEmoji = row.status === 'active' ? '🟢' : (row.status === 'suspended' ? '🟡' : '🔴');
+                const name = row.company_name || row.customer_name || 'Без названия';
+                return [{ 
+                    text: `${statusEmoji} ${name} (${row.license_key})`, 
+                    callback_data: `edit_sel_${row.license_key}` 
+                }];
+            });
+
+            buttons.push([{ text: '❌ Отмена', callback_data: 'edit_cancel' }]);
+
+            await sendMessage(
+                chatId,
+                `✍️ <b>Редактирование лицензии</b>\n\nВыберите лицензию для изменения:`,
+                { reply_markup: { inline_keyboard: buttons } }
+            );
+        } catch (err) {
+            await sendMessage(chatId, '❌ Ошибка загрузки лицензий: ' + err.message, { reply_markup: adminKeyboard });
         }
         return;
     }
@@ -393,6 +384,18 @@ async function handleMessage(message) {
     // Обработка ответов в интерактивном режиме
     const state = userStates[chatId];
     if (state) {
+        // Обработка ввода значения для editlicense
+        if (state.step === 'awaiting_edit_value') {
+            const value = text.trim();
+            if (!value) {
+                await sendMessage(chatId, '⚠️ Значение не может быть пустым. Введите новое значение:');
+                return;
+            }
+            await applyEditLicense(chatId, state.edit_key, state.edit_field, value);
+            delete userStates[chatId];
+            return;
+        }
+
         if (state.step === 'awaiting_org_name') {
             if (text.length < 2) {
                 await sendMessage(chatId, '⚠️ Слишком короткое название. Пожалуйста, введите корректное имя:');
@@ -503,13 +506,62 @@ async function handleCallbackQuery(callbackQuery) {
     const data = callbackQuery.data;
     const messageId = callbackQuery.message.message_id;
 
-    const state = userStates[chatId];
-    if (!state || state.step !== 'awaiting_license_type') {
-        await answerCallbackQuery(callbackQuery.id, '❌ Сессия устарела. Начните сначала: /newlicense');
+    // --- EDITLICENSE: Отмена ---
+    if (data === 'edit_cancel') {
+        delete userStates[chatId];
+        await answerCallbackQuery(callbackQuery.id, '❌ Отменено');
+        await sendMessage(chatId, '❌ Редактирование отменено.', { reply_markup: adminKeyboard });
         return;
     }
 
+    // --- EDITLICENSE: Выбор лицензии → показать поля ---
+    if (data.startsWith('edit_sel_')) {
+        const key = data.substring(9);
+        await answerCallbackQuery(callbackQuery.id);
+        await showEditFieldButtons(chatId, key);
+        return;
+    }
+
+    // --- EDITLICENSE: Выбор поля → запросить значение ---
+    if (data.startsWith('edit_fld_')) {
+        const parts = data.substring(9).split('__');
+        const key = parts[0];
+        const field = parts[1];
+
+        const fieldLabels = {
+            expires: '📅 Срок действия (формат: YYYY-MM-DD или lifetime)',
+            devices: '📱 Макс. устройств (число)',
+            users: '👥 Макс. пользователей (число)',
+            status: '⚙️ Статус (active или suspended)',
+            company: '🏢 Название организации'
+        };
+
+        userStates[chatId] = {
+            step: 'awaiting_edit_value',
+            edit_key: key,
+            edit_field: field
+        };
+
+        await answerCallbackQuery(callbackQuery.id);
+        await sendMessage(
+            chatId,
+            `✍️ <b>Изменение лицензии</b>\n` +
+            `Ключ: <code>${key}</code>\n` +
+            `Поле: ${fieldLabels[field] || field}\n\n` +
+            `Введите новое значение:`,
+            { reply_markup: { remove_keyboard: true } }
+        );
+        return;
+    }
+
+    // --- NEWLICENSE: Выбор типа лицензии ---
     if (data.startsWith('new_')) {
+        const state = userStates[chatId];
+        if (!state || state.step !== 'awaiting_license_type') {
+            await answerCallbackQuery(callbackQuery.id, '❌ Сессия устарела. Начните сначала: /newlicense');
+            return;
+        }
+
         const type = data.substring(4);
         state.license_type = type;
         state.step = 'awaiting_devices';
@@ -521,6 +573,104 @@ async function handleCallbackQuery(callbackQuery) {
             `💳 Выбран тариф: <b>${type.toUpperCase()}</b>\n\n` +
             `📱 <b>Шаг 3 из 3:</b> Введите максимальное количество устройств (касс) для клиента:\n` +
             `<i>(Обычно 1, 2 или 3)</i>`
+        );
+        return;
+    }
+
+    await answerCallbackQuery(callbackQuery.id, '❌ Неизвестное действие');
+}
+
+/**
+ * Показать инлайн-кнопки выбора поля для редактирования лицензии
+ */
+async function showEditFieldButtons(chatId, key) {
+    // Проверяем, что лицензия существует
+    const cleanedKey = key.replace(/[^A-Z0-9-]/g, '').toUpperCase();
+    const check = await pool.query(
+        `SELECT license_key, company_name, customer_name, status, expires_at, max_devices, max_users
+         FROM licenses WHERE UPPER(license_key) = $1 OR REPLACE(license_key, '-', '') = $2`,
+        [cleanedKey, cleanedKey.replace(/-/g, '')]
+    );
+
+    if (check.rows.length === 0) {
+        await sendMessage(chatId, `❌ Лицензия <code>${key}</code> не найдена.`, { reply_markup: adminKeyboard });
+        return;
+    }
+
+    const lic = check.rows[0];
+    const realKey = lic.license_key;
+    const expDate = lic.expires_at ? new Date(lic.expires_at).toLocaleDateString('ru-RU') : 'Бессрочно';
+
+    const fieldButtons = {
+        inline_keyboard: [
+            [
+                { text: '📅 Срок действия', callback_data: `edit_fld_${realKey}__expires` },
+                { text: '📱 Устройства', callback_data: `edit_fld_${realKey}__devices` }
+            ],
+            [
+                { text: '👥 Пользователи', callback_data: `edit_fld_${realKey}__users` },
+                { text: '⚙️ Статус', callback_data: `edit_fld_${realKey}__status` }
+            ],
+            [
+                { text: '🏢 Организация', callback_data: `edit_fld_${realKey}__company` }
+            ],
+            [
+                { text: '❌ Отмена', callback_data: 'edit_cancel' }
+            ]
+        ]
+    };
+
+    await sendMessage(
+        chatId,
+        `✍️ <b>Редактирование лицензии</b>\n` +
+        `Ключ: <code>${realKey}</code>\n` +
+        `🏢 ${lic.company_name || lic.customer_name || 'Без названия'}\n` +
+        `📅 Срок: ${expDate} | 📱 Устройств: ${lic.max_devices} | 👥 Польз.: ${lic.max_users}\n\n` +
+        `Выберите поле для изменения:`,
+        { reply_markup: fieldButtons }
+    );
+}
+
+/**
+ * Применить изменение поля лицензии (общая функция для текстовой команды и интерактива)
+ */
+async function applyEditLicense(chatId, key, field, value) {
+    const allowedFieldsMap = {
+        expires: 'expires_at',
+        expires_at: 'expires_at',
+        devices: 'max_devices',
+        max_devices: 'max_devices',
+        users: 'max_users',
+        max_users: 'max_users',
+        company: 'company_name',
+        company_name: 'company_name',
+        status: 'status',
+        type: 'license_type',
+        license_type: 'license_type'
+    };
+
+    if (!allowedFieldsMap[field]) {
+        await sendMessage(chatId, `⚠️ Неизвестное поле <code>${field}</code>. Доступные: expires, devices, users, status, company.`, { reply_markup: adminKeyboard });
+        return;
+    }
+
+    const dbField = allowedFieldsMap[field];
+    const updatePayload = { [dbField]: value };
+
+    await sendMessage(chatId, '⏳ <i>Обновляем данные лицензии и синхронизируем облако...</i>');
+    const result = await updateLicenseFieldsInternal(key, updatePayload);
+
+    if (result.error) {
+        await sendMessage(chatId, `❌ <b>Ошибка обновления:</b>\n${result.error}`, { reply_markup: adminKeyboard });
+    } else {
+        const syncStatus = result.cloud_synced ? '✅ Успешно синхронизировано с облаком' : '⚠️ Ошибка синхронизации с облаком';
+        await sendMessage(
+            chatId,
+            `🎉 <b>Лицензия успешно обновлена!</b>\n` +
+            `Ключ: <code>${result.license.license_key}</code>\n` +
+            `Изменено поле: <b>${field}</b> → <code>${value}</code>\n\n` +
+            `☁️ ${syncStatus}`,
+            { reply_markup: adminKeyboard }
         );
     }
 }
