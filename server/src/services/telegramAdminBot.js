@@ -2,7 +2,8 @@ import pool from '../config/database.js';
 import {
     createLicenseInternal,
     extendLicenseInternal,
-    updateLicenseStatusInternal
+    updateLicenseStatusInternal,
+    updateLicenseFieldsInternal
 } from './licensingService.js';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
@@ -172,6 +173,7 @@ async function handleMessage(message) {
                     `🏢 /newlicense - Создать новую лицензию\n` +
                     `📋 /licenses - Список последних 10 лицензий\n` +
                     `🔍 /license <code>KEY</code> - Информация о лицензии\n` +
+                    `✍️ /editlicense <code>KEY</code> <code>ПОЛЕ</code> <code>ЗНАЧЕНИЕ</code> - Изменить поле лицензии\n` +
                     `➕ /extend <code>KEY</code> <code>ДНИ</code> - Продлить лицензию\n` +
                     `🔴 /suspend <code>KEY</code> - Заблокировать лицензию\n` +
                     `🟢 /activate <code>KEY</code> - Активировать лицензию\n` +
@@ -275,6 +277,68 @@ async function handleMessage(message) {
             await sendMessage(chatId, '❌ Ошибка активации: ' + result.error);
         } else {
             await sendMessage(chatId, `🔓 <b>Лицензия активирована!</b>\n${result.message}`);
+        }
+        return;
+    }
+
+    if (text.startsWith('/editlicense')) {
+        const parts = text.split(/\s+/);
+        if (parts.length < 4) {
+            await sendMessage(
+                chatId, 
+                `⚠️ <b>Неверный формат!</b> Используйте:\n` +
+                `<code>/editlicense KEY ПОЛЕ ЗНАЧЕНИЕ</code>\n\n` +
+                `<b>Доступные поля:</b>\n` +
+                `• <code>expires</code> (дата в формате YYYY-MM-DD или lifetime)\n` +
+                `• <code>devices</code> (макс. устройств)\n` +
+                `• <code>users</code> (макс. пользователей)\n` +
+                `• <code>status</code> (active или suspended)\n` +
+                `• <code>company</code> (название организации в кавычках или без)\n\n` +
+                `<i>Пример: /editlicense B5F3-87E6-20F4-7B7A expires 2028-05-02</i>`
+            );
+            return;
+        }
+
+        const key = parts[1];
+        const field = parts[2].toLowerCase();
+        const value = parts.slice(3).join(' ').replace(/^["']|["']$/g, ''); // убираем внешние кавычки
+
+        const allowedFieldsMap = {
+            expires: 'expires_at',
+            expires_at: 'expires_at',
+            devices: 'max_devices',
+            max_devices: 'max_devices',
+            users: 'max_users',
+            max_users: 'max_users',
+            company: 'company_name',
+            company_name: 'company_name',
+            status: 'status',
+            type: 'license_type',
+            license_type: 'license_type'
+        };
+
+        if (!allowedFieldsMap[field]) {
+            await sendMessage(chatId, `⚠️ Неизвестное поле <code>${field}</code>. Доступные поля: expires, devices, users, status, company.`);
+            return;
+        }
+
+        const dbField = allowedFieldsMap[field];
+        const updatePayload = { [dbField]: value };
+
+        await sendMessage(chatId, '⏳ <i>Обновляем данные лицензии и синхронизируем облако...</i>');
+        const result = await updateLicenseFieldsInternal(key, updatePayload);
+        
+        if (result.error) {
+            await sendMessage(chatId, `❌ <b>Ошибка обновления:</b>\n${result.error}`);
+        } else {
+            const syncStatus = result.cloud_synced ? '✅ Успешно синхронизировано с облаком' : '⚠️ Ошибка синхронизации с облаком';
+            await sendMessage(
+                chatId, 
+                `🎉 <b>Лицензия успешно обновлена!</b>\n` +
+                `Ключ: <code>${result.license.license_key}</code>\n` +
+                `Изменено поле: <b>${field}</b> → <code>${value}</code>\n\n` +
+                `☁️ ${syncStatus}`
+            );
         }
         return;
     }
@@ -457,7 +521,9 @@ async function showLicenseDetails(chatId, key) {
             `🔧 <i>Для управления используйте команды:</i>\n` +
             `• <code>/extend ${l.license_key} 30</code>\n` +
             `• <code>/suspend ${l.license_key}</code>\n` +
-            `• <code>/activate ${l.license_key}</code>`;
+            `• <code>/activate ${l.license_key}</code>\n` +
+            `• <code>/editlicense ${l.license_key} expires 2028-05-02</code>\n` +
+            `• <code>/editlicense ${l.license_key} devices 10</code>`;
 
         await sendMessage(chatId, details);
     } catch (err) {

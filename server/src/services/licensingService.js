@@ -308,3 +308,131 @@ export async function updateLicenseStatusInternal(licenseKey, status, req = null
         return { error: error.message };
     }
 }
+
+/**
+ * Ручное обновление полей лицензии
+ */
+export async function updateLicenseFieldsInternal(licenseKey, fields, req = null) {
+    try {
+        const cleanedKey = licenseKey.replace(/[^A-Z0-9]/g, '').toUpperCase();
+        
+        // Найти лицензию
+        const licenseResult = await pool.query(
+            `SELECT * FROM licenses WHERE REPLACE(license_key, '-', '') = $1`,
+            [cleanedKey]
+        );
+
+        if (licenseResult.rows.length === 0) {
+            return { error: 'Лицензия с таким ключом не найдена' };
+        }
+
+        const license = licenseResult.rows[0];
+        
+        // Валидация и подготовка полей для обновления
+        const updateFields = [];
+        const updateValues = [];
+        const historyDetails = {};
+        
+        const allowedFields = {
+            expires_at: 'expires_at',
+            expires: 'expires_at',
+            max_devices: 'max_devices',
+            devices: 'max_devices',
+            max_users: 'max_users',
+            users: 'max_users',
+            company_name: 'company_name',
+            company: 'company_name',
+            customer_name: 'customer_name',
+            name: 'customer_name',
+            status: 'status',
+            license_type: 'license_type',
+            type: 'license_type'
+        };
+
+        for (const [key, val] of Object.entries(fields)) {
+            const dbField = allowedFields[key.toLowerCase()];
+            if (dbField) {
+                let parsedVal = val;
+                if (dbField === 'expires_at') {
+                    if (val === 'lifetime' || val === 'null' || val === null || val === '') {
+                        parsedVal = null;
+                    } else {
+                        parsedVal = new Date(val);
+                        if (isNaN(parsedVal.getTime())) {
+                            return { error: `Неверный формат даты для expires_at: ${val}` };
+                        }
+                    }
+                } else if (dbField === 'max_devices' || dbField === 'max_users') {
+                    parsedVal = parseInt(val);
+                    if (isNaN(parsedVal) || parsedVal <= 0) {
+                        return { error: `Поле ${dbField} должно быть положительным числом` };
+                    }
+                }
+                
+                updateFields.push(`${dbField} = $${updateFields.length + 1}`);
+                updateValues.push(parsedVal);
+                historyDetails[dbField] = { old: license[dbField], new: parsedVal };
+            }
+        }
+        
+        if (updateFields.length === 0) {
+            return { error: 'Не указаны корректные поля для обновления' };
+        }
+        
+        // Добавляем ID в значения для WHERE
+        updateValues.push(license.id);
+        const query = `
+            UPDATE licenses 
+            SET ${updateFields.join(', ')}, updated_at = NOW() 
+            WHERE id = $${updateValues.length} 
+            RETURNING *
+        `;
+        
+        const updateResult = await pool.query(query, updateValues);
+        const updatedLicense = updateResult.rows[0];
+
+        // Лог в историю
+        const performed_by = req?.user?.id || 1;
+        await pool.query(
+            `INSERT INTO license_history (license_id, action, performed_by, details)
+             VALUES ($1, 'manual_update', $2, $3)`,
+             [license.id, performed_by, JSON.stringify(historyDetails)]
+        );
+
+        // Если обновился статус, обновляем статус организации
+        if (fields.status) {
+            const isOrgActive = updatedLicense.status === 'active';
+            if (updatedLicense.organization_id) {
+                await pool.query('UPDATE organizations SET is_active = $1 WHERE id = $2', [isOrgActive, updatedLicense.organization_id]);
+            }
+            await pool.query('UPDATE organizations SET name = $1 WHERE license_key = $2', [updatedLicense.company_name, updatedLicense.license_key]);
+        }
+        
+        // Если обновилось название компании, обновим и название организации
+        if (fields.company || fields.company_name) {
+            if (updatedLicense.organization_id) {
+                await pool.query('UPDATE organizations SET name = $1 WHERE id = $2', [updatedLicense.company_name, updatedLicense.organization_id]);
+            }
+        }
+
+        // Синхронизация с облаком
+        let syncResult = null;
+        try {
+            syncResult = await syncToCloud(updatedLicense, req);
+        } catch (syncErr) {
+            console.warn('[LICENSE-SERVICE] Cloud sync error:', syncErr.message);
+        }
+
+        return {
+            success: true,
+            license: updatedLicense,
+            cloud_synced: syncResult?.success || false,
+            message: `Лицензия ${license.license_key} успешно обновлена.`
+        };
+
+    } catch (error) {
+        console.error('[LICENSE-SERVICE] Error updating license fields:', error);
+        return { error: error.message };
+    }
+}
+
