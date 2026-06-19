@@ -16,6 +16,16 @@ const TELEGRAM_API_URL = TELEGRAM_BOT_TOKEN
 // Хранилище временного состояния диалогов
 const userStates = {};
 
+// Постоянная клавиатура управления для администратора
+const adminKeyboard = {
+    keyboard: [
+        [{ text: '🏢 Новая лицензия' }, { text: '📋 Список лицензий' }],
+        [{ text: '❓ Список команд' }, { text: '🚪 Выйти' }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+};
+
 /**
  * Проверка, является ли пользователь авторизованным админом
  */
@@ -179,7 +189,7 @@ async function handleMessage(message) {
                     `🟢 /activate <code>KEY</code> - Активировать лицензию\n` +
                     `🚪 /logout - Выйти из панели управления`;
                 
-                await sendMessage(chatId, successMsg);
+                await sendMessage(chatId, successMsg, { reply_markup: adminKeyboard });
             } catch (authErr) {
                 console.error('[TELEGRAM-BOT] Login error:', authErr);
                 await sendMessage(chatId, '💥 Произошла ошибка при авторизации: ' + authErr.message);
@@ -192,14 +202,16 @@ async function handleMessage(message) {
     }
 
     // 2. Пользователь авторизован как Админ — Обрабатываем команды
-    if (text.startsWith('/logout')) {
+    if (text.startsWith('/logout') || text === '🚪 Выйти') {
         await pool.query('UPDATE telegram_admins SET is_active = false WHERE chat_id = $1', [chatId.toString()]);
         delete userStates[chatId];
-        await sendMessage(chatId, '🚪 Вы успешно вышли из панели администрирования бота.');
+        await sendMessage(chatId, '🚪 Вы успешно вышли из панели администрирования бота.', {
+            reply_markup: { remove_keyboard: true }
+        });
         return;
     }
 
-    if (text.startsWith('/licenses')) {
+    if (text.startsWith('/licenses') || text === '📋 Список лицензий') {
         try {
             const result = await pool.query(
                 `SELECT license_key, company_name, customer_name, license_type, status, expires_at 
@@ -207,7 +219,7 @@ async function handleMessage(message) {
             );
 
             if (result.rows.length === 0) {
-                await sendMessage(chatId, '📋 Список лицензий пуст.');
+                await sendMessage(chatId, '📋 Список лицензий пуст.', { reply_markup: adminKeyboard });
                 return;
             }
 
@@ -223,9 +235,9 @@ async function handleMessage(message) {
                     `📅 До: ${expDate}\n\n`;
             }
 
-            await sendMessage(chatId, responseMsg);
+            await sendMessage(chatId, responseMsg, { reply_markup: adminKeyboard });
         } catch (err) {
-            await sendMessage(chatId, '❌ Ошибка загрузки списка: ' + err.message);
+            await sendMessage(chatId, '❌ Ошибка загрузки списка: ' + err.message, { reply_markup: adminKeyboard });
         }
         return;
     }
@@ -239,22 +251,22 @@ async function handleMessage(message) {
     if (text.startsWith('/extend ')) {
         const parts = text.substring(8).trim().split(/\s+/);
         if (parts.length < 2) {
-            await sendMessage(chatId, '⚠️ Неверный формат. Используйте: <code>/extend KEY ДНИ</code>');
+            await sendMessage(chatId, '⚠️ Неверный формат. Используйте: <code>/extend KEY ДНИ</code>', { reply_markup: adminKeyboard });
             return;
         }
         const key = parts[0];
         const days = parseInt(parts[1]);
         
         if (isNaN(days) || days <= 0) {
-            await sendMessage(chatId, '⚠️ Количество дней должно быть положительным числом.');
+            await sendMessage(chatId, '⚠️ Количество дней должно быть положительным числом.', { reply_markup: adminKeyboard });
             return;
         }
 
         const result = await extendLicenseInternal(key, days);
         if (result.error) {
-            await sendMessage(chatId, '❌ Ошибка продления: ' + result.error);
+            await sendMessage(chatId, '❌ Ошибка продления: ' + result.error, { reply_markup: adminKeyboard });
         } else {
-            await sendMessage(chatId, `🎉 <b>Успешно!</b>\n${result.message}\nОблако: ${result.cloud_synced ? '✅ Синхронизировано' : '⚠️ В очереди'}`);
+            await sendMessage(chatId, `🎉 <b>Успешно!</b>\n${result.message}\nОблако: ${result.cloud_synced ? '✅ Синхронизировано' : '⚠️ В очереди'}`, { reply_markup: adminKeyboard });
         }
         return;
     }
@@ -263,9 +275,9 @@ async function handleMessage(message) {
         const key = text.substring(9).trim();
         const result = await updateLicenseStatusInternal(key, 'suspended');
         if (result.error) {
-            await sendMessage(chatId, '❌ Ошибка блокировки: ' + result.error);
+            await sendMessage(chatId, '❌ Ошибка блокировки: ' + result.error, { reply_markup: adminKeyboard });
         } else {
-            await sendMessage(chatId, `🔒 <b>Лицензия приостановлена!</b>\n${result.message}`);
+            await sendMessage(chatId, `🔒 <b>Лицензия приостановлена!</b>\n${result.message}`, { reply_markup: adminKeyboard });
         }
         return;
     }
@@ -274,9 +286,9 @@ async function handleMessage(message) {
         const key = text.substring(10).trim();
         const result = await updateLicenseStatusInternal(key, 'active');
         if (result.error) {
-            await sendMessage(chatId, '❌ Ошибка активации: ' + result.error);
+            await sendMessage(chatId, '❌ Ошибка активации: ' + result.error, { reply_markup: adminKeyboard });
         } else {
-            await sendMessage(chatId, `🔓 <b>Лицензия активирована!</b>\n${result.message}`);
+            await sendMessage(chatId, `🔓 <b>Лицензия активирована!</b>\n${result.message}`, { reply_markup: adminKeyboard });
         }
         return;
     }
@@ -343,10 +355,29 @@ async function handleMessage(message) {
         return;
     }
 
+    if (text === '❓ Список команд' || text.startsWith('/help') || text.startsWith('/commands')) {
+        const helpMsg = 
+            `🛠️ <b>Панель управления лицензиями SmartPOS Pro</b>\n\n` +
+            `🏢 /newlicense - Создать новую лицензию\n` +
+            `📋 /licenses - Список последних 10 лицензий\n` +
+            `🔍 /license <code>KEY</code> - Информация о лицензии\n` +
+            `✍️ /editlicense <code>KEY</code> <code>ПОЛЕ</code> <code>ЗНАЧЕНИЕ</code> - Изменить поле лицензии\n` +
+            `➕ /extend <code>KEY</code> <code>ДНИ</code> - Продлить лицензию\n` +
+            `🔴 /suspend <code>KEY</code> - Заблокировать лицензию\n` +
+            `🟢 /activate <code>KEY</code> - Активировать лицензию\n` +
+            `🚪 /logout - Выйти из панели управления\n\n` +
+            `<i>Пример изменения срока лицензии:</i>\n` +
+            `<code>/editlicense B5F3-87E6-20F4-7B7A expires 2028-05-02</code>`;
+        await sendMessage(chatId, helpMsg, { reply_markup: adminKeyboard });
+        return;
+    }
+
     // --- ИНТЕРАКТИВНЫЙ ВОРКФЛОУ: СОЗДАНИЕ ЛИЦЕНЗИИ ---
-    if (text === '/newlicense') {
+    if (text === '/newlicense' || text === '🏢 Новая лицензия') {
         userStates[chatId] = { step: 'awaiting_org_name' };
-        await sendMessage(chatId, '🏢 <b>Шаг 1 из 3:</b>\nВведите название организации (клиента):');
+        await sendMessage(chatId, '🏢 <b>Шаг 1 из 3:</b>\nВведите название организации (клиента):', {
+            reply_markup: { remove_keyboard: true }
+        });
         return;
     }
 
@@ -419,7 +450,7 @@ async function handleMessage(message) {
             });
 
             if (result.error) {
-                await sendMessage(chatId, '❌ <b>Ошибка при создании:</b>\n' + result.error);
+                await sendMessage(chatId, '❌ <b>Ошибка при создании:</b>\n' + result.error, { reply_markup: adminKeyboard });
             } else {
                 const expStr = result.license.expires_at 
                     ? new Date(result.license.expires_at).toLocaleDateString('ru-RU')
@@ -438,7 +469,7 @@ async function handleMessage(message) {
                     `☁️ <b>Синхронизация в облаке:</b> ${result.cloud_synced ? '✅ Успешно' : '⚠️ В очереди'}\n\n` +
                     `<i>Скопируйте и отправьте эти учетные данные клиенту.</i>`;
 
-                await sendMessage(chatId, cardMsg);
+                await sendMessage(chatId, cardMsg, { reply_markup: adminKeyboard });
             }
 
             delete userStates[chatId];
@@ -496,7 +527,7 @@ async function showLicenseDetails(chatId, key) {
         );
 
         if (result.rows.length === 0) {
-            await sendMessage(chatId, '❌ Лицензия с таким ключом не найдена.');
+            await sendMessage(chatId, '❌ Лицензия с таким ключом не найдена.', { reply_markup: adminKeyboard });
             return;
         }
 
@@ -525,9 +556,9 @@ async function showLicenseDetails(chatId, key) {
             `• <code>/editlicense ${l.license_key} expires 2028-05-02</code>\n` +
             `• <code>/editlicense ${l.license_key} devices 10</code>`;
 
-        await sendMessage(chatId, details);
+        await sendMessage(chatId, details, { reply_markup: adminKeyboard });
     } catch (err) {
-        await sendMessage(chatId, '❌ Ошибка поиска лицензии: ' + err.message);
+        await sendMessage(chatId, '❌ Ошибка поиска лицензии: ' + err.message, { reply_markup: adminKeyboard });
     }
 }
 
