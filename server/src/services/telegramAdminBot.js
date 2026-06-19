@@ -202,6 +202,15 @@ async function handleMessage(message) {
     }
 
     // 2. Пользователь авторизован как Админ — Обрабатываем команды
+    if (text.startsWith('/start')) {
+        const welcomeMsg = 
+            `👋 <b>С возвращением, ${admin.full_name || admin.username}!</b>\n\n` +
+            `Вы авторизованы как администратор.\n` +
+            `Используйте кнопки ниже или введите команду.`;
+        await sendMessage(chatId, welcomeMsg, { reply_markup: adminKeyboard });
+        return;
+    }
+
     if (text.startsWith('/logout') || text === '🚪 Выйти') {
         await pool.query('UPDATE telegram_admins SET is_active = false WHERE chat_id = $1', [chatId.toString()]);
         delete userStates[chatId];
@@ -481,7 +490,8 @@ async function handleMessage(message) {
     await sendMessage(
         chatId, 
         `❓ Неизвестная команда или ввод.\n` +
-        `Отправьте /newlicense, чтобы запустить создание новой лицензии.`
+        `Используйте кнопки ниже или отправьте /help для списка команд.`,
+        { reply_markup: adminKeyboard }
     );
 }
 

@@ -59,10 +59,11 @@
 
 ### 🌿 Версионирование (Git):
 - **Активная Ветка**: `main`
-- **Состояние репозитория**: 🟢 Полностью синхронизировано и отправлено в облако!
-- **Последний коммит**:
+- **Состояние репозитория**: 🟢 Полностью синхронизировано!
+- **Последние коммиты**:
 ```text
-feat: add Devices tab to Settings with sessions, login history and IP blocking
+db51ed6 feat: log login attempts and record sessions in DB for Devices tab
+db6a58b feat: add Devices tab to Settings with sessions, login history and IP blocking
 ```
 
 ### ☁️ Облачные Эндпоинты (Railway):
