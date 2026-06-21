@@ -224,7 +224,7 @@ async function handleMessage(message) {
         try {
             const result = await pool.query(
                 `SELECT license_key, company_name, customer_name, license_type, status, expires_at 
-                 FROM licenses ORDER BY created_at DESC LIMIT 10`
+                 FROM licenses ORDER BY created_at DESC LIMIT 50`
             );
 
             if (result.rows.length === 0) {
@@ -232,7 +232,7 @@ async function handleMessage(message) {
                 return;
             }
 
-            let responseMsg = `📋 <b>Последние 10 лицензий:</b>\n\n`;
+            let responseMsg = `📋 <b>Последние 50 лицензий:</b>\n\n`;
             for (const row of result.rows) {
                 const statusEmoji = row.status === 'active' ? '🟢' : (row.status === 'suspended' ? '🟡' : '🔴');
                 const expDate = row.expires_at ? new Date(row.expires_at).toLocaleDateString('ru-RU') : 'Бессрочно';
@@ -325,7 +325,7 @@ async function handleMessage(message) {
         try {
             const result = await pool.query(
                 `SELECT license_key, company_name, customer_name, status 
-                 FROM licenses ORDER BY created_at DESC LIMIT 10`
+                 FROM licenses ORDER BY created_at DESC LIMIT 50`
             );
 
             if (result.rows.length === 0) {

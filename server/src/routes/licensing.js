@@ -2417,6 +2417,24 @@ router.post('/sync-ack-sales', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PULL-LICENSES: Send all licenses to local server for bidirectional sync
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-pull-licenses', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const result = await pool.query('SELECT * FROM licenses ORDER BY updated_at DESC');
+        res.json({ success: true, licenses: result.rows });
+    } catch (error) {
+        console.error('[SYNC-PULL-LICENSES] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 /**
  * POST /api/license/admin-cleanup
  * Admin endpoint to delete products and reinitialize DB tables.

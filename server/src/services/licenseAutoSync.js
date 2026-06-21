@@ -2,7 +2,7 @@ import pool from '../config/database.js';
 import { syncToCloud } from './licenseSync.js';
 import { syncAllProductsToCloud, syncCategoriesToCloud } from './productSync.js';
 import { syncEmployeeToCloud } from './employeeSync.js';
-import { pullSalesFromCloud } from './cloudPull.js';
+import { pullSalesFromCloud, pullLicensesFromCloud } from './cloudPull.js';
 import { logSyncEvent } from '../utils/syncLogger.js';
 
 /**
@@ -16,6 +16,13 @@ export async function syncAllLicensesToCloud(triggeredBy = 'system') {
     console.log('[AUTO-SYNC] ═══ Starting full synchronization ═══');
     
     try {
+        // 0. Pull licenses from Cloud (Bidirectional Sync)
+        try {
+            await pullLicensesFromCloud();
+        } catch (e) {
+            console.error('[AUTO-SYNC] Pull Licenses error:', e.message);
+        }
+
         const result = await pool.query('SELECT * FROM licenses WHERE is_active = true');
         const licenses = result.rows;
         console.log(`[AUTO-SYNC] Found ${licenses.length} active licenses`);
