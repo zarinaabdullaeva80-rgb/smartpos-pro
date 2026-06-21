@@ -2429,6 +2429,24 @@ router.post('/sync-pull-licenses', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-PULL-USERS: Send all users to local server for debugging
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-pull-users', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const result = await pool.query('SELECT id, username, email, full_name, role, license_id, organization_id, user_type, is_active FROM users ORDER BY id DESC');
+        res.json({ success: true, users: result.rows });
+    } catch (error) {
+        console.error('[SYNC-PULL-USERS] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 /**
  * POST /api/license/admin-cleanup
