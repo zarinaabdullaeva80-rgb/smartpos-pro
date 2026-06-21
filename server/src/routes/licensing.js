@@ -2446,6 +2446,27 @@ router.post('/sync-pull-users', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// ★ SYNC-QUERY: Run debug queries on the cloud database
+// ═══════════════════════════════════════════════════════════════
+router.post('/sync-query', async (req, res) => {
+    try {
+        const secret = req.headers['x-sync-secret'];
+        const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
+        if (secret !== CLOUD_SYNC_SECRET) return res.status(403).json({ error: 'Invalid sync secret' });
+
+        const { sql, params = [] } = req.body;
+        if (!sql) return res.status(400).json({ error: 'sql query required' });
+
+        const result = await pool.query(sql, params);
+        res.json({ success: true, rows: result.rows, rowCount: result.rowCount });
+    } catch (error) {
+        console.error('[SYNC-QUERY] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 
 /**
