@@ -210,7 +210,6 @@ function Layout({ onLogout }) {
             icon: SettingsIcon,
             allowedRoles: ['Администратор', 'client_admin'],
             items: [
-                { name: t('nav.admin'), path: '/administration', icon: SettingsIcon, allowedRoles: ['Администратор', 'client_admin', 'super_admin'] },
                 { name: t('nav.staffManagement', 'Управление сотрудниками'), path: '/staff-management', icon: Users },
                 { name: t('nav.generalSettings', 'Общие настройки'), path: '/settings', icon: SettingsIcon },
                 { name: t('nav.equipment', 'Оборудование'), path: '/equipment', icon: Printer },
