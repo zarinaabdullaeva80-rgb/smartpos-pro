@@ -333,9 +333,14 @@ function Login({ onLogin }) {
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data.user));
 
-                // Сохранить информацию о лицензии если есть
+                // Обновить информацию о лицензии из ответа сервера
+                // ВАЖНО: всегда обновляем, чтобы не осталось устаревших данных
                 if (response.data.license) {
                     localStorage.setItem('license_info', JSON.stringify(response.data.license));
+                } else {
+                    // Сервер не вернул лицензию — очищаем старую, чтобы checkLicense пропустил локальную проверку
+                    // (checkLicense без licenseInfo.id не будет проверять expiry)
+                    localStorage.removeItem('license_info');
                 }
 
                 // Сохранить имя пользователя для удобства
