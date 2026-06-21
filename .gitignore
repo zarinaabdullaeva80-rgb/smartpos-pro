@@ -89,9 +89,11 @@ mpos/gradle-build.log
 # *.asar
 # *.msi
 # *.blockmap
-# server/updates/*.exe
-# server/updates/*.blockmap
+server/updates/*.exe
+server/updates/*.blockmap
 server/updates/win-unpacked/
+client-accounting/dist-electron/*.exe
+client-accounting/dist-electron/*.blockmap
 SmartPOS-Client-Delivery/
 SmartPOS-Client-Package/
 admin-panel/dist-electron/
