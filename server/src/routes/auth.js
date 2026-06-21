@@ -436,44 +436,74 @@ router.post('/login', async (req, res) => {
                         [userLicenseId]
                     );
                     if (licCheck.rows.length === 0) {
-                        // Лицензия удалена
-                        return res.status(403).json({ 
-                            error: 'Лицензия удалена. Обратитесь к администратору.',
-                            code: 'LICENSE_DELETED'
-                        });
-                    }
-                    const licStatus = licCheck.rows[0];
-                    if (licStatus.status === 'expired') {
-                        return res.status(403).json({ 
-                            error: 'Лицензия истекла. Обратитесь к администратору.',
-                            code: 'LICENSE_EXPIRED'
-                        });
-                    }
-                    if (licStatus.status === 'suspended') {
-                        return res.status(403).json({ 
-                            error: 'Лицензия приостановлена. Обратитесь к администратору.',
-                            code: 'LICENSE_SUSPENDED'
-                        });
-                    }
-                    if (licStatus.status !== 'active') {
-                        return res.status(403).json({ 
-                            error: 'Лицензия неактивна. Обратитесь к администратору.',
-                            code: 'LICENSE_INACTIVE'
-                        });
-                    }
-                    // Проверить срок действия
-                    if (licStatus.expires_at && new Date(licStatus.expires_at) < new Date()) {
-                        await pool.query('UPDATE licenses SET status = $1 WHERE id = $2', ['expired', userLicenseId]);
-                        return res.status(403).json({ 
-                            error: 'Лицензия истекла. Обратитесь к администратору.',
-                            code: 'LICENSE_EXPIRED'
-                        });
+                        // Лицензия удалена из БД
+                        if (expectedLicenseId && expectedLicenseId !== userLicenseId) {
+                            // Клиент передал другую активную лицензию — автоматически переключаемся на неё
+                            console.log(`[AUTH] User "${username}" old license #${userLicenseId} deleted, auto-switching to #${expectedLicenseId}`);
+                            const newLicRes = await pool.query('SELECT organization_id FROM licenses WHERE id = $1', [expectedLicenseId]);
+                            const newOrgId = newLicRes.rows[0]?.organization_id || null;
+                            await pool.query('UPDATE users SET license_id = $1, organization_id = $2 WHERE id = $3', [expectedLicenseId, newOrgId, user.id]);
+                            userLicenseId = expectedLicenseId;
+                            user.organization_id = newOrgId;
+                        } else {
+                            // Удалена и нет замены — сбрасываем license_id и разрешаем войти
+                            console.warn(`[AUTH] User "${username}" license #${userLicenseId} deleted, clearing license_id and allowing login`);
+                            try {
+                                await pool.query('UPDATE users SET license_id = NULL WHERE id = $1', [user.id]);
+                            } catch (e) {}
+                            userLicenseId = null;
+                        }
+                    } else {
+                        const licStatus = licCheck.rows[0];
+                        if (licStatus.status === 'expired') {
+                            // Если передан новый активный ключ — мигрируем на него
+                            if (expectedLicenseId && expectedLicenseId !== userLicenseId) {
+                                console.log(`[AUTH] User "${username}" expired license #${userLicenseId}, auto-switching to #${expectedLicenseId}`);
+                                const newLicRes = await pool.query('SELECT organization_id FROM licenses WHERE id = $1', [expectedLicenseId]);
+                                const newOrgId = newLicRes.rows[0]?.organization_id || null;
+                                await pool.query('UPDATE users SET license_id = $1, organization_id = $2 WHERE id = $3', [expectedLicenseId, newOrgId, user.id]);
+                                userLicenseId = expectedLicenseId;
+                                user.organization_id = newOrgId;
+                            } else {
+                                return res.status(403).json({ 
+                                    error: 'Лицензия истекла. Обратитесь к администратору.',
+                                    code: 'LICENSE_EXPIRED'
+                                });
+                            }
+                        } else if (licStatus.status === 'suspended') {
+                            return res.status(403).json({ 
+                                error: 'Лицензия приостановлена. Обратитесь к администратору.',
+                                code: 'LICENSE_SUSPENDED'
+                            });
+                        } else if (licStatus.status !== 'active') {
+                            return res.status(403).json({ 
+                                error: 'Лицензия неактивна. Обратитесь к администратору.',
+                                code: 'LICENSE_INACTIVE'
+                            });
+                        } else if (licStatus.expires_at && new Date(licStatus.expires_at) < new Date()) {
+                            // Срок истёк, но статус ещё не обновлён
+                            await pool.query('UPDATE licenses SET status = $1 WHERE id = $2', ['expired', userLicenseId]);
+                            if (expectedLicenseId && expectedLicenseId !== userLicenseId) {
+                                // Мигрируем на новую лицензию
+                                const newLicRes = await pool.query('SELECT organization_id FROM licenses WHERE id = $1', [expectedLicenseId]);
+                                const newOrgId = newLicRes.rows[0]?.organization_id || null;
+                                await pool.query('UPDATE users SET license_id = $1, organization_id = $2 WHERE id = $3', [expectedLicenseId, newOrgId, user.id]);
+                                userLicenseId = expectedLicenseId;
+                                user.organization_id = newOrgId;
+                            } else {
+                                return res.status(403).json({ 
+                                    error: 'Лицензия истекла. Обратитесь к администратору.',
+                                    code: 'LICENSE_EXPIRED'
+                                });
+                            }
+                        }
                     }
                 } catch (licCheckErr) {
                     console.log('License check error:', licCheckErr.message);
                 }
             }
         }
+
 
         // ★ Авто-привязка organization_id при первом логине (если отсутствует)
         if (!user.organization_id && userLicenseId) {

@@ -226,10 +226,10 @@ function App() {
                             setLicenseExpiryDate(data.license.expires_at);
                         }
                     } else if (resp.status === 403) {
-                        console.error('[App] Cloud license check: FORBIDDEN');
-                        setLicenseExpired(true);
-                        serverCheckSuccess = true;
-                        return;
+                        // 403 от check-expiry не означает истечение лицензии —
+                        // это может быть ошибка роли/доступа. Игнорируем.
+                        console.warn('[App] check-expiry returned 403 — ignoring (not a license expiry)');
+                        serverCheckSuccess = false;
                     }
                 } catch (e) {
                     if (e.name === 'AbortError') {

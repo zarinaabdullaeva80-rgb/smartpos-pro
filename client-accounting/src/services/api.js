@@ -133,9 +133,16 @@ api.interceptors.response.use(
             }
         }
 
-        // Если 403 Forbidden — это может быть блокировка лицензии
+        // Если 403 Forbidden с кодом лицензии — блокировка лицензии
+        // НЕ реагируем на обычные 403 (права доступа, роли и т.д.)
         if (error.response?.status === 403) {
-            window.dispatchEvent(new Event('license-expired'));
+            const licenseCode = error.response?.data?.code;
+            if (licenseCode === 'LICENSE_EXPIRED' || licenseCode === 'LICENSE_INACTIVE') {
+                console.warn('[API] License error intercepted:', licenseCode);
+                window.dispatchEvent(new Event('license-expired'));
+            } else {
+                console.warn('[API] 403 received (not license issue):', error.config?.url, error.response?.data);
+            }
         }
 
         // Отправляем ошибку на сервер для логирования
