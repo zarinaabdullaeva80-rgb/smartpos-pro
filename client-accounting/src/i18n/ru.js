@@ -91,6 +91,8 @@ const ru = {
     twoFactorAuth: '2FA авторизация',
     backups: 'Резервные копии',
     receiptSettings: 'Настройка чеков',
+    equipment: 'Оборудование',
+    userSessions: 'Активные сессии',
   },
 
   // === ЭЦП (EDS) ===

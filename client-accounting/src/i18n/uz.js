@@ -91,6 +91,8 @@ const uz = {
     twoFactorAuth: '2FA avtorizatsiya',
     backups: 'Zaxira nusxalar',
     receiptSettings: 'Chek sozlamalari',
+    equipment: 'Uskunalar',
+    userSessions: 'Faol seanslar',
   },
 
   // === ERI (EDS) ===
