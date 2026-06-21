@@ -6,6 +6,7 @@ import { ToastProvider } from './components/ToastProvider';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import LoadingSpinner from './components/LoadingSpinner';
 import { I18nProvider } from './i18n';
+import { getApiUrl } from './config/settings';
 
 // Components
 import Login from './pages/Login';
@@ -194,10 +195,11 @@ function App() {
 
             if (token && licenseInfo && licenseInfo.id) {
                 try {
-                    const apiUrl = localStorage.getItem('server_url') || 'http://localhost:5000/api';
+                    // Используем динамический URL — учитывает режим (cloud/own)
+                    const apiUrl = getApiUrl();
                     const baseUrl = apiUrl.replace(/\/api\/?$/, '');
                     
-                    console.log('[App] Fetching cloud license status...');
+                    console.log('[App] Fetching license status from:', baseUrl);
                     
                     // Таймаут 5 секунд для проверки лицензии, чтобы не висеть на черном экране
                     const controller = new AbortController();
