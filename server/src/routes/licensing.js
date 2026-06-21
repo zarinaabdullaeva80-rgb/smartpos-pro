@@ -1897,8 +1897,6 @@ router.post('/sync-delete', async (req, res) => {
 
         const client = await pool.connect();
         try {
-            await client.query('BEGIN');
-
             // 1. Удаляем позиции продаж
             try {
                 const salesIds = await client.query('SELECT id FROM sales WHERE license_id = $1', [licenseId]);
@@ -1961,8 +1959,6 @@ router.post('/sync-delete', async (req, res) => {
             // 8. Удаляем саму лицензию
             await client.query('DELETE FROM licenses WHERE id = $1', [licenseId]);
 
-            await client.query('COMMIT');
-
             console.log(`[SYNC-DELETE] License "${customerName}" (${license_key}) fully deleted from cloud. Counts:`, deletedCounts);
 
             res.json({
@@ -1971,7 +1967,6 @@ router.post('/sync-delete', async (req, res) => {
                 deleted: deletedCounts
             });
         } catch (txError) {
-            await client.query('ROLLBACK');
             throw txError;
         } finally {
             client.release();
