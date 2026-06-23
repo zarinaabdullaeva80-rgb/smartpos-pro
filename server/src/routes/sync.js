@@ -176,6 +176,22 @@ router.post('/receipts', authenticate, async (req, res) => {
 
             let saleId;
             if (existing.rows.length === 0) {
+                // Валидация и поиск shift_id
+                let shiftId = receipt.shift_id || null;
+                if (shiftId) {
+                    const shiftCheck = await client.query("SELECT id FROM shifts WHERE id = $1", [shiftId]);
+                    if (shiftCheck.rows.length === 0) {
+                        shiftId = null;
+                    }
+                }
+                if (!shiftId) {
+                    const activeShift = await client.query(
+                        "SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY started_at DESC LIMIT 1",
+                        [receipt.user_id || receipt.cashier_id || req.user.id]
+                    );
+                    shiftId = activeShift.rows[0]?.id || null;
+                }
+
                 // Создать продажу
                 const insertResult = await client.query(`
                     INSERT INTO sales (
@@ -190,7 +206,7 @@ router.post('/receipts', authenticate, async (req, res) => {
                     receipt.payment_type || 'cash',
                     'confirmed',
                     receipt.user_id || receipt.cashier_id || req.user.id,
-                    receipt.shift_id || null,
+                    shiftId,
                     device_id || 'mobile',
                     orgId,
                     receipt.created_at || new Date()

@@ -190,15 +190,22 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             pointsEarned = Math.floor(finalAmount * (loyaltySettings.cashback_percent || 0) / 100);
         }
 
+        // Получаем активную открытую смену пользователя
+        const activeShift = await client.query(
+            "SELECT id FROM shifts WHERE user_id = $1 AND status = 'open' ORDER BY started_at DESC LIMIT 1",
+            [req.user.id]
+        );
+        const shiftId = activeShift.rows[0]?.id || null;
+
         // Создание документа продажи
         const saleResult = await client.query(
             `INSERT INTO sales (
                 document_number, document_date, customer_id, warehouse_id, 
                 total_amount, discount_percent, discount_amount, 
                 loyalty_points_used, loyalty_points_earned,
-                final_amount, user_id, notes, status, organization_id
+                final_amount, user_id, notes, status, organization_id, shift_id
             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
              RETURNING *`,
             [
                 documentNumber || `SALE-${Date.now()}`, 
@@ -214,7 +221,8 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                 req.user.id, 
                 notes, 
                 status, 
-                orgId
+                orgId,
+                shiftId
             ]
         );
 

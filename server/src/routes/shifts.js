@@ -74,15 +74,25 @@ router.post('/:id/close', authenticate, async (req, res) => {
             return res.status(400).json({ error: 'Смена уже закрыта' });
         }
 
-        // Получить статистику продаж за смену
-        const salesStats = await pool.query(
+        // Получить статистику продаж за смену (сначала по shift_id)
+        let salesStats = await pool.query(
             `SELECT COUNT(*) as count, COALESCE(SUM(final_amount), 0) as total
              FROM sales 
-             WHERE user_id = $1 
-             AND created_at >= $2 
+             WHERE shift_id = $1 
              AND status != 'draft'`,
-            [req.user.id, shift.rows[0].started_at]
+            [id]
         );
+
+        if (parseInt(salesStats.rows[0].count) === 0) {
+            salesStats = await pool.query(
+                `SELECT COUNT(*) as count, COALESCE(SUM(final_amount), 0) as total
+                 FROM sales 
+                 WHERE user_id = $1 
+                 AND created_at >= $2 
+                 AND status != 'draft'`,
+                [req.user.id, shift.rows[0].started_at]
+            );
+        }
 
         const result = await pool.query(
             `UPDATE shifts 
@@ -125,11 +135,34 @@ router.get('/current', authenticate, async (req, res) => {
             return res.json({ shift: null });
         }
 
-        // Преобразуем имена полей для совместимости
+        const shiftRow = result.rows[0];
+
+        // Получаем текущие продажи для этой открытой смены
+        let salesStats = await pool.query(
+            `SELECT COUNT(*) as count, COALESCE(SUM(final_amount), 0) as total
+             FROM sales 
+             WHERE shift_id = $1 
+             AND status != 'draft'`,
+            [shiftRow.id]
+        );
+
+        if (parseInt(salesStats.rows[0].count) === 0) {
+            salesStats = await pool.query(
+                `SELECT COUNT(*) as count, COALESCE(SUM(final_amount), 0) as total
+                 FROM sales 
+                 WHERE user_id = $1 
+                 AND created_at >= $2 
+                 AND status != 'draft'`,
+                [req.user.id, shiftRow.started_at]
+            );
+        }
+
         const shift = {
-            ...result.rows[0],
-            opened_at: result.rows[0].started_at,
-            opening_cash: result.rows[0].initial_cash
+            ...shiftRow,
+            opened_at: shiftRow.started_at,
+            opening_cash: shiftRow.initial_cash,
+            total_sales: parseFloat(salesStats.rows[0].total) || 0,
+            sales_count: parseInt(salesStats.rows[0].count) || 0
         };
 
         res.json({ shift });
@@ -146,10 +179,24 @@ router.get('/', authenticate, async (req, res) => {
         const orgId = req.user?.organization_id || 1;
         const isAdmin = req.user.role === 'admin' || req.user.role === 'Администратор';
 
-        let query = `SELECT s.*, u.username, u.full_name AS user_name 
-             FROM shifts s 
-             LEFT JOIN users u ON s.user_id = u.id 
-             WHERE s.organization_id = $1`;
+        let query = `
+            SELECT s.*, u.username, u.full_name AS user_name,
+                   (
+                       SELECT COALESCE(SUM(s2.final_amount), 0)
+                       FROM sales s2
+                       WHERE (s2.shift_id = s.id OR (s2.shift_id IS NULL AND s2.user_id = s.user_id AND s2.created_at >= s.started_at AND (s.ended_at IS NULL OR s2.created_at <= s.ended_at)))
+                         AND s2.status != 'draft'
+                   ) as live_total_amount,
+                   (
+                       SELECT COALESCE(COUNT(*), 0)::integer
+                       FROM sales s2
+                       WHERE (s2.shift_id = s.id OR (s2.shift_id IS NULL AND s2.user_id = s.user_id AND s2.created_at >= s.started_at AND (s.ended_at IS NULL OR s2.created_at <= s.ended_at)))
+                         AND s2.status != 'draft'
+                   ) as live_sales_count
+            FROM shifts s 
+            LEFT JOIN users u ON s.user_id = u.id 
+            WHERE s.organization_id = $1
+        `;
 
         const params = [orgId];
         let paramCount = 2;
@@ -189,8 +236,8 @@ router.get('/', authenticate, async (req, res) => {
             closed_at: shift.ended_at,
             opening_cash: shift.initial_cash,
             closing_cash: shift.final_cash,
-            total_sales: shift.total_amount,
-            sales_count: shift.sales_count || 0
+            total_sales: parseFloat(shift.live_total_amount) || 0,
+            sales_count: parseInt(shift.live_sales_count) || 0
         }));
 
         res.json({ shifts });
@@ -218,46 +265,85 @@ router.get('/:id/stats', authenticate, async (req, res) => {
         const shift = shiftResult.rows[0];
 
         // Статистика продаж за смену
-        const salesStats = await pool.query(`
+        let salesStats = await pool.query(`
             SELECT 
                 COUNT(*) as count,
                 COALESCE(SUM(final_amount), 0) as total,
                 COALESCE(AVG(final_amount), 0) as average
             FROM sales
-            WHERE user_id = $1 
-            AND created_at >= $2
-            AND created_at < COALESCE($3, NOW())
+            WHERE shift_id = $1 
             AND status != 'draft'
-        `, [shift.user_id, shift.started_at, shift.ended_at]);
+        `, [id]);
+
+        if (parseInt(salesStats.rows[0].count) === 0) {
+            salesStats = await pool.query(`
+                SELECT 
+                    COUNT(*) as count,
+                    COALESCE(SUM(final_amount), 0) as total,
+                    COALESCE(AVG(final_amount), 0) as average
+                FROM sales
+                WHERE user_id = $1 
+                AND created_at >= $2
+                AND created_at < COALESCE($3, NOW())
+                AND status != 'draft'
+            `, [shift.user_id, shift.started_at, shift.ended_at]);
+        }
 
         // Топ 5 товаров
-        const topProducts = await pool.query(`
+        let topProducts = await pool.query(`
             SELECT p.name, SUM(si.quantity) as count
             FROM sale_items si
             JOIN products p ON si.product_id = p.id
             JOIN sales s ON si.sale_id = s.id
-            WHERE s.user_id = $1 
-            AND s.created_at >= $2
-            AND s.created_at < COALESCE($3, NOW())
+            WHERE s.shift_id = $1 
             GROUP BY p.name
             ORDER BY count DESC
             LIMIT 5
-        `, [shift.user_id, shift.started_at, shift.ended_at]);
+        `, [id]);
+
+        if (topProducts.rows.length === 0) {
+            topProducts = await pool.query(`
+                SELECT p.name, SUM(si.quantity) as count
+                FROM sale_items si
+                JOIN products p ON si.product_id = p.id
+                JOIN sales s ON si.sale_id = s.id
+                WHERE s.user_id = $1 
+                AND s.created_at >= $2
+                AND s.created_at < COALESCE($3, NOW())
+                GROUP BY p.name
+                ORDER BY count DESC
+                LIMIT 5
+            `, [shift.user_id, shift.started_at, shift.ended_at]);
+        }
 
         // Продажи по часам (последние 12 часов)
-        const hourlyData = await pool.query(`
+        let hourlyData = await pool.query(`
             SELECT 
                 EXTRACT(HOUR FROM created_at) as hour,
                 COUNT(*) as sales,
                 COALESCE(SUM(final_amount), 0) as amount
             FROM sales
-            WHERE user_id = $1 
-            AND created_at >= $2
-            AND created_at < COALESCE($3, NOW())
+            WHERE shift_id = $1 
             AND status != 'draft'
             GROUP BY EXTRACT(HOUR FROM created_at)
             ORDER BY hour
-        `, [shift.user_id, shift.started_at, shift.ended_at]);
+        `, [id]);
+
+        if (hourlyData.rows.length === 0) {
+            hourlyData = await pool.query(`
+                SELECT 
+                    EXTRACT(HOUR FROM created_at) as hour,
+                    COUNT(*) as sales,
+                    COALESCE(SUM(final_amount), 0) as amount
+                FROM sales
+                WHERE user_id = $1 
+                AND created_at >= $2
+                AND created_at < COALESCE($3, NOW())
+                AND status != 'draft'
+                GROUP BY EXTRACT(HOUR FROM created_at)
+                ORDER BY hour
+            `, [shift.user_id, shift.started_at, shift.ended_at]);
+        }
 
         // Статистика возвратов за смену
         let returnsStats = { rows: [{ count: 0, total: 0 }] };
@@ -275,8 +361,6 @@ router.get('/:id/stats', authenticate, async (req, res) => {
             // returns table may not exist yet — use zeros
         }
 
-        // NOTE: payment_method field doesn't exist in sales table yet
-        // For now, all sales are considered as cash sales
         const totalSales = parseFloat(salesStats.rows[0].total) || 0;
 
         res.json({
@@ -285,7 +369,7 @@ router.get('/:id/stats', authenticate, async (req, res) => {
                 salesCount: parseInt(salesStats.rows[0].count) || 0,
                 averageCheck: parseFloat(salesStats.rows[0].average) || 0,
                 cashSales: totalSales, // All sales considered as cash for now
-                cardSales: 0, // No card sales until payment_method field is added
+                cardSales: 0,
                 totalReturns: 0,
                 returnsCount: 0,
                 netSales: totalSales,
