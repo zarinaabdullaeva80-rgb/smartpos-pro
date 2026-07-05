@@ -130,6 +130,45 @@ export default function CartScreen({ route, navigation }) {
         }
     };
 
+    // --- Поиск по штрихкоду карты лояльности ---
+    const searchByBarcode = async (cardNumber) => {
+        if (!cardNumber?.trim()) return;
+        try {
+            setLoyaltySearching(true);
+            setShowLoyaltySearch(false);
+            const res = await loyaltyAPI.scanCard(cardNumber.trim(), null);
+            if (res.data?.customer) {
+                const c = res.data.customer;
+                // Нормализуем структуру — /scan возвращает balance вместо points
+                setLoyaltyCustomer({
+                    ...c,
+                    points: c.balance ?? c.points ?? 0,
+                    loyalty_points: c.balance ?? c.points ?? 0,
+                });
+                setCustomerName(c.name || c.full_name || '');
+                SoundManager.playSuccess();
+            } else {
+                Alert.alert('Не найдено', 'Карта лояльности не найдена');
+            }
+        } catch (error) {
+            if (error.response?.status === 404) {
+                Alert.alert('Не найдено', 'Карта с таким штрихкодом не найдена');
+            } else {
+                Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка сканирования');
+            }
+        } finally {
+            setLoyaltySearching(false);
+        }
+    };
+
+    // Открыть сканер камеры для штрихкода карты лояльности
+    const scanLoyaltyBarcode = () => {
+        setShowLoyaltySearch(false);
+        navigation.navigate('BarcodeScanner', {
+            onScan: (data) => searchByBarcode(data),
+        });
+    };
+
     const removeLoyaltyCustomer = () => {
         setLoyaltyCustomer(null);
         setUsePoints(false);
@@ -398,7 +437,7 @@ export default function CartScreen({ route, navigation }) {
             {/* Loyalty Search Dialog */}
             <Portal>
                 <Dialog visible={showLoyaltySearch} onDismiss={() => setShowLoyaltySearch(false)}>
-                    <Dialog.Title>🔍 Поиск клиента</Dialog.Title>
+                    <Dialog.Title>🔍 Карта лояльности</Dialog.Title>
                     <Dialog.Content>
                         <TextInput
                             label="Телефон или имя"
@@ -408,9 +447,18 @@ export default function CartScreen({ route, navigation }) {
                             mode="outlined"
                             left={<TextInput.Icon icon="phone" />}
                             onSubmitEditing={searchLoyaltyCustomer}
-                            style={{ marginBottom: 8 }}
+                            style={{ marginBottom: 12 }}
                         />
-                        {loyaltySearching && <ActivityIndicator size="small" style={{ marginTop: 8 }} />}
+                        <Button
+                            mode="outlined"
+                            icon="barcode-scan"
+                            onPress={scanLoyaltyBarcode}
+                            style={styles.barcodeBtn}
+                            contentStyle={{ flexDirection: 'row-reverse' }}
+                        >
+                            Сканировать штрихкод карты
+                        </Button>
+                        {loyaltySearching && <ActivityIndicator size="small" style={{ marginTop: 12 }} />}
                     </Dialog.Content>
                     <Dialog.Actions>
                         <Button onPress={() => setShowLoyaltySearch(false)}>Отмена</Button>
@@ -453,4 +501,5 @@ const styles = StyleSheet.create({
     usePointsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 },
     usePointsBtn: { borderColor: '#ffd700' },
     pointsInput: { width: 100, backgroundColor: 'rgba(255,255,255,0.1)', fontSize: 14 },
+    barcodeBtn: { borderStyle: 'dashed', borderColor: '#10b981', marginTop: 4 },
 });
