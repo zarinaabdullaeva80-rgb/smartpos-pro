@@ -27,6 +27,18 @@ export default function CartScreen({ route, navigation }) {
     const [loyaltySearching, setLoyaltySearching] = useState(false);
     const [usePoints, setUsePoints] = useState(false);
     const [pointsToUse, setPointsToUse] = useState('');
+    // Loyalty — баланс
+    const [showBalanceDialog, setShowBalanceDialog] = useState(false);
+    const [balanceLoading, setBalanceLoading] = useState(false);
+    const [loyaltyTransactions, setLoyaltyTransactions] = useState([]);
+    // Loyalty — списание
+    const [showDeductDialog, setShowDeductDialog] = useState(false);
+    const [deductAmount, setDeductAmount] = useState('');
+    const [deductLoading, setDeductLoading] = useState(false);
+    // Loyalty — кешбек
+    const [cashbackEnabled, setCashbackEnabled] = useState(false);
+    const [cashbackPercent, setCashbackPercent] = useState(0);
+    const [cashbackAmount, setCashbackAmount] = useState(0);
 
     useEffect(() => {
         checkShift();
@@ -174,6 +186,81 @@ export default function CartScreen({ route, navigation }) {
         setUsePoints(false);
         setPointsToUse('');
         setCustomerName('');
+        setCashbackEnabled(false);
+        setCashbackAmount(0);
+    };
+
+    // --- Просмотр баланса ---
+    const openBalanceDialog = async () => {
+        setShowBalanceDialog(true);
+        setBalanceLoading(true);
+        try {
+            const res = await loyaltyAPI.getTransactions(loyaltyCustomer.id);
+            setLoyaltyTransactions((res.data?.transactions || res.data || []).slice(0, 5));
+        } catch {
+            setLoyaltyTransactions([]);
+        } finally {
+            setBalanceLoading(false);
+        }
+    };
+
+    // --- Ручное списание ---
+    const confirmDeduct = async () => {
+        const pts = parseInt(deductAmount);
+        const available = loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0;
+        if (!pts || pts <= 0) { Alert.alert('Ошибка', 'Введите сумму для списания'); return; }
+        if (pts > available) { Alert.alert('Ошибка', `Недостаточно баллов. Доступно: ${available}`); return; }
+        setDeductLoading(true);
+        try {
+            await loyaltyAPI.redeemPoints(loyaltyCustomer.id, pts, null);
+            const newBalance = available - pts;
+            setLoyaltyCustomer(prev => ({ ...prev, points: newBalance, loyalty_points: newBalance }));
+            setDeductAmount('');
+            setShowDeductDialog(false);
+            SoundManager.playSuccess();
+            Alert.alert('✅ Списано', `${pts} баллов успешно списано с карты`);
+        } catch (error) {
+            Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка списания');
+        } finally {
+            setDeductLoading(false);
+        }
+    };
+
+    // --- Кешбек: загрузить % при включении ---
+    const toggleCashback = async () => {
+        if (cashbackEnabled) {
+            setCashbackEnabled(false);
+            setCashbackAmount(0);
+            return;
+        }
+        try {
+            const res = await loyaltyAPI.getSettings();
+            const pct = parseFloat(res.data?.cashback_percent || res.data?.pointsPercent || res.data?.settings?.cashback_percent || 1);
+            setCashbackPercent(pct);
+            const total = getTotal();
+            const earned = Math.floor(total * pct / 100);
+            setCashbackAmount(earned);
+            setCashbackEnabled(true);
+        } catch {
+            const earned = Math.floor(getTotal() * 1 / 100);
+            setCashbackPercent(1);
+            setCashbackAmount(earned);
+            setCashbackEnabled(true);
+        }
+    };
+
+    // Начислить кешбек после продажи
+    const accrueAfterSale = async (saleId) => {
+        if (!cashbackEnabled || !loyaltyCustomer?.id || cashbackAmount <= 0) return;
+        try {
+            await loyaltyAPI.addPoints(
+                loyaltyCustomer.id,
+                cashbackAmount,
+                `Кешбек ${cashbackPercent}% за продажу ${saleId || ''}`
+            );
+        } catch (e) {
+            console.warn('[Loyalty] Cashback accrue failed:', e.message);
+        }
     };
 
     // --- Sale logic ---
@@ -240,9 +327,14 @@ export default function CartScreen({ route, navigation }) {
     const completeSaleWithPayment = async (paymentResult) => {
         setLoading(true);
         try {
-            await salesAPI.create(buildSaleData(paymentResult));
+            const saleRes = await salesAPI.create(buildSaleData(paymentResult));
+            const saleId = saleRes.data?.id || saleRes.data?.documentNumber;
+            // Начисляем кешбек если включён
+            await accrueAfterSale(saleId);
             SoundManager.playSuccess();
-            Alert.alert('✅ Продажа оформлена!', `Сумма: ${formatPrice(getTotal())}\nОплата: ${paymentResult.type}`, [{
+            const cashbackNote = cashbackEnabled && cashbackAmount > 0
+                ? `\n⭐ Кешбек ${cashbackAmount} баллов начислен` : '';
+            Alert.alert('✅ Продажа оформлена!', `Сумма: ${formatPrice(getTotal())}\nОплата: ${paymentResult.type}${cashbackNote}`, [{
                 text: 'OK', onPress: () => {
                     setCartItems([]); if (parentSetCart) parentSetCart([]); navigation.navigate('Home');
                 }
@@ -325,6 +417,34 @@ export default function CartScreen({ route, navigation }) {
                                         <Paragraph style={styles.loyaltyPointsLabel}>баллов</Paragraph>
                                     </View>
                                     <IconButton icon="close" iconColor="#fff" size={20} onPress={removeLoyaltyCustomer} />
+                                </View>
+                                {/* Три кнопки действий */}
+                                <View style={styles.loyaltyActionsRow}>
+                                    <Button
+                                        mode="outlined"
+                                        icon="eye"
+                                        compact
+                                        onPress={openBalanceDialog}
+                                        style={styles.loyaltyActionBtn}
+                                        labelStyle={styles.loyaltyActionLabel}
+                                    >Баланс</Button>
+                                    <Button
+                                        mode="outlined"
+                                        icon="minus-circle"
+                                        compact
+                                        onPress={() => { setDeductAmount(''); setShowDeductDialog(true); }}
+                                        style={[styles.loyaltyActionBtn, { borderColor: '#f87171' }]}
+                                        labelStyle={[styles.loyaltyActionLabel, { color: '#f87171' }]}
+                                    >Списать</Button>
+                                    <Button
+                                        mode={cashbackEnabled ? 'contained' : 'outlined'}
+                                        icon={cashbackEnabled ? 'check-circle' : 'cash-plus'}
+                                        compact
+                                        onPress={toggleCashback}
+                                        style={[styles.loyaltyActionBtn, cashbackEnabled && { backgroundColor: '#10b981' }]}
+                                        labelStyle={[styles.loyaltyActionLabel, { color: cashbackEnabled ? '#fff' : '#10b981' }]}
+                                        buttonColor={cashbackEnabled ? '#10b981' : undefined}
+                                    >{cashbackEnabled ? `+${cashbackAmount}б` : 'Кешбек'}</Button>
                                 </View>
                                 {customerPoints > 0 && (
                                     <View style={styles.usePointsRow}>
@@ -434,6 +554,74 @@ export default function CartScreen({ route, navigation }) {
                 </View>
             </TouchableWithoutFeedback>
 
+            {/* Loyalty Balance Dialog */}
+            <Portal>
+                <Dialog visible={showBalanceDialog} onDismiss={() => setShowBalanceDialog(false)}>
+                    <Dialog.Title>⭐ Баланс карты лояльности</Dialog.Title>
+                    <Dialog.Content>
+                        <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                            <Paragraph style={{ color: '#4ade80', fontSize: 36, fontWeight: 'bold' }}>
+                                {loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0}
+                            </Paragraph>
+                            <Paragraph style={{ color: '#90a4ae' }}>баллов</Paragraph>
+                            <Paragraph style={{ color: '#ffd700', marginTop: 4 }}>
+                                {loyaltyCustomer?.level || ''}
+                            </Paragraph>
+                        </View>
+                        <Divider style={{ marginBottom: 12 }} />
+                        <Paragraph style={{ color: '#90a4ae', marginBottom: 8, fontWeight: 'bold' }}>Последние операции:</Paragraph>
+                        {balanceLoading
+                            ? <ActivityIndicator size="small" />
+                            : loyaltyTransactions.length === 0
+                                ? <Paragraph style={{ color: '#90a4ae' }}>Операций нет</Paragraph>
+                                : loyaltyTransactions.map((t, i) => (
+                                    <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                                        <Paragraph style={{ color: '#ccc', flex: 1, fontSize: 12 }} numberOfLines={1}>
+                                            {t.description || t.reason || t.type || 'Операция'}
+                                        </Paragraph>
+                                        <Paragraph style={{ color: t.points > 0 ? '#4ade80' : '#f87171', fontWeight: 'bold', fontSize: 12 }}>
+                                            {t.points > 0 ? '+' : ''}{t.points}
+                                        </Paragraph>
+                                    </View>
+                                ))
+                        }
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <Button onPress={() => setShowBalanceDialog(false)}>Закрыть</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+
+            {/* Loyalty Deduct Dialog */}
+            <Portal>
+                <Dialog visible={showDeductDialog} onDismiss={() => setShowDeductDialog(false)}>
+                    <Dialog.Title>➖ Списание баллов</Dialog.Title>
+                    <Dialog.Content>
+                        <Paragraph style={{ color: '#90a4ae', marginBottom: 12 }}>
+                            Доступно: {loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0} баллов
+                        </Paragraph>
+                        <TextInput
+                            label="Сумма для списания"
+                            value={deductAmount}
+                            onChangeText={setDeductAmount}
+                            keyboardType="numeric"
+                            mode="outlined"
+                            left={<TextInput.Icon icon="minus-circle" />}
+                            autoFocus
+                        />
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <Button onPress={() => setShowDeductDialog(false)}>Отмена</Button>
+                        <Button
+                            onPress={confirmDeduct}
+                            loading={deductLoading}
+                            disabled={deductLoading}
+                            textColor="#f87171"
+                        >Списать</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+
             {/* Loyalty Search Dialog */}
             <Portal>
                 <Dialog visible={showLoyaltySearch} onDismiss={() => setShowLoyaltySearch(false)}>
@@ -498,8 +686,11 @@ const styles = StyleSheet.create({
     loyaltyPointsBox: { alignItems: 'center', marginRight: 4 },
     loyaltyPointsValue: { color: '#4ade80', fontSize: 20, fontWeight: 'bold' },
     loyaltyPointsLabel: { color: '#90a4ae', fontSize: 10 },
-    usePointsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 8 },
+    usePointsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 8 },
     usePointsBtn: { borderColor: '#ffd700' },
     pointsInput: { width: 100, backgroundColor: 'rgba(255,255,255,0.1)', fontSize: 14 },
     barcodeBtn: { borderStyle: 'dashed', borderColor: '#10b981', marginTop: 4 },
+    loyaltyActionsRow: { flexDirection: 'row', gap: 6, marginTop: 10, justifyContent: 'space-between' },
+    loyaltyActionBtn: { flex: 1, borderColor: '#4ade80' },
+    loyaltyActionLabel: { fontSize: 11, color: '#4ade80' },
 });
