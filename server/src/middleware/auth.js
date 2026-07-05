@@ -58,20 +58,32 @@ export const authenticate = async (req, res, next) => {
         // ★ ПРОВЕРКА СТАТУСА ЛИЦЕНЗИИ
         // Пропускаем для супер-админов
         if (user.user_type !== 'super_admin') {
-            const licenseCheckId = user.organization_id || user.license_id;
-            if (licenseCheckId) {
+            if (user.license_id || user.organization_id) {
                 try {
-                    const licRes = await pool.query(
-                        'SELECT status, expires_at FROM licenses WHERE id = $1 OR organization_id = $1 LIMIT 1',
-                        [licenseCheckId]
-                    );
+                    // ВАЖНО: ищем лицензию строго по license_id или organization_id,
+                    // но НЕ смешиваем их в одном условии — это приводит к возврату
+                    // чужих лицензий, так как числовые ID не совпадают по смыслу.
+                    let licRes;
+                    if (user.license_id) {
+                        licRes = await pool.query(
+                            'SELECT id, status, expires_at FROM licenses WHERE id = $1 LIMIT 1',
+                            [user.license_id]
+                        );
+                    }
+                    // Если license_id не нашёл результат или отсутствует — ищем по organization_id
+                    if ((!licRes || licRes.rows.length === 0) && user.organization_id) {
+                        licRes = await pool.query(
+                            'SELECT id, status, expires_at FROM licenses WHERE organization_id = $1 LIMIT 1',
+                            [user.organization_id]
+                        );
+                    }
 
-                    if (licRes.rows.length > 0) {
+                    if (licRes && licRes.rows.length > 0) {
                         const license = licRes.rows[0];
 
                         // Авто-истечение если дата прошла
                         if (license.status === 'active' && license.expires_at && new Date(license.expires_at) < new Date()) {
-                            await pool.query("UPDATE licenses SET status = 'expired' WHERE id = (SELECT id FROM licenses WHERE id = $1 OR organization_id = $1 LIMIT 1)", [licenseCheckId]);
+                            await pool.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
                             license.status = 'expired';
                         }
 

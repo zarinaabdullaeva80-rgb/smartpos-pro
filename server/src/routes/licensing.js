@@ -138,8 +138,16 @@ router.get('/resolve', async (req, res) => {
             return res.status(403).json({ valid: false, error: 'Лицензия истекла. Обратитесь к администратору.' });
         }
 
-        // Определить URL сервера
-        const currentServerUrl = `${req.protocol}://${req.get('host')}/api`;
+        // Определить URL сервера (принудительно https для Railway/ngrok)
+        const host = req.get('host') || '';
+        const forwardedProto = req.headers['x-forwarded-proto'];
+        let detectedProtocol = req.protocol;
+        if (forwardedProto) {
+            detectedProtocol = forwardedProto.split(',')[0].trim();
+        } else if (host.includes('railway.app') || host.includes('ngrok-free.dev') || host.includes('ngrok.io')) {
+            detectedProtocol = 'https';
+        }
+        const currentServerUrl = `${detectedProtocol}://${host}/api`;
         const serverUrl = license.server_url || currentServerUrl;
 
         res.json({

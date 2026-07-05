@@ -153,6 +153,7 @@ import schedulerService from './services/scheduler.js';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', true); // Доверять заголовку X-Forwarded-Proto от Railway/Cloudflare
 const server = http.createServer(app);
 
 // Раздача клиентского приложения (client-accounting/dist) — ДО любых middleware
