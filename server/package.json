@@ -12,6 +12,7 @@
     "test": "node --experimental-vm-modules node_modules/.bin/jest --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:regression": "node src/tests/regression_license_id_collision.test.js",
     "migrate": "node src/scripts/runMigrations.js",
     "handover": "node antigravity_handover.js",
     "lint": "eslint src/**/*.js",
