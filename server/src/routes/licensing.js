@@ -653,12 +653,39 @@ router.put('/admin/licenses/:id', authenticate, auditLog('license'), async (req,
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Лицензия не найдена' });
         }
-
         // Логирование
         await pool.query(`
             INSERT INTO license_history (license_id, action, performed_by, details)
             VALUES ($1, 'updated', $2, $3)
         `, [id, req.user.id, JSON.stringify(req.body)]);
+
+        // Автоматически обновляем логин/пароль у пользователей, привязанных к этой лицензии
+        if (req.body.customer_username || req.body.customer_password) {
+            const userUpdates = [];
+            const userParams = [id];
+            let userParamCount = 2;
+
+            if (req.body.customer_username) {
+                userParams.push(req.body.customer_username);
+                userUpdates.push(`username = $${userParamCount++}`);
+            }
+
+            if (req.body.customer_password) {
+                const bcryptModule = await import('bcrypt');
+                const bcrypt = bcryptModule.default || bcryptModule;
+                const password_hash = await bcrypt.hash(req.body.customer_password, 10);
+                userParams.push(password_hash);
+                userUpdates.push(`password_hash = $${userParamCount++}`);
+            }
+
+            if (userUpdates.length > 0) {
+                await pool.query(`
+                    UPDATE users 
+                    SET ${userUpdates.join(', ')}
+                    WHERE license_id = $1
+                `, userParams);
+            }
+        }
 
         // ★ Автоматическая синхронизация на Railway Cloud
         try {
@@ -736,6 +763,44 @@ router.post('/admin/licenses/:id/reset-credentials', authenticate, auditLog('lic
         `;
 
         const result = await pool.query(query, params);
+
+        // ★ КРИТИЧНО: синхронизация таблицы users
+        // При повторном входе мобильное приложение проверяет users.password_hash,
+        // а НЕ licenses.customer_password_hash — без этого новый пароль не работает.
+        try {
+            const targetUsername = new_username || licenseResult.rows[0].customer_username;
+
+            if (new_password) {
+                const newHash = result.rows[0]?.customer_password_hash
+                    ?? params[updates.findIndex(u => u.includes('customer_password_hash'))];
+
+                // Хеш пересчитываем заново — надёжнее чем тянуть из RETURNING
+                const bcryptM = await import('bcrypt');
+                const bcryptI = bcryptM.default || bcryptM;
+                const freshHash = await bcryptI.hash(new_password, 10);
+
+                await pool.query(
+                    `UPDATE users
+                     SET password_hash = $1, updated_at = NOW()
+                     WHERE license_id = $2
+                        OR (LOWER(username) = LOWER($3) AND organization_id = (
+                            SELECT organization_id FROM licenses WHERE id = $2 LIMIT 1
+                        ))`,
+                    [freshHash, id, targetUsername]
+                );
+                console.log(`[LICENSE] ✅ users.password_hash synced for license #${id}`);
+            }
+
+            if (new_username && new_username !== licenseResult.rows[0].customer_username) {
+                await pool.query(
+                    `UPDATE users SET username = $1, updated_at = NOW() WHERE license_id = $2`,
+                    [new_username, id]
+                );
+                console.log(`[LICENSE] ✅ users.username synced: ${licenseResult.rows[0].customer_username} → ${new_username}`);
+            }
+        } catch (usersyncErr) {
+            console.warn('[LICENSE] users sync warning (non-blocking):', usersyncErr.message);
+        }
 
         // Log the action
         await pool.query(`
