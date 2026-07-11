@@ -20,8 +20,8 @@ export function useConnection() {
     return useContext(ConnectionContext);
 }
 
-// Интервал проверки сервера (мс)
-const SERVER_CHECK_INTERVAL = 15000;
+// Интервал проверки сервера (мс) — увеличен с 15 с до 60 с чтобы снизить нагрузку на сервер
+const SERVER_CHECK_INTERVAL = 60000;
 // Задержка перед синхронизацией после обнаружения сервера
 const SYNC_DELAY = 3000;
 

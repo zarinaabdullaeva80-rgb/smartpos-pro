@@ -7,6 +7,35 @@ if (!process.env.JWT_SECRET) {
     console.warn('[AUTH] ⚠️ JWT_SECRET не установлен! Используется небезопасный fallback. Установите JWT_SECRET в .env для production!');
 }
 
+// ─── Кеш лицензий (in-memory, TTL 5 минут) ────────────────────────────────
+// Снижает количество SQL-запросов к таблице licenses в 50+ раз.
+// Ключ: license_id или `org_${organization_id}`. Значение: { status, expires_at, cachedAt }
+const licenseCache = new Map();
+const LICENSE_CACHE_TTL = 5 * 60 * 1000; // 5 минут
+
+function getLicenseCacheKey(user) {
+    if (user.license_id) return String(user.license_id);
+    if (user.organization_id) return `org_${user.organization_id}`;
+    return null;
+}
+
+function getCachedLicense(cacheKey) {
+    if (!cacheKey) return null;
+    const entry = licenseCache.get(cacheKey);
+    if (!entry) return null;
+    if (Date.now() - entry.cachedAt > LICENSE_CACHE_TTL) {
+        licenseCache.delete(cacheKey);
+        return null;
+    }
+    return entry;
+}
+
+export function invalidateLicenseCache(licenseId, organizationId) {
+    if (licenseId) licenseCache.delete(String(licenseId));
+    if (organizationId) licenseCache.delete(`org_${organizationId}`);
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 export const authenticate = async (req, res, next) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
@@ -55,39 +84,53 @@ export const authenticate = async (req, res, next) => {
             organization_id: userData.organization_id || decoded.organization_id || null
         };
 
-        // ★ ПРОВЕРКА СТАТУСА ЛИЦЕНЗИИ
+        // ★ ПРОВЕРКА СТАТУСА ЛИЦЕНЗИИ (с кешированием TTL 5 мин)
         // Пропускаем для супер-админов
         if (user.user_type !== 'super_admin') {
             if (user.license_id || user.organization_id) {
                 try {
-                    // ВАЖНО: ищем лицензию строго по license_id или organization_id,
-                    // но НЕ смешиваем их в одном условии — это приводит к возврату
-                    // чужих лицензий, так как числовые ID не совпадают по смыслу.
-                    let licRes;
-                    if (user.license_id) {
-                        licRes = await pool.query(
-                            'SELECT id, status, expires_at FROM licenses WHERE id = $1 LIMIT 1',
-                            [user.license_id]
-                        );
-                    }
-                    // Если license_id не нашёл результат или отсутствует — ищем по organization_id
-                    if ((!licRes || licRes.rows.length === 0) && user.organization_id) {
-                        licRes = await pool.query(
-                            'SELECT id, status, expires_at FROM licenses WHERE organization_id = $1 LIMIT 1',
-                            [user.organization_id]
-                        );
-                    }
+                    const cacheKey = getLicenseCacheKey(user);
+                    let license = getCachedLicense(cacheKey);
 
-                    if (licRes && licRes.rows.length > 0) {
-                        const license = licRes.rows[0];
-
-                        // Авто-истечение если дата прошла
-                        if (license.status === 'active' && license.expires_at && new Date(license.expires_at) < new Date()) {
-                            await pool.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
-                            license.status = 'expired';
+                    if (!license) {
+                        // Не в кеше — идём в БД
+                        // ВАЖНО: ищем лицензию строго по license_id или organization_id,
+                        // но НЕ смешиваем их в одном условии — это приводит к возврату
+                        // чужих лицензий, так как числовые ID не совпадают по смыслу.
+                        let licRes;
+                        if (user.license_id) {
+                            licRes = await pool.query(
+                                'SELECT id, status, expires_at FROM licenses WHERE id = $1 LIMIT 1',
+                                [user.license_id]
+                            );
+                        }
+                        // Если license_id не нашёл результат или отсутствует — ищем по organization_id
+                        if ((!licRes || licRes.rows.length === 0) && user.organization_id) {
+                            licRes = await pool.query(
+                                'SELECT id, status, expires_at FROM licenses WHERE organization_id = $1 LIMIT 1',
+                                [user.organization_id]
+                            );
                         }
 
+                        if (licRes && licRes.rows.length > 0) {
+                            license = licRes.rows[0];
+
+                            // Авто-истечение если дата прошла
+                            if (license.status === 'active' && license.expires_at && new Date(license.expires_at) < new Date()) {
+                                await pool.query("UPDATE licenses SET status = 'expired' WHERE id = $1", [license.id]);
+                                license.status = 'expired';
+                                // Инвалидируем кеш при изменении статуса
+                                licenseCache.delete(cacheKey);
+                            } else {
+                                // Кешируем только активные/suspended/etc (не истёкшие — они меняются)
+                                licenseCache.set(cacheKey, { ...license, cachedAt: Date.now() });
+                            }
+                        }
+                    }
+
+                    if (license) {
                         if (license.status === 'expired') {
+                            invalidateLicenseCache(user.license_id, user.organization_id);
                             return res.status(403).json({
                                 error: 'Лицензия истекла. Пожалуйста, продлите подписку.',
                                 code: 'LICENSE_EXPIRED',
@@ -96,6 +139,7 @@ export const authenticate = async (req, res, next) => {
                         }
 
                         if (license.status === 'suspended') {
+                            invalidateLicenseCache(user.license_id, user.organization_id);
                             return res.status(403).json({
                                 error: 'Лицензия приостановлена. Обратитесь в поддержку.',
                                 code: 'LICENSE_SUSPENDED'

@@ -154,14 +154,16 @@ function Login({ onLogin }) {
         };
         init();
 
-        // Автоповтор проверки каждые 10 секунд если нет подключения
+        // Автоповтор проверки каждые 60 сек если нет подключения или лицензия не проверена
         const interval = setInterval(async () => {
+            // Если лицензия уже валидна — не перепроверяем
+            if (licenseValid) return;
             const connected = await checkServerConnection();
             if (connected && !licenseValid) {
                 const savedLic = localStorage.getItem('license_key');
                 if (savedLic) checkSavedLicense(savedLic);
             }
-        }, 10000);
+        }, 60000); // 60 сек, а не 10 — чтобы не генерировать лишние запросы
 
         return () => clearInterval(interval);
     }, []);
@@ -186,7 +188,8 @@ function Login({ onLogin }) {
                 setLicenseValid(true);
                 setMode('login');
                 setError('');
-                setSuccess('Лицензия подтверждена');
+                // Не вызываем setSuccess здесь — это автоматическая проверка, а не ручная активация
+                // (иначе сообщение всплывает каждые 60 секунд автоматически)
                 // Сохранить актуальные данные лицензии для офлайн режима
                 localStorage.setItem('license_info', JSON.stringify(data.license));
                 // Автонастройка сервера по лицензии

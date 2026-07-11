@@ -26,9 +26,8 @@ export default function HomeScreen({ navigation, onLogout }) {
         };
         initData();
 
-        // Обновлять статус каждые 5 секунд
-        const interval = setInterval(loadOfflineStatus, 5000);
-        return () => clearInterval(interval);
+        // ConnectionContext уже опрашивает сервер каждые 60 секунд
+        // Дублирующий интервал здесь убран для снижения нагрузки на сервер
     }, []);
 
     // Обновлять данные при возврате на экран
