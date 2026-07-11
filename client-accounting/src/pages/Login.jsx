@@ -153,46 +153,51 @@ function Login({ onLogin }) {
             }
         };
         init();
-
-        // Автоповтор проверки каждые 60 сек если нет подключения или лицензия не проверена
-        const interval = setInterval(async () => {
-            // Если лицензия уже валидна — не перепроверяем
-            if (licenseValid) return;
-            const connected = await checkServerConnection();
-            if (connected && !licenseValid) {
-                const savedLic = localStorage.getItem('license_key');
-                if (savedLic) checkSavedLicense(savedLic);
-            }
-        }, 60000); // 60 сек, а не 10 — чтобы не генерировать лишние запросы
-
-        return () => clearInterval(interval);
+        // ★ Никакого setInterval — проверка лицензии делается ТОЛЬКО:
+        //   1) Один раз при старте (читаем из localStorage, если нужно — запрос к серверу)
+        //   2) Когда пользователь вручную нажимает кнопку «Активировать»
     }, []);
 
-    // Проверка сохранённой лицензии при загрузке
+    // ─── Загрузка лицензии при старте (ТОЛЬКО из localStorage — без запроса к серверу) ───
+    // Вызывается автоматически 1 раз при монтировании компонента.
+    // Сетевой запрос НЕ делается — используем данные, сохранённые при предыдущей активации.
     const checkSavedLicense = async (key) => {
-        setError(''); // ★ Очищаем старые ошибки перед каждой проверкой
+        setError('');
         try {
-            // Проверяем на центральном сервере лицензирования
+            // Сначала читаем сохранённые данные с компьютера клиента
+            const savedInfo = localStorage.getItem('license_info');
+            if (savedInfo) {
+                const info = JSON.parse(savedInfo);
+                setLicenseInfo(info);
+                setLicenseValid(true);
+                setMode('login');
+                // Восстанавливаем URL сервера из сохранённых данных
+                if (info.server_url) {
+                    const savedServerUrl = localStorage.getItem('server_url');
+                    if (!savedServerUrl) {
+                        setApiUrl(info.server_url);
+                        setServerUrl(info.server_url);
+                    }
+                }
+                return true;
+            }
+
+            // Кеша нет — делаем запрос к серверу (единственный раз при первом запуске)
             const licenseUrl = await getLicenseServerUrl();
-            console.log('[License] checkSavedLicense: checking key on', licenseUrl);
             const response = await fetch(`${licenseUrl}/license/validate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ license_key: key })
             });
             const data = await response.json();
-            console.log('[License] checkSavedLicense result:', response.status, data);
 
             if (data.valid) {
                 setLicenseInfo(data.license);
                 setLicenseValid(true);
                 setMode('login');
                 setError('');
-                // Не вызываем setSuccess здесь — это автоматическая проверка, а не ручная активация
-                // (иначе сообщение всплывает каждые 60 секунд автоматически)
-                // Сохранить актуальные данные лицензии для офлайн режима
+                // Сохраняем на компьютере клиента — при следующем запуске читаем отсюда
                 localStorage.setItem('license_info', JSON.stringify(data.license));
-                // Автонастройка сервера по лицензии
                 if (data.license.server_url) {
                     const savedServerUrl = localStorage.getItem('server_url');
                     if (!savedServerUrl) {
@@ -201,33 +206,23 @@ function Login({ onLogin }) {
                     }
                 }
                 return true;
-            } else if (response.status === 403 && data.error && (data.error.includes('истекла') || data.error.includes('revoked'))) {
-                // Лицензия ЯВНО отозвана или истекла — удаляем
-                console.warn('[License] License explicitly expired/revoked, removing');
+            } else if (response.status === 403 && data.error &&
+                (data.error.includes('истекла') || data.error.includes('revoked'))) {
+                // Лицензия явно отозвана — удаляем с компьютера клиента
                 setLicenseValid(false);
                 setMode('license');
                 localStorage.removeItem('license_key');
                 localStorage.removeItem('license_info');
                 return false;
             } else {
-                // 404 или другая ошибка — НЕ удаляем ключ, пробуем офлайн кэш
-                console.warn('[License] Validation returned non-valid, keeping key. Status:', response.status);
-                const savedInfo = localStorage.getItem('license_info');
-                if (savedInfo) {
-                    setLicenseInfo(JSON.parse(savedInfo));
-                    setLicenseValid(true);
-                    setMode('login');
-                    return true;
-                } else {
-                    setLicenseValid(false);
-                    setMode('license');
-                    setError(data.error || 'Не удалось проверить лицензию');
-                    return false;
-                }
+                setLicenseValid(false);
+                setMode('license');
+                setError(data.error || 'Не удалось проверить лицензию');
+                return false;
             }
         } catch (err) {
-            // Не удалось проверить — разрешить вход (офлайн режим)
-            console.warn('[License] checkSavedLicense network error:', err.message);
+            // Сеть недоступна — работаем офлайн с данными из localStorage
+            console.warn('[License] Offline mode — using cached data:', err.message);
             const savedInfo = localStorage.getItem('license_info');
             if (savedInfo) {
                 setLicenseInfo(JSON.parse(savedInfo));
@@ -244,7 +239,10 @@ function Login({ onLogin }) {
         }
     };
 
-    // Проверка лицензии
+    // ─── Активация лицензии ────────────────────────────────────────────────────
+    // Вызывается ТОЛЬКО при нажатии кнопки «Активировать».
+    // После успешной активации данные сохраняются в localStorage на компьютере клиента.
+    // При следующем запуске приложения данные читаются из localStorage — без запроса к серверу.
     const validateLicense = async () => {
         if (!licenseKey.trim()) {
             setError('Введите лицензионный ключ');
@@ -255,50 +253,39 @@ function Login({ onLogin }) {
         setError('');
 
         try {
-            // Проверяем лицензию на центральном сервере
             const licenseUrl = await getLicenseServerUrl();
-            console.log('[License] Validating on:', licenseUrl);
-            console.log('[License] Key:', licenseKey);
-
             const response = await fetch(`${licenseUrl}/license/validate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ license_key: licenseKey })
             });
 
-            console.log('[License] Response status:', response.status);
             const data = await response.json();
-            console.log('[License] Response data:', data);
 
             if (data.valid) {
                 setLicenseInfo(data.license);
                 setLicenseValid(true);
-                localStorage.setItem('license_key', licenseKey);
-                localStorage.setItem('license_info', JSON.stringify(data.license));
-                if (serverUrl) localStorage.setItem('server_url', serverUrl);
 
-                // Автонастройка сервера по лицензии (если вручную не указано)
+                // ★ Сохраняем данные на компьютере клиента (localStorage)
+                localStorage.setItem('license_key', licenseKey.trim());
+                localStorage.setItem('license_info', JSON.stringify(data.license));
+                // Сохраняем URL сервера из лицензии
                 if (data.license.server_url) {
-                    const savedServerUrl = localStorage.getItem('server_url');
-                    if (!savedServerUrl) {
-                        setApiUrl(data.license.server_url);
-                        setServerUrl(data.license.server_url);
-                        setSuccess(`✅ Лицензия активирована! Сервер: ${data.license.server_url}`);
-                    } else {
-                        setSuccess('✅ Лицензия активирована!');
-                    }
-                } else {
-                    setSuccess('✅ Лицензия активирована!');
+                    localStorage.setItem('server_url', data.license.server_url);
+                    setApiUrl(data.license.server_url);
+                    setServerUrl(data.license.server_url);
+                } else if (serverUrl) {
+                    localStorage.setItem('server_url', serverUrl);
                 }
 
-                setTimeout(() => { setSuccess(''); setMode('login'); }, 2000);
+                setSuccess('✅ Лицензия активирована! Данные сохранены на этом компьютере.');
+                setTimeout(() => { setSuccess(''); setMode('login'); }, 3000);
             } else {
                 setError(data.error || 'Лицензия недействительна');
             }
         } catch (err) {
             console.error('[License] Validation error:', err);
-            const licenseUrl = await getLicenseServerUrl();
-            setError(`Ошибка подключения к серверу лицензирования (${licenseUrl}). ${err.message || ''}`);
+            setError('Ошибка подключения. Проверьте интернет-соединение.');
         } finally {
             setLoading(false);
         }
