@@ -819,97 +819,9 @@ function Sales() {
                 </div>
             )}
 
-            <div className="card">
-                {loading ? (
-                    <div className="loading-container">
-                        <div className="spinner"></div>
-                    </div>
-                ) : sales.length === 0 ? (
-                    <div className="empty-state">
-                        <ShoppingCart size={64} className="text-muted" />
-                        <h3>{t('sales.noSales', 'Продажи не найдены')}</h3>
-                        <p className="text-muted">{t('sales.createFirst', 'Создайте первый документ продажи')}</p>
-                    </div>
-                ) : (
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>{t('sales.number', 'Номер')}</th>
-                                <th>{t('sales.date', 'Дата')}</th>
-                                <th>{t('sales.counterparty', 'Контрагент')}</th>
-                                <th>{t('sales.warehouse', 'Склад')}</th>
-                                <th>{t('sales.amount', 'Сумма')}</th>
-                                <th>{t('common.status')}</th>
-                                <th style={{ width: '150px' }}>{t('common.actions')}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sales.map((sale) => (
-                                <tr key={sale.id}>
-                                    <td><code>{sale.document_number}</code></td>
-                                    <td>{new Date(sale.document_date).toLocaleDateString('ru-RU')}</td>
-                                    <td>{sale.counterparty_name || '—'}</td>
-                                    <td>{sale.warehouse_name || '—'}</td>
-                                    <td><strong>{formatCurrency(sale.final_amount)}</strong></td>
-                                    <td>{getStatusBadge(sale.status)}</td>
-                                    <td>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            {sale.status === 'draft' && (
-                                                <>
-                                                    <button
-                                                        className="btn btn-warning btn-sm"
-                                                        onClick={() => handleEdit(sale)}
-                                                        title={t('sales.redaktirovat', 'Редактировать')}
-                                                    >
-                                                        ✏️
-                                                    </button>
-                                                    <button
-                                                        className="btn btn-success btn-sm"
-                                                        onClick={() => handleConfirm(sale.id)}
-                                                        title={t('sales.provesti', 'Провести')}
-                                                    >
-                                                        ✓
-                                                    </button>
-                                                </>
-                                            )}
-                                            {sale.status === 'confirmed' && (
-                                                <button
-                                                    className="btn btn-info btn-sm"
-                                                    onClick={async () => {
-                                                        try {
-                                                            const res = await salesAPI.getById(sale.id);
-                                                            setSaleForReceipt(res.data.sale);
-                                                            setShowReceiptModal(true);
-                                                        } catch (err) {
-                                                            console.error('Error loading sale:', err);
-                                                            toast.error('Ошибка загрузки чека');
-                                                        }
-                                                    }}
-                                                    title={t('sales.pechat_cheka', 'Печать чека')}
-                                                >
-                                                    <Printer size={16} />
-                                                </button>
-                                            )}
-                                            <button
-                                                className="btn btn-danger btn-sm"
-                                                onClick={() => handleDelete(sale.id)}
-                                                title={t('sales.udalit', 'Удалить')}
-                                                disabled={sale.status !== 'draft'}
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
-
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px' }}>
+                <div style={{ background: 'var(--bg-card, #1a1a2e)', borderRadius: '16px', border: '1px solid rgba(123,47,247,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', marginBottom: '20px', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
+                    <div onClick={e => e.stopPropagation()}>
                         <div className="modal-header" style={{ padding: '12px 20px' }}>
                             <h2 style={{ fontSize: '18px', margin: 0 }}>{editingSale ? t('sales.editSale', 'Редактирование продажи') : t('sales.newSale')}</h2>
                             <button 
@@ -1198,39 +1110,9 @@ function Sales() {
                     </div>
                 </div>
             )}
-
-            {/* Receipt Printer Modal */}
-            <ReceiptPrinter
-                sale={saleForReceipt}
-                isOpen={showReceiptModal}
-                onClose={() => {
-                    setShowReceiptModal(false);
-                    setSaleForReceipt(null);
-                }}
-            />
-
-            {/* QR Payment Modal */}
-            <QRPaymentModal
-                isOpen={showQRPayment}
-                onClose={() => setShowQRPayment(false)}
-                amount={qrPaymentData.amount}
-                orderId={qrPaymentData.orderId}
-                onPaymentConfirmed={(payment) => {
-                    console.log('[SALES] QR Payment confirmed:', payment);
-                    setFormData(prev => ({
-                        ...prev,
-                        notes: `${prev.notes} | Оплата через ${payment.system.toUpperCase()}`
-                    }));
-                    toast.info(`✅ Оплата через ${payment.system.toUpperCase()} подтверждена!`);
-                }}
-            />
-
-
-
-            {/* ══════════════ Режим «Продажа по сканеру» ══════════════ */}
             {showScannerMode && (
-                <div className="modal-overlay" style={{ zIndex: 9999 }} onClick={() => setShowScannerMode(false)}>
-                    <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', height: '80vh', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ background: 'var(--bg-card, #1a1a2e)', borderRadius: '16px', border: '1px solid rgba(16,185,129,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', marginBottom: '20px', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
+                    <div onClick={e => e.stopPropagation()} style={{ height: '70vh', display: 'flex', flexDirection: 'column' }}>
                         {/* Шапка */}
                         <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1563,6 +1445,124 @@ function Sales() {
                     </div>
                 </div>
             )}
+            <div className="card">
+                {loading ? (
+                    <div className="loading-container">
+                        <div className="spinner"></div>
+                    </div>
+                ) : sales.length === 0 ? (
+                    <div className="empty-state">
+                        <ShoppingCart size={64} className="text-muted" />
+                        <h3>{t('sales.noSales', 'Продажи не найдены')}</h3>
+                        <p className="text-muted">{t('sales.createFirst', 'Создайте первый документ продажи')}</p>
+                    </div>
+                ) : (
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>{t('sales.number', 'Номер')}</th>
+                                <th>{t('sales.date', 'Дата')}</th>
+                                <th>{t('sales.counterparty', 'Контрагент')}</th>
+                                <th>{t('sales.warehouse', 'Склад')}</th>
+                                <th>{t('sales.amount', 'Сумма')}</th>
+                                <th>{t('common.status')}</th>
+                                <th style={{ width: '150px' }}>{t('common.actions')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sales.map((sale) => (
+                                <tr key={sale.id}>
+                                    <td><code>{sale.document_number}</code></td>
+                                    <td>{new Date(sale.document_date).toLocaleDateString('ru-RU')}</td>
+                                    <td>{sale.counterparty_name || '—'}</td>
+                                    <td>{sale.warehouse_name || '—'}</td>
+                                    <td><strong>{formatCurrency(sale.final_amount)}</strong></td>
+                                    <td>{getStatusBadge(sale.status)}</td>
+                                    <td>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {sale.status === 'draft' && (
+                                                <>
+                                                    <button
+                                                        className="btn btn-warning btn-sm"
+                                                        onClick={() => handleEdit(sale)}
+                                                        title={t('sales.redaktirovat', 'Редактировать')}
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-success btn-sm"
+                                                        onClick={() => handleConfirm(sale.id)}
+                                                        title={t('sales.provesti', 'Провести')}
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                </>
+                                            )}
+                                            {sale.status === 'confirmed' && (
+                                                <button
+                                                    className="btn btn-info btn-sm"
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await salesAPI.getById(sale.id);
+                                                            setSaleForReceipt(res.data.sale);
+                                                            setShowReceiptModal(true);
+                                                        } catch (err) {
+                                                            console.error('Error loading sale:', err);
+                                                            toast.error('Ошибка загрузки чека');
+                                                        }
+                                                    }}
+                                                    title={t('sales.pechat_cheka', 'Печать чека')}
+                                                >
+                                                    <Printer size={16} />
+                                                </button>
+                                            )}
+                                            <button
+                                                className="btn btn-danger btn-sm"
+                                                onClick={() => handleDelete(sale.id)}
+                                                title={t('sales.udalit', 'Удалить')}
+                                                disabled={sale.status !== 'draft'}
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+
+
+            {/* Receipt Printer Modal */}
+            <ReceiptPrinter
+                sale={saleForReceipt}
+                isOpen={showReceiptModal}
+                onClose={() => {
+                    setShowReceiptModal(false);
+                    setSaleForReceipt(null);
+                }}
+            />
+
+            {/* QR Payment Modal */}
+            <QRPaymentModal
+                isOpen={showQRPayment}
+                onClose={() => setShowQRPayment(false)}
+                amount={qrPaymentData.amount}
+                orderId={qrPaymentData.orderId}
+                onPaymentConfirmed={(payment) => {
+                    console.log('[SALES] QR Payment confirmed:', payment);
+                    setFormData(prev => ({
+                        ...prev,
+                        notes: `${prev.notes} | Оплата через ${payment.system.toUpperCase()}`
+                    }));
+                    toast.info(`✅ Оплата через ${payment.system.toUpperCase()} подтверждена!`);
+                }}
+            />
+
+
+
+            {/* ══════════════ Режим «Продажа по сканеру» ══════════════ */}
 
             {/* ══════════════ Модал карты лояльности ══════════════ */}
             {showLoyaltyModal && (
