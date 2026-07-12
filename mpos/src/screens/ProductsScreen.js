@@ -18,11 +18,48 @@ export default function ProductsScreen({ navigation }) {
     const [favorites, setFavorites] = useState([]);
     const [viewMode, setViewMode] = useState('all');
 
+    const [isAdmin, setIsAdmin] = useState(false);
+
     useEffect(() => {
-        loadProducts();
-        loadCategories();
         loadFavorites();
-    }, []);
+        loadUserRole();
+
+        const unsubscribe = navigation.addListener('focus', () => {
+            loadProducts();
+            loadCategories();
+        });
+        return unsubscribe;
+    }, [navigation]);
+
+    useEffect(() => {
+        if (isAdmin) {
+            navigation.setOptions({
+                headerRight: () => (
+                    <IconButton
+                        icon="plus"
+                        iconColor={colors.text}
+                        onPress={() => navigation.navigate('ProductEdit', { existingProducts: products })}
+                    />
+                ),
+            });
+        } else {
+            navigation.setOptions({
+                headerRight: null,
+            });
+        }
+    }, [isAdmin, products, colors, navigation]);
+
+    const loadUserRole = async () => {
+        try {
+            const userData = await AsyncStorage.getItem('user');
+            if (userData) {
+                const u = JSON.parse(userData);
+                setIsAdmin(u.role === 'admin' || u.role === 'Администратор');
+            }
+        } catch (e) {
+            console.log('Error loading user role:', e);
+        }
+    };
 
     const loadFavorites = async () => {
         try {
@@ -115,11 +152,20 @@ export default function ProductsScreen({ navigation }) {
                             </Paragraph>
                         )}
                     </View>
-                    <IconButton
-                        icon={favorites.includes(item.id) ? "star" : "star-outline"}
-                        iconColor={favorites.includes(item.id) ? colors.warning : colors.textSecondary}
-                        onPress={() => toggleFavorite(item.id)}
-                    />
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        {isAdmin && (
+                            <IconButton
+                                icon="pencil"
+                                iconColor={colors.primary}
+                                onPress={() => navigation.navigate('ProductEdit', { product: item, existingProducts: products })}
+                            />
+                        )}
+                        <IconButton
+                            icon={favorites.includes(item.id) ? "star" : "star-outline"}
+                            iconColor={favorites.includes(item.id) ? colors.warning : colors.textSecondary}
+                            onPress={() => toggleFavorite(item.id)}
+                        />
+                    </View>
                 </View>
                 <View style={styles.productFooter}>
                     <Title style={{ color: colors.success }}>{formatCurrency(item.price_sale)}</Title>

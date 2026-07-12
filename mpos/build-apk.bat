@@ -44,9 +44,9 @@ if !ERRORLEVEL! EQU 0 (
     echo ================================
     echo BUILD SUCCESSFUL!
     echo ================================
-    copy /Y "%BUILD_DIR%\android\app\build\outputs\apk\release\app-release.apk" "%SRC%SmartPOS-v4.0.0.apk"
+    copy /Y "%BUILD_DIR%\android\app\build\outputs\apk\release\app-release.apk" "%SRC%SmartPOS-v4.2.4.apk"
     echo.
-    echo APK saved to: %SRC%SmartPOS-v4.0.0.apk
+    echo APK saved to: %SRC%SmartPOS-v4.2.4.apk
 ) else (
     echo.
     echo BUILD FAILED!

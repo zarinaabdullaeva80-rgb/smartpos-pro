@@ -2,7 +2,7 @@
   "expo": {
     "name": "SmartPOS Pro Mobile",
     "slug": "1c-pos",
-    "version": "4.1.1",
+    "version": "4.2.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -30,7 +30,7 @@
         "backgroundColor": "#0f172a"
       },
       "package": "com.company.accounting_pos",
-      "versionCode": 42,
+      "versionCode": 44,
       "permissions": [
         "CAMERA",
         "INTERNET",

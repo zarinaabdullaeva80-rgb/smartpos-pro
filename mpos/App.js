@@ -32,6 +32,7 @@ import SyncScreen from './src/screens/SyncScreen';
 import LoyaltyScreen from './src/screens/LoyaltyScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
 import LicenseScreen from './src/screens/LicenseScreen';
+import ProductEditScreen from './src/screens/ProductEditScreen';
 
 // Context & Services
 import { ThemeProvider, useTheme, COLORS } from './src/context/ThemeContext';
@@ -229,6 +230,7 @@ function AppNavigator({ onLogout }) {
                                     <Stack.Screen name="Loyalty" component={LoyaltyScreen} options={{ title: 'Лояльность' }} />
                                     <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Уведомления' }} />
                                     <Stack.Screen name="License" component={LicenseScreen} options={{ title: 'Лицензия' }} />
+                                    <Stack.Screen name="ProductEdit" component={ProductEditScreen} options={{ title: 'Товар' }} />
                                 </>
                             )}
                         </Stack.Navigator>

@@ -216,6 +216,8 @@ export const productsAPI = {
         },
         'Products.getById'
     ),
+    create: (data) => api.post('/products', data),
+    update: (id, data) => api.put(`/products/${id}`, data),
     // Cache products when online
     cacheAll: async () => {
         try {
