@@ -776,7 +776,7 @@ export async function initDatabase(pool) {
             const adminResult = await pool.query(`
                 INSERT INTO users (username, email, password_hash, full_name, role, is_active, user_level, user_type)
                 VALUES ('admin', 'admin@smartpos.local', $1, 'Администратор', 'Администратор', true, 'admin', 'super_admin')
-                ON CONFLICT (username) DO NOTHING
+                ON CONFLICT DO NOTHING
                 RETURNING id
             `, [adminPasswordHash]);
 
@@ -1019,7 +1019,7 @@ async function addMissingColumns(pool) {
             const adminResult = await pool.query(`
                 INSERT INTO users (username, email, password_hash, full_name, role, is_active, user_level, user_type)
                 VALUES ('admin', 'admin@smartpos.local', $1, 'Администратор', 'Администратор', true, 'admin', 'owner')
-                ON CONFLICT (username) DO NOTHING
+                ON CONFLICT DO NOTHING
                 RETURNING id
             `, [adminPasswordHash]);
 

@@ -1903,9 +1903,12 @@ router.post('/sync', async (req, res) => {
             INSERT INTO users (username, email, password_hash, full_name, role,
                                license_id, organization_id, user_type, is_active)
             VALUES ($1, $2, $3, $4, '\u0410\u0434\u043c\u0438\u043d\u0438\u0441\u0442\u0440\u0430\u0442\u043e\u0440', $5, $6, 'owner', true)
-            ON CONFLICT (username) DO UPDATE SET
-                password_hash = EXCLUDED.password_hash,
-                organization_id = EXCLUDED.organization_id,
+            ON CONFLICT (username, organization_id) DO UPDATE SET
+                password_hash = CASE
+                    WHEN EXCLUDED.password_hash IS NULL OR EXCLUDED.password_hash = '' OR EXCLUDED.password_hash = 'SYSTEM_TEMP_HASH'
+                    THEN users.password_hash
+                    ELSE EXCLUDED.password_hash
+                END,
                 license_id = EXCLUDED.license_id,
                 is_active = true`, [
             customer_username,
@@ -2143,11 +2146,14 @@ router.post('/sync-employee', async (req, res) => {
             INSERT INTO users (username, email, password_hash, full_name, role,
                                organization_id, license_id, user_type, is_active)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
-            ON CONFLICT (username) DO UPDATE SET
-                password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+            ON CONFLICT (username, organization_id) DO UPDATE SET
+                password_hash = CASE
+                    WHEN EXCLUDED.password_hash IS NULL OR EXCLUDED.password_hash = '' OR EXCLUDED.password_hash = 'SYSTEM_TEMP_HASH'
+                    THEN users.password_hash
+                    ELSE EXCLUDED.password_hash
+                END,
                 full_name = COALESCE(EXCLUDED.full_name, users.full_name),
                 email = COALESCE(EXCLUDED.email, users.email),
-                organization_id = EXCLUDED.organization_id,
                 license_id = EXCLUDED.license_id,
                 user_type = EXCLUDED.user_type,
                 is_active = true,
