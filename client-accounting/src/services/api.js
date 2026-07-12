@@ -955,6 +955,7 @@ export const loyaltyAPI = {
     getBalance: (customerId) => api.get(`/loyalty/balance/${customerId}`),
     getTransactions: (customerId) => api.get(`/loyalty/transactions/${customerId}`),
     getBarcode: (customerId) => api.get(`/loyalty/card/${customerId}/barcode`),
+    generateBarcode: (text) => api.get('/loyalty/barcode/generate', { params: { text } }),
     getQR: (customerId) => api.get(`/loyalty/card/${customerId}/qr`),
     getGiftCertificates: () => api.get('/loyalty/certificates'),
     createCertificate: (data) => api.post('/loyalty/certificates', data)

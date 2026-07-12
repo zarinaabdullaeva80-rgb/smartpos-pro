@@ -177,6 +177,34 @@ router.get('/card/:customerId/qr', authenticateToken, async (req, res) => {
 });
 
 /**
+ * Генерация штрихкода по тексту
+ */
+router.get('/barcode/generate', authenticateToken, async (req, res) => {
+    try {
+        const { text } = req.query;
+        if (!text) {
+            return res.status(400).json({ error: 'Не указан текст для штрихкода' });
+        }
+
+        const barcodeBuffer = await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: text,
+            scale: 3,
+            height: 15,
+            includetext: true,
+            textxalign: 'center'
+        });
+
+        res.json({
+            barcode: `data:image/png;base64,${barcodeBuffer.toString('base64')}`
+        });
+    } catch (error) {
+        console.error('Barcode generation error:', error);
+        res.status(500).json({ error: 'Ошибка генерации штрихкода' });
+    }
+});
+
+/**
  * Генерация штрихкода карты
  */
 router.get('/card/:customerId/barcode', authenticateToken, async (req, res) => {

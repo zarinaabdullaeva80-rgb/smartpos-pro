@@ -25,6 +25,7 @@ function LoyaltyCards() {
     const [showBatchPrint, setShowBatchPrint] = useState(false);
     const [newCard, setNewCard] = useState({ name: '', phone: '', email: '' });
     const [batchCount, setBatchCount] = useState(10);
+    const [generatingBatch, setGeneratingBatch] = useState(false);
     const printRef = useRef();
     const [barcodeImage, setBarcodeImage] = useState(null);
 
@@ -134,20 +135,25 @@ function LoyaltyCards() {
                         width: 85.6mm; height: 53.98mm;
                         background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%);
                         border-radius: 10px;
-                        padding: 6mm 8mm;
+                        padding: 4mm 6mm;
                         box-sizing: border-box;
                         color: white;
                         position: relative;
                         page-break-inside: avoid;
                         overflow: hidden;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
                     }
-                    .card-logo { font-size: 14px; font-weight: bold; }
+                    .card-logo { font-size: 13px; font-weight: bold; }
                     .card-logo span { color: #ffd700; }
-                    .card-number { font-size: 12px; font-family: monospace; letter-spacing: 2px; margin: 4mm 0 2mm; }
-                    .card-owner { font-size: 10px; text-transform: uppercase; opacity: 0.9; }
-                    .card-level { font-size: 9px; color: #ffd700; margin-top: 1mm; }
-                    .card-balance { position: absolute; bottom: 5mm; left: 8mm; font-size: 9px; opacity: 0.7; }
-                    .card-cashback { position: absolute; bottom: 5mm; right: 8mm; background: rgba(255,215,0,0.2); padding: 1mm 3mm; border-radius: 3px; font-size: 9px; color: #ffd700; }
+                    .card-number { font-size: 12px; font-family: monospace; letter-spacing: 2px; margin-top: 2mm; }
+                    .card-owner { font-size: 9px; text-transform: uppercase; opacity: 0.9; }
+                    .card-level { font-size: 8px; color: #ffd700; }
+                    .barcode-box { background: white; padding: 1mm 2mm; border-radius: 4px; margin-top: 1mm; text-align: center; display: flex; justify-content: center; align-items: center; }
+                    .barcode-box img { width: 100%; max-height: 10mm; object-fit: contain; }
+                    .card-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 8px; opacity: 0.9; margin-top: 1mm; }
+                    .card-cashback { background: rgba(255,215,0,0.2); padding: 0.5mm 2mm; border-radius: 2px; color: #ffd700; font-weight: bold; }
                 </style>
             </head>
             <body>
@@ -155,12 +161,23 @@ function LoyaltyCards() {
                 <div class="cards-grid">
                     ${cardsToprint.map(c => `
                         <div class="card-item">
-                            <div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
-                            <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
-                            <div class="card-owner">${c.name || '____________________'}</div>
-                            <div class="card-level">${c.level}</div>
-                            <div class="card-balance">Баланс: ${new Intl.NumberFormat('ru-RU').format(c.balance || 0)} баллов</div>
-                            <div class="card-cashback">Кэшбек ${settings.cashback_percent || 2}%</div>
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
+                                    <div class="card-level">${c.level}</div>
+                                </div>
+                                <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
+                                <div class="card-owner">${c.name || '____________________'}</div>
+                            </div>
+                            
+                            <div class="barcode-box">
+                                ${c.barcode ? `<img src="${c.barcode}" alt="barcode" />` : '<div style="height:10mm;color:#999;font-size:8px">Barcode</div>'}
+                            </div>
+
+                            <div class="card-footer-row">
+                                <div>Баланс: ${new Intl.NumberFormat('ru-RU').format(c.balance || 0)} баллов</div>
+                                <div class="card-cashback">Кэшбек ${settings.cashback_percent || 2}%</div>
+                            </div>
                         </div>
                     `).join('')}
                 </div>
@@ -168,7 +185,7 @@ function LoyaltyCards() {
             </html>
         `);
         printWindow.document.close();
-        setTimeout(() => printWindow.print(), 300);
+        setTimeout(() => printWindow.print(), 500);
     };
 
     const selectCustomer = async (customer) => {
@@ -654,13 +671,34 @@ function LoyaltyCards() {
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowBatchPrint(false)}>{t('loyaltycards.otmena', 'Отмена')}</button>
-                            <button className="btn btn-primary" onClick={() => {
-                                const newCards = generateBatchBarcodes();
-                                printBatchCards(newCards);
-                                setShowBatchPrint(false);
-                            }}>
-                                <Printer size={16} /> Создать и распечатать
+                            <button className="btn btn-secondary" onClick={() => setShowBatchPrint(false)} disabled={generatingBatch}>{t('loyaltycards.otmena', 'Отмена')}</button>
+                            <button 
+                                className="btn btn-primary" 
+                                disabled={generatingBatch}
+                                onClick={async () => {
+                                    setGeneratingBatch(true);
+                                    try {
+                                        const newCards = generateBatchBarcodes();
+                                        const loadedCards = await Promise.all(newCards.map(async (c) => {
+                                            try {
+                                                const res = await loyaltyAPI.generateBarcode(c.number);
+                                                return { ...c, barcode: res.data?.barcode };
+                                            } catch (e) {
+                                                console.error('Error generating barcode for:', c.number, e);
+                                                return c;
+                                            }
+                                        }));
+                                        printBatchCards(loadedCards);
+                                        setShowBatchPrint(false);
+                                    } catch (err) {
+                                        console.error('Batch generation error:', err);
+                                        toast.error('Ошибка генерации штрихкодов');
+                                    } finally {
+                                        setGeneratingBatch(false);
+                                    }
+                                }}
+                            >
+                                {generatingBatch ? 'Генерация...' : <><Printer size={16} /> {t('loyaltycards.sozdat_i_raspechatat', 'Создать и распечатать')}</>}
                             </button>
                         </div>
                     </div>
