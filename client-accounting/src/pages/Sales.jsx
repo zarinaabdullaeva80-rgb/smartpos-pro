@@ -821,8 +821,8 @@ function Sales() {
 
             {showModal && (
                 <div style={{ background: 'var(--bg-card, #1a1a2e)', borderRadius: '16px', border: '1px solid rgba(123,47,247,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', marginBottom: '20px', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
-                    <div onClick={e => e.stopPropagation()}>
-                        <div className="modal-header" style={{ padding: '12px 20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'linear-gradient(135deg, rgba(123,47,247,0.05), rgba(0,102,255,0.03))' }}>
                             <h2 style={{ fontSize: '18px', margin: 0 }}>{editingSale ? t('sales.editSale', 'Редактирование продажи') : t('sales.newSale')}</h2>
                             <button 
                                 onClick={() => setShowModal(false)} 
