@@ -35,6 +35,11 @@ function Sales() {
     const [returnItems, setReturnItems] = useState([{ product_id: '', quantity: 1, price: 0 }]);
     const [returnReason, setReturnReason] = useState('');
     const [returnNotes, setReturnNotes] = useState('');
+    const [returnSearchNumber, setReturnSearchNumber] = useState('');
+    const [returnFilterDate, setReturnFilterDate] = useState('');
+    const [returnFilterTime, setReturnFilterTime] = useState('');
+    const [selectedReturnSale, setSelectedReturnSale] = useState(null);
+    const [loadingReturnSale, setLoadingReturnSale] = useState(false);
 
     // ── Режим сканера ──
     const [showScannerMode, setShowScannerMode] = useState(false);
@@ -334,27 +339,85 @@ function Sales() {
     };
 
     // Обработка отдельного возврата
-    const handleStandaloneReturn = async () => {
-        const validItems = returnItems.filter(i => i.product_id && i.quantity > 0 && i.price > 0);
-        if (validItems.length === 0) {
-            toast.info('Добавьте хотя бы одну позицию с товаром, количеством и ценой');
-            return;
+    const handleConfirmReturn = async () => {
+        if (!selectedReturnSale) return;
+
+        if (selectedReturnSale.id === 'standalone') {
+            const validItems = returnItems.filter(i => i.product_id && i.quantity > 0 && i.price > 0);
+            if (validItems.length === 0) {
+                toast.info('Добавьте хотя бы одну позицию с товаром, количеством и ценой');
+                return;
+            }
+            try {
+                await api.post('/returns/standalone', {
+                    items: validItems.map(i => ({
+                        product_id: parseInt(i.product_id),
+                        quantity: parseInt(i.quantity),
+                        price: parseFloat(i.price)
+                    })),
+                    reason: returnReason || 'Возврат товара',
+                    notes: returnNotes
+                });
+                toast.success('✅ Возврат успешно оформлен!');
+                setShowReturnModal(false);
+                setSelectedReturnSale(null);
+                setReturnItems([{ product_id: '', quantity: 1, price: 0 }]);
+                setReturnReason('');
+                setReturnNotes('');
+                setRefreshTrigger(prev => prev + 1);
+            } catch (error) {
+                toast.error('❌ ' + (error.response?.data?.error || 'Ошибка оформления возврата'));
+            }
+        } else {
+            const selectedItems = returnItems.filter(i => i.selected && i.returnQuantity > 0);
+            if (selectedItems.length === 0) {
+                toast.info('Выберите хотя бы одну позицию для возврата');
+                return;
+            }
+            try {
+                await api.post('/returns', {
+                    sale_id: selectedReturnSale.id,
+                    items: selectedItems.map(i => ({
+                        product_id: parseInt(i.product_id),
+                        quantity: parseInt(i.returnQuantity),
+                        price: parseFloat(i.price)
+                    })),
+                    reason: returnReason || 'Возврат по чеку',
+                    notes: returnNotes
+                });
+                toast.success('✅ Возврат успешно оформлен!');
+                setShowReturnModal(false);
+                setSelectedReturnSale(null);
+                setReturnItems([{ product_id: '', quantity: 1, price: 0 }]);
+                setReturnReason('');
+                setReturnNotes('');
+                setRefreshTrigger(prev => prev + 1);
+            } catch (error) {
+                toast.error('❌ ' + (error.response?.data?.error || 'Ошибка оформления возврата'));
+            }
         }
+    };
+
+    const selectSaleForReturn = async (sale) => {
+        setSelectedReturnSale(sale);
+        setLoadingReturnSale(true);
         try {
-            await api.post('/returns/standalone', {
-                items: validItems.map(i => ({
-                    product_id: parseInt(i.product_id),
-                    quantity: parseInt(i.quantity),
-                    price: parseFloat(i.price)
-                })),
-                reason: returnReason || 'Возврат товара',
-                notes: returnNotes
-            });
-            toast.success('✅ Возврат успешно оформлен!');
-            setShowReturnModal(false);
-            setRefreshTrigger(prev => prev + 1);
+            const response = await salesAPI.getById(sale.id);
+            const saleData = response.data.sale;
+            setReturnItems(saleData.items.map(item => ({
+                product_id: item.product_id,
+                product_name: item.product_name || `Товар ID ${item.product_id}`,
+                quantity: parseFloat(item.quantity),
+                returnQuantity: parseFloat(item.quantity),
+                price: parseFloat(item.price),
+                selected: true
+            })));
         } catch (error) {
-            toast.error('❌ ' + (error.response?.data?.error || 'Ошибка оформления возврата'));
+            console.error('Ошибка загрузки продажи для возврата:', error);
+            toast.error('Не удалось загрузить позиции продажи');
+            setSelectedReturnSale(null);
+        } finally {
+            setLoadingReturnSale(false);
         }
     };
 
@@ -456,6 +519,26 @@ function Sales() {
             toast.error(error.response?.data?.error || 'Ошибка списания');
         }
     };
+    const filteredReturnSales = sales.filter(sale => {
+        if (sale.status !== 'confirmed') return false;
+
+        if (returnSearchNumber.trim()) {
+            const query = returnSearchNumber.toLowerCase();
+            if (!sale.document_number.toLowerCase().includes(query)) return false;
+        }
+
+        if (returnFilterDate) {
+            const saleDate = new Date(sale.document_date).toISOString().split('T')[0];
+            if (saleDate !== returnFilterDate) return false;
+        }
+
+        if (returnFilterTime) {
+            const saleTime = new Date(sale.document_date).toTimeString().split(' ')[0].substring(0, 5);
+            if (saleTime !== returnFilterTime) return false;
+        }
+
+        return true;
+    });
 
     return (
         <div className="sales-page fade-in">
@@ -486,7 +569,18 @@ function Sales() {
                     >
                         🔄 {t('common.apply', 'Обновить')}
                     </button>
-                    <button className="btn btn-warning" onClick={() => setShowReturnModal(true)} style={{ color: '#fff' }}>
+                    <button 
+                        className="btn btn-warning" 
+                        onClick={() => {
+                            setShowReturnModal(true);
+                            setSelectedReturnSale(null);
+                            setReturnItems([]);
+                            setReturnSearchNumber('');
+                            setReturnFilterDate('');
+                            setReturnFilterTime('');
+                        }} 
+                        style={{ color: '#fff' }}
+                    >
                         <RotateCcw size={20} />
                         {t('sales.return', 'Возврат')}
                     </button>
@@ -603,7 +697,34 @@ function Sales() {
                     <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px' }}>
                         <div className="modal-header" style={{ padding: '12px 20px' }}>
                             <h2 style={{ fontSize: '18px', margin: 0 }}>{editingSale ? t('sales.editSale', 'Редактирование продажи') : t('sales.newSale')}</h2>
-                            <button onClick={() => setShowModal(false)} className="btn-close">×</button>
+                            <button 
+                                onClick={() => setShowModal(false)} 
+                                style={{
+                                    background: 'linear-gradient(135deg, #ff0080 0%, #7b2ff7 50%, #0066ff 100%)',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    width: '32px',
+                                    height: '32px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 0 10px rgba(255, 0, 128, 0.3)',
+                                    transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                    e.currentTarget.style.boxShadow = '0 0 15px rgba(255, 0, 128, 0.6)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 128, 0.3)';
+                                }}
+                                title={t('common.close', 'Закрыть')}
+                            >
+                                <X size={18} />
+                            </button>
                         </div>
 
                         <form onSubmit={handleSubmit}>
@@ -889,68 +1010,352 @@ function Sales() {
                 }}
             />
 
-            {/* Standalone Return Modal */}
+            {/* Standalone/Sale-based Return Modal */}
             {showReturnModal && (
-                <div className="modal-overlay" onClick={() => setShowReturnModal(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-                        <div className="modal-header">
-                            <h2>{t('sales.vozvrat_tovarov', '🔄 Возврат товаров')}</h2>
-                            <button className="btn-icon" onClick={() => setShowReturnModal(false)}><X size={20} /></button>
+                <div className="modal-overlay" onClick={() => {
+                    setShowReturnModal(false);
+                    setSelectedReturnSale(null);
+                    setReturnItems([]);
+                }}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', width: '95%' }}>
+                        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            <h2 style={{ margin: 0, fontSize: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <RotateCcw size={20} color="var(--color-primary)" />
+                                {selectedReturnSale ? (
+                                    selectedReturnSale.id === 'standalone' ? 'Свободный возврат товаров' : `Возврат по продаже ${selectedReturnSale.document_number}`
+                                ) : 'Оформление возврата'}
+                            </h2>
+                            <button 
+                                onClick={() => {
+                                    setShowReturnModal(false);
+                                    setSelectedReturnSale(null);
+                                    setReturnItems([]);
+                                }} 
+                                style={{
+                                    background: 'linear-gradient(135deg, #ff0080 0%, #7b2ff7 50%, #0066ff 100%)',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    width: '32px',
+                                    height: '32px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 0 10px rgba(255, 0, 128, 0.3)',
+                                    transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.transform = 'scale(1.1)';
+                                    e.currentTarget.style.boxShadow = '0 0 15px rgba(255, 0, 128, 0.6)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                    e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 128, 0.3)';
+                                }}
+                            >
+                                <X size={18} />
+                            </button>
                         </div>
-                        <div className="modal-body">
-                            <div className="form-group">
-                                <label>{t('sales.prichina_vozvrata', 'Причина возврата')}</label>
-                                <select value={returnReason} onChange={e => setReturnReason(e.target.value)}>
-                                    <option value="">{t('sales.vyberite_prichinu', 'Выберите причину')}</option>
-                                    <option value="Брак">{t('sales.brak', 'Брак')}</option>
-                                    <option value="Не подошёл товар">{t('sales.ne_podoshyol_tovar', 'Не подошёл товар')}</option>
-                                    <option value="Ошибка кассира">{t('sales.oshibka_kassira', 'Ошибка кассира')}</option>
-                                    <option value="Другое">{t('sales.drugoe', 'Другое')}</option>
-                                </select>
-                            </div>
+                        <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', padding: '20px' }}>
+                            {selectedReturnSale ? (
+                                selectedReturnSale.id === 'standalone' ? (
+                                    // --- Режим свободного возврата (оригинальная логика) ---
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255, 255, 255, 0.05)', padding: '10px 15px', borderRadius: '8px' }}>
+                                            <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)' }}>
+                                                Оформление возврата без привязки к конкретной продаже
+                                            </span>
+                                            <button 
+                                                className="btn btn-secondary btn-sm" 
+                                                onClick={() => {
+                                                    setSelectedReturnSale(null);
+                                                    setReturnItems([]);
+                                                }}
+                                            >
+                                                🔄 Найти продажу
+                                            </button>
+                                        </div>
 
-                            <h4>{t('sales.pozitsii_vozvrata', 'Позиции возврата')}</h4>
-                            {returnItems.map((item, index) => (
-                                <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 40px', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
-                                    <div className="form-group" style={{ margin: 0 }}>
-                                        <label style={{ fontSize: '12px' }}>{t('sales.tovar', 'Товар')}</label>
-                                        <select value={item.product_id} onChange={e => updateReturnItem(index, 'product_id', e.target.value)}>
-                                            <option value="">{t('sales.vyberite_tovar', 'Выберите товар')}</option>
-                                            {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                        </select>
+                                        <div className="form-group">
+                                            <label>{t('sales.prichina_vozvrata', 'Причина возврата')}</label>
+                                            <select value={returnReason} onChange={e => setReturnReason(e.target.value)}>
+                                                <option value="">{t('sales.vyberite_prichinu', 'Выберите причину')}</option>
+                                                <option value="Брак">{t('sales.brak', 'Брак')}</option>
+                                                <option value="Не подошёл товар">{t('sales.ne_podoshyol_tovar', 'Не подошёл товар')}</option>
+                                                <option value="Ошибка кассира">{t('sales.oshibka_kassira', 'Ошибка кассира')}</option>
+                                                <option value="Другое">{t('sales.drugoe', 'Другое')}</option>
+                                            </select>
+                                        </div>
+
+                                        <h4>{t('sales.pozitsii_vozvrata', 'Позиции возврата')}</h4>
+                                        {returnItems.map((item, index) => (
+                                            <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 40px', gap: '8px', marginBottom: '8px', alignItems: 'end' }}>
+                                                <div className="form-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '12px' }}>{t('sales.tovar', 'Товар')}</label>
+                                                    <select value={item.product_id} onChange={e => updateReturnItem(index, 'product_id', e.target.value)}>
+                                                        <option value="">{t('sales.vyberite_tovar', 'Выберите товар')}</option>
+                                                        {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="form-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '12px' }}>{t('sales.kol_vo', 'Кол-во')}</label>
+                                                    <input type="number" min="1" value={item.quantity} onChange={e => updateReturnItem(index, 'quantity', e.target.value)} />
+                                                </div>
+                                                <div className="form-group" style={{ margin: 0 }}>
+                                                    <label style={{ fontSize: '12px' }}>{t('sales.tsena', 'Цена')}</label>
+                                                    <input type="number" min="0" value={item.price} onChange={e => updateReturnItem(index, 'price', e.target.value)} />
+                                                </div>
+                                                <button className="btn btn-danger btn-sm" onClick={() => removeReturnItem(index)} style={{ height: '36px' }}>
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button className="btn btn-secondary btn-sm" onClick={addReturnItem} style={{ marginTop: '8px' }}>
+                                            <Plus size={14} /> Добавить позицию
+                                        </button>
+
+                                        <div className="form-group" style={{ marginTop: '16px' }}>
+                                            <label>{t('sales.zametki', 'Заметки')}</label>
+                                            <textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)} placeholder="Дополнительные заметки..." rows={2} />
+                                        </div>
+
+                                        <div style={{ marginTop: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
+                                            <strong>{t('sales.itogo_k_vozvratu', 'Итого к возврату:')} </strong>
+                                            {formatCurrency(returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0))}
+                                        </div>
                                     </div>
-                                    <div className="form-group" style={{ margin: 0 }}>
-                                        <label style={{ fontSize: '12px' }}>{t('sales.kol_vo', 'Кол-во')}</label>
-                                        <input type="number" min="1" value={item.quantity} onChange={e => updateReturnItem(index, 'quantity', e.target.value)} />
+                                ) : (
+                                    // --- Режим возврата по чеку ---
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: 'rgba(255, 0, 128, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255, 0, 128, 0.2)' }}>
+                                            <div>
+                                                <h3 style={{ margin: 0, color: 'var(--color-primary-light)', fontSize: '16px' }}>Продажа {selectedReturnSale.document_number}</h3>
+                                                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                                    От {new Date(selectedReturnSale.document_date).toLocaleString('ru-RU')} на сумму <strong>{formatCurrency(selectedReturnSale.final_amount)}</strong>
+                                                </p>
+                                            </div>
+                                            <button 
+                                                className="btn btn-secondary btn-sm" 
+                                                onClick={() => {
+                                                    setSelectedReturnSale(null);
+                                                    setReturnItems([]);
+                                                }}
+                                            >
+                                                🔄 Найти другую
+                                            </button>
+                                        </div>
+
+                                        {loadingReturnSale ? (
+                                            <div style={{ display: 'flex', justifyContent: 'center', padding: '30px' }}>
+                                                <div className="spinner"></div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <h4 style={{ fontSize: '14px', marginBottom: '8px' }}>Выберите позиции чека для возврата:</h4>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', border: '1px solid var(--color-border)', borderRadius: '8px', padding: '10px', background: 'rgba(0,0,0,0.15)' }}>
+                                                    {returnItems.map((item, index) => (
+                                                        <div 
+                                                            key={index} 
+                                                            style={{ 
+                                                                display: 'grid', 
+                                                                gridTemplateColumns: '40px 1fr 120px 120px 120px', 
+                                                                gap: '12px', 
+                                                                alignItems: 'center',
+                                                                padding: '8px',
+                                                                background: item.selected ? 'rgba(255, 0, 128, 0.05)' : 'transparent',
+                                                                borderRadius: '6px',
+                                                                border: item.selected ? '1px solid rgba(255, 0, 128, 0.15)' : '1px solid transparent',
+                                                                opacity: item.selected ? 1 : 0.6,
+                                                                transition: 'all 0.15s ease'
+                                                            }}
+                                                        >
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={item.selected} 
+                                                                onChange={e => {
+                                                                    const newItems = [...returnItems];
+                                                                    newItems[index].selected = e.target.checked;
+                                                                    setReturnItems(newItems);
+                                                                }}
+                                                            />
+                                                            <div style={{ fontWeight: 500, fontSize: '13px' }}>
+                                                                {item.product_name || `ID: ${item.product_id}`}
+                                                            </div>
+                                                            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                                                                {formatCurrency(item.price)}
+                                                            </div>
+                                                            <div>
+                                                                <input 
+                                                                    type="number" 
+                                                                    min="1" 
+                                                                    max={item.quantity} 
+                                                                    value={item.returnQuantity} 
+                                                                    disabled={!item.selected}
+                                                                    onChange={e => {
+                                                                        const val = Math.min(item.quantity, Math.max(1, parseFloat(e.target.value) || 1));
+                                                                        const newItems = [...returnItems];
+                                                                        newItems[index].returnQuantity = val;
+                                                                        setReturnItems(newItems);
+                                                                    }}
+                                                                    style={{ height: '32px', padding: '4px 8px', fontSize: '12px' }}
+                                                                />
+                                                                <div style={{ fontSize: '10px', color: '#888', marginTop: '2px' }}>из {item.quantity} шт.</div>
+                                                            </div>
+                                                            <div style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '13px' }}>
+                                                                {formatCurrency((item.selected ? item.returnQuantity : 0) * item.price)}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                <div className="form-group" style={{ marginTop: '20px' }}>
+                                                    <label>Причина возврата</label>
+                                                    <select value={returnReason} onChange={e => setReturnReason(e.target.value)}>
+                                                        <option value="">Выберите причину</option>
+                                                        <option value="Брак">Брак</option>
+                                                        <option value="Не подошёл товар">Не подошёл товар</option>
+                                                        <option value="Ошибка кассира">Ошибка кассира</option>
+                                                        <option value="Другое">Другое</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="form-group">
+                                                    <label>Заметки</label>
+                                                    <textarea 
+                                                        value={returnNotes} 
+                                                        onChange={e => setReturnNotes(e.target.value)} 
+                                                        placeholder="Дополнительные заметки к возврату..." 
+                                                        rows={2} 
+                                                    />
+                                                </div>
+
+                                                <div style={{ marginTop: '16px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <strong>Итого к возврату:</strong>
+                                                    <span style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--color-primary-light)' }}>
+                                                        {formatCurrency(
+                                                            returnItems.reduce((sum, i) => sum + (i.selected ? i.returnQuantity * i.price : 0), 0)
+                                                        )}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
-                                    <div className="form-group" style={{ margin: 0 }}>
-                                        <label style={{ fontSize: '12px' }}>{t('sales.tsena', 'Цена')}</label>
-                                        <input type="number" min="0" value={item.price} onChange={e => updateReturnItem(index, 'price', e.target.value)} />
+                                )
+                            ) : (
+                                // --- Режим поиска чека по номеру, дате, времени ---
+                                <div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                                        <div className="form-group" style={{ margin: 0 }}>
+                                            <label>Номер продажи</label>
+                                            <input 
+                                                type="text" 
+                                                placeholder="ПРД-..." 
+                                                value={returnSearchNumber} 
+                                                onChange={e => setReturnSearchNumber(e.target.value)} 
+                                                style={{ height: '38px' }}
+                                            />
+                                        </div>
+                                        <div className="form-group" style={{ margin: 0 }}>
+                                            <label>Дата продажи</label>
+                                            <input 
+                                                type="date" 
+                                                value={returnFilterDate} 
+                                                onChange={e => setReturnFilterDate(e.target.value)} 
+                                                style={{ height: '38px' }}
+                                            />
+                                        </div>
+                                        <div className="form-group" style={{ margin: 0 }}>
+                                            <label>Время продажи</label>
+                                            <input 
+                                                type="time" 
+                                                value={returnFilterTime} 
+                                                onChange={e => setReturnFilterTime(e.target.value)} 
+                                                style={{ height: '38px' }}
+                                            />
+                                        </div>
                                     </div>
-                                    <button className="btn btn-danger btn-sm" onClick={() => removeReturnItem(index)} style={{ height: '36px' }}>
-                                        <Trash2 size={14} />
-                                    </button>
+
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                        <h4 style={{ margin: 0, fontSize: '15px' }}>Подходящие продажи:</h4>
+                                        {(returnSearchNumber || returnFilterDate || returnFilterTime) && (
+                                            <button 
+                                                className="btn btn-secondary btn-sm"
+                                                onClick={() => {
+                                                    setReturnSearchNumber('');
+                                                    setReturnFilterDate('');
+                                                    setReturnFilterTime('');
+                                                }}
+                                            >
+                                                Сбросить фильтры
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div style={{ minHeight: '150px', maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'rgba(0,0,0,0.2)' }}>
+                                        {filteredReturnSales.length === 0 ? (
+                                            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+                                                Продажи не найдены. Измените параметры поиска или оформите свободный возврат.
+                                            </div>
+                                        ) : (
+                                            <table className="hoverable">
+                                                <thead>
+                                                    <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                                                        <th style={{ padding: '8px 12px', fontSize: '12px' }}>Номер</th>
+                                                        <th style={{ padding: '8px 12px', fontSize: '12px' }}>Дата и время</th>
+                                                        <th style={{ padding: '8px 12px', fontSize: '12px' }}>Сумма</th>
+                                                        <th style={{ padding: '8px 12px', fontSize: '12px', textAlign: 'right' }}>Действие</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {filteredReturnSales.map(sale => {
+                                                        const d = new Date(sale.document_date);
+                                                        const dateStr = d.toLocaleDateString('ru-RU');
+                                                        const timeStr = d.toTimeString().split(' ')[0].substring(0, 5);
+                                                        return (
+                                                            <tr key={sale.id} onClick={() => selectSaleForReturn(sale)} style={{ cursor: 'pointer' }}>
+                                                                <td style={{ padding: '10px 12px' }}><code>{sale.document_number}</code></td>
+                                                                <td style={{ padding: '10px 12px' }}>{dateStr} {timeStr}</td>
+                                                                <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{formatCurrency(sale.final_amount)}</td>
+                                                                <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                                                    <button className="btn btn-primary btn-sm" style={{ padding: '4px 10px' }} onClick={(e) => { e.stopPropagation(); selectSaleForReturn(sale); }}>
+                                                                        Выбрать
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+
+                                    <div style={{ marginTop: '20px', textAlign: 'center', borderTop: '1px dashed var(--color-border)', paddingTop: '15px' }}>
+                                        <span style={{ color: 'var(--color-text-muted)', fontSize: '13px', marginRight: '10px' }}>Не нашли нужную продажу?</span>
+                                        <button 
+                                            className="btn btn-secondary btn-sm" 
+                                            onClick={() => {
+                                                setSelectedReturnSale({ id: 'standalone', document_number: 'Свободный возврат' });
+                                                setReturnItems([{ product_id: '', quantity: 1, price: 0 }]);
+                                            }}
+                                        >
+                                            Оформить свободный возврат
+                                        </button>
+                                    </div>
                                 </div>
-                            ))}
-                            <button className="btn btn-secondary btn-sm" onClick={addReturnItem} style={{ marginTop: '8px' }}>
-                                <Plus size={14} /> Добавить позицию
-                            </button>
-
-                            <div className="form-group" style={{ marginTop: '16px' }}>
-                                <label>{t('sales.zametki', 'Заметки')}</label>
-                                <textarea value={returnNotes} onChange={e => setReturnNotes(e.target.value)} placeholder="Дополнительные заметки..." rows={2} />
-                            </div>
-
-                            <div style={{ marginTop: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px' }}>
-                                <strong>{t('sales.itogo_k_vozvratu', 'Итого к возврату:')} </strong>
-                                {formatCurrency(returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0))}
-                            </div>
+                            )}
                         </div>
-                        <div className="modal-footer">
-                            <button className="btn btn-secondary" onClick={() => setShowReturnModal(false)}>{t('sales.otmena', 'Отмена')}</button>
-                            <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleStandaloneReturn}>
-                                <RotateCcw size={16} /> Оформить возврат
-                            </button>
+                        <div className="modal-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.08)', padding: '15px 20px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button className="btn btn-secondary" onClick={() => {
+                                setShowReturnModal(false);
+                                setSelectedReturnSale(null);
+                                setReturnItems([]);
+                            }}>{t('sales.otmena', 'Отмена')}</button>
+                            {selectedReturnSale && (
+                                <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleConfirmReturn}>
+                                    <RotateCcw size={16} /> Оформить возврат
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -980,8 +1385,32 @@ function Sales() {
                                 >
                                     <Volume2 size={14} />
                                 </button>
-                                <button onClick={() => setShowScannerMode(false)} className="btn btn-secondary btn-sm" style={{ padding: '6px 10px' }}>
-                                    <X size={16} />
+                                <button 
+                                    onClick={() => setShowScannerMode(false)} 
+                                    style={{
+                                        background: 'linear-gradient(135deg, #ff0080 0%, #7b2ff7 50%, #0066ff 100%)',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        width: '32px',
+                                        height: '32px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: '#fff',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 0 10px rgba(255, 0, 128, 0.3)',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.transform = 'scale(1.1)';
+                                        e.currentTarget.style.boxShadow = '0 0 15px rgba(255, 0, 128, 0.6)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.transform = 'scale(1)';
+                                        e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 128, 0.3)';
+                                    }}
+                                >
+                                    <X size={18} />
                                 </button>
                             </div>
                         </div>
