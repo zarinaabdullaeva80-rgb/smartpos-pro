@@ -3,9 +3,9 @@
  * Обеспечивает офлайн работу приложения
  */
 
-const CACHE_NAME = 'smartpos-v3.5';
-const STATIC_CACHE = 'smartpos-static-v3.5';
-const DYNAMIC_CACHE = 'smartpos-dynamic-v3.5';
+const CACHE_NAME = 'smartpos-v3.6';
+const STATIC_CACHE = 'smartpos-static-v3.6';
+const DYNAMIC_CACHE = 'smartpos-dynamic-v3.6';
 
 // Ресурсы для предварительного кэширования
 const STATIC_ASSETS = [
