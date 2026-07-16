@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI, loyaltyAPI } from '../services/api';
 import api from '../services/api';
 import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus, Scan, Volume2, AlertCircle, CreditCard } from 'lucide-react';
@@ -79,6 +79,74 @@ function Sales() {
         loadSales();
         loadFormData();
     }, [refreshTrigger]);
+
+    // Глобальный перехват сканирования штрихкода при открытом окне продажи
+    useEffect(() => {
+        if (!showModal) return;
+
+        let buffer = '';
+        let lastKeyTime = Date.now();
+
+        const handleGlobalKeyDown = (e) => {
+            // Игнорируем управляющие клавиши кроме Enter
+            if (e.key.length > 1 && e.key !== 'Enter') return;
+
+            const activeEl = document.activeElement;
+            if (activeEl && activeEl.tagName === 'INPUT' && activeEl.type !== 'text') {
+                return;
+            }
+            if (activeEl && activeEl.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            const currentTime = Date.now();
+            
+            // Если время между клавишами больше 50 мс, сбрасываем буфер (это ручной ввод человека)
+            if (currentTime - lastKeyTime > 50) {
+                buffer = '';
+            }
+
+            lastKeyTime = currentTime;
+
+            if (e.key === 'Enter') {
+                if (buffer.trim().length >= 4) {
+                    e.preventDefault();
+                    const barcode = buffer.trim();
+                    console.log('[SALES] Global scan detected:', barcode);
+                    // Ищем товар по штрихкоду, коду или ID
+                    const foundProduct = products.find(p => 
+                        String(p.barcode) === barcode || 
+                        String(p.code) === barcode || 
+                        String(p.id) === barcode
+                    );
+                    if (foundProduct) {
+                        handleProductSelect(foundProduct);
+                        // Проиграть приятный пик
+                        try {
+                            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                            const oscillator = audioCtx.createOscillator();
+                            const gainNode = audioCtx.createGain();
+                            oscillator.connect(gainNode);
+                            gainNode.connect(audioCtx.destination);
+                            oscillator.type = 'sine';
+                            oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime); // 1200 Hz
+                            gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                            oscillator.start();
+                            oscillator.stop(audioCtx.currentTime + 0.08); // 80ms
+                        } catch (soundErr) {
+                            console.warn('Sound play failed:', soundErr);
+                        }
+                    }
+                    buffer = '';
+                }
+            } else {
+                buffer += e.key;
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKeyDown);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [showModal, products, formData]);
 
     const loadSales = async () => {
         try {

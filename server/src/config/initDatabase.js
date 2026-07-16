@@ -862,6 +862,9 @@ async function addMissingColumns(pool) {
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS max_discount_percent INTEGER DEFAULT 30',
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS points_to_currency NUMERIC(5,2) DEFAULT 1',
         'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE',
+        'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_logo TEXT',
+        'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_phone VARCHAR(50)',
+        'ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_text VARCHAR(255)',
 
         // ============================================
         // MULTI-TENANT: organization_id columns
@@ -1504,6 +1507,9 @@ async function addMissingColumns(pool) {
                 points_to_currency_ratio DECIMAL(5, 2) DEFAULT 1,
                 expiry_months INT DEFAULT 12,
                 is_active BOOLEAN DEFAULT TRUE,
+                card_logo TEXT,
+                card_phone VARCHAR(50),
+                card_text VARCHAR(255),
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )

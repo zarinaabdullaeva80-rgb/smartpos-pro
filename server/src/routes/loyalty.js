@@ -7,8 +7,34 @@ import pool from '../config/database.js';
 import { authenticateToken, requireRole } from '../middleware/auth.js';
 import QRCode from 'qrcode';
 import bwipjs from 'bwip-js';
+import fs from 'fs';
+
+function logDebug(message, data) {
+    try {
+        const time = new Date().toISOString();
+        const str = `[${time}] ${message}: ${JSON.stringify(data, null, 2)}\n`;
+        fs.appendFileSync('c:/Users/user/Desktop/1С бухгалтерия/server/loyalty_debug.log', str);
+    } catch (e) {
+        console.error('Logging error:', e);
+    }
+}
+
 
 const router = express.Router();
+
+let columnsEnsured = false;
+async function ensureColumns() {
+    if (columnsEnsured) return;
+    try {
+        await pool.query('ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_logo TEXT');
+        await pool.query('ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_phone VARCHAR(50)');
+        await pool.query('ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS card_text VARCHAR(255)');
+        columnsEnsured = true;
+        console.log('[DB] loyalty_settings columns verified successfully');
+    } catch (err) {
+        console.error('[DB] Error ensuring loyalty_settings columns:', err);
+    }
+}
 
 // ============ НАСТРОЙКИ ПРОГРАММЫ ============
 
@@ -17,6 +43,7 @@ const router = express.Router();
  */
 router.get('/settings', authenticateToken, async (req, res) => {
     try {
+        await ensureColumns();
         const orgId = req.user?.organization_id || 1;
         const result = await pool.query(
             `SELECT * FROM loyalty_settings WHERE organization_id = $1`,
@@ -33,43 +60,53 @@ router.get('/settings', authenticateToken, async (req, res) => {
             referral_bonus: 2000,          // Бонус за реферала
             max_discount_percent: 30,      // Макс. скидка баллами
             points_to_currency: 1,         // 1 балл = 1 сум
-            enabled: true
+            enabled: true,
+            card_logo: null,
+            card_phone: '',
+            card_text: ''
         };
 
+        logDebug('GET /settings result row', result.rows[0]);
         res.json({ settings: result.rows[0] || defaults });
     } catch (error) {
+        logDebug('GET /settings error', error.message || error);
         console.error('Loyalty settings error:', error);
-        res.json({ settings: { cashback_percent: 2, enabled: true } });
+        res.json({ settings: { cashback_percent: 2, enabled: true, card_logo: null, card_phone: '', card_text: '' } });
     }
 });
-
-/**
- * Обновить настройки программы
- */
 router.put('/settings', authenticateToken, requireRole('admin'), async (req, res) => {
     try {
+        await ensureColumns();
         const orgId = req.user?.organization_id || 1;
         const {
             cashback_percent, min_purchase, points_expiry_days,
             welcome_bonus, birthday_bonus, referral_bonus,
-            max_discount_percent, points_to_currency, enabled
+            max_discount_percent, points_to_currency, enabled,
+            card_logo, card_phone, card_text
         } = req.body;
 
+        logDebug('PUT /settings body', req.body);
+        logDebug('PUT /settings orgId', orgId);
         const result = await pool.query(`
             INSERT INTO loyalty_settings (organization_id, cashback_percent, min_purchase, points_expiry_days,
-                welcome_bonus, birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                welcome_bonus, birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled,
+                card_logo, card_phone, card_text)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (organization_id) DO UPDATE SET
                 cashback_percent = $2, min_purchase = $3, points_expiry_days = $4,
                 welcome_bonus = $5, birthday_bonus = $6, referral_bonus = $7,
                 max_discount_percent = $8, points_to_currency = $9, enabled = $10,
+                card_logo = $11, card_phone = $12, card_text = $13,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *
         `, [orgId, cashback_percent, min_purchase, points_expiry_days, welcome_bonus,
-            birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled]);
+            birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled,
+            card_logo, card_phone, card_text]);
 
+        logDebug('PUT /settings result row', result.rows[0]);
         res.json({ success: true, settings: result.rows[0] });
     } catch (error) {
+        logDebug('PUT /settings error', error.message || error);
         console.error('Update loyalty settings error:', error);
         res.status(500).json({ error: 'Ошибка сохранения настроек' });
     }
@@ -189,8 +226,8 @@ router.get('/barcode/generate', authenticateToken, async (req, res) => {
         const barcodeBuffer = await bwipjs.toBuffer({
             bcid: 'code128',
             text: text,
-            scale: 3,
-            height: 15,
+            scale: 5,
+            height: 18,
             includetext: true,
             textxalign: 'center'
         });
@@ -222,8 +259,8 @@ router.get('/card/:customerId/barcode', authenticateToken, async (req, res) => {
         const barcodeBuffer = await bwipjs.toBuffer({
             bcid: 'code128',
             text: cardNumber,
-            scale: 3,
-            height: 15,
+            scale: 5,
+            height: 18,
             includetext: true,
             textxalign: 'center'
         });
@@ -565,6 +602,7 @@ function getCustomerLevel(points) {
  */
 router.get('/program', authenticateToken, async (req, res) => {
     try {
+        await ensureColumns();
         const orgId = req.user?.organization_id || 1;
         const result = await pool.query(`SELECT * FROM loyalty_settings WHERE organization_id = $1`, [orgId]);
 

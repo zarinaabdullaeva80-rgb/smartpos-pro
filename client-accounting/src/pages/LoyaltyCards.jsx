@@ -57,10 +57,26 @@ function LoyaltyCards() {
 
     const loadSettings = async () => {
         try {
-            const response = await loyaltyAPI.getProgram();
-            setSettings(response.data?.settings || response.data || {});
+            // Загружаем из /settings — там гарантированно есть card_logo, card_phone, card_text
+            const response = await loyaltyAPI.getSettings();
+            const s = response.data?.settings || response.data || {};
+            // Дополним из /program для остальных полей (cashback_percent и т.д.)
+            try {
+                const progRes = await loyaltyAPI.getProgram();
+                const prog = progRes.data?.settings || progRes.data || {};
+                setSettings({ ...prog, ...s });
+            } catch {
+                setSettings(s);
+            }
         } catch (error) {
             console.error('Error loading settings:', error);
+            // Fallback
+            try {
+                const response = await loyaltyAPI.getProgram();
+                setSettings(response.data?.settings || response.data || {});
+            } catch (e) {
+                console.error('Error loading program:', e);
+            }
         }
     };
 
@@ -127,13 +143,13 @@ function LoyaltyCards() {
             <head>
                 <title>${t('loyaltycards.karty_loyalnosti', 'Карты лояльности - SmartPOS Pro')}</title>
                 <style>
-                    @page { size: A4; margin: 10mm; }
-                    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 10mm; }
-                    h2 { text-align: center; color: #1e3a5f; margin-bottom: 8mm; }
-                    .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8mm; }
+                    @page { size: A4; margin: 8mm; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+                    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; }
+                    .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6mm; justify-content: center; }
                     .card-item {
                         width: 85.6mm; height: 53.98mm;
-                        background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%);
+                        background: ${settings.card_logo ? `url(${settings.card_logo}) no-repeat center center / cover` : 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)'};
                         border-radius: 10px;
                         padding: 4mm 6mm;
                         box-sizing: border-box;
@@ -150,27 +166,35 @@ function LoyaltyCards() {
                     .card-number { font-size: 12px; font-family: monospace; letter-spacing: 2px; margin-top: 2mm; }
                     .card-owner { font-size: 9px; text-transform: uppercase; opacity: 0.9; }
                     .card-level { font-size: 8px; color: #ffd700; }
-                    .barcode-box { background: white; padding: 1mm 2mm; border-radius: 4px; margin-top: 1mm; text-align: center; display: flex; justify-content: center; align-items: center; }
-                    .barcode-box img { width: 100%; max-height: 10mm; object-fit: contain; }
+                    .barcode-box { background: white; padding: 0.5mm 1mm; border-radius: 4px; margin-top: 1mm; text-align: center; display: flex; justify-content: center; align-items: center; }
+                    .barcode-box img { width: 100%; max-height: 12mm; object-fit: contain; }
                     .card-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 8px; opacity: 0.9; margin-top: 1mm; }
                     .card-cashback { background: rgba(255,215,0,0.2); padding: 0.5mm 2mm; border-radius: 2px; color: #ffd700; font-weight: bold; }
                 </style>
             </head>
             <body>
-                <h2>${t('loyaltycards.karty_loyalnosti', 'Карты лояльности — SmartPOS Pro')}</h2>
                 <div class="cards-grid">
                     ${cardsToprint.map(c => `
                         <div class="card-item">
                             <div>
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
+                                    ${settings.card_logo ? 
+                                        `<div></div>` : 
+                                        `<div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>`
+                                    }
                                     <div class="card-level">${c.level}</div>
                                 </div>
-                                <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
-                                <div class="card-owner">${c.name || '____________________'}</div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1mm;">
+                                    <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
+                                    ${settings.card_phone ? `<div style="font-size: 8px; opacity: 0.9;">📞 ${settings.card_phone}</div>` : ''}
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1.5mm;">
+                                    <div class="card-owner">${c.name || '____________________'}</div>
+                                    ${settings.card_text ? `<div style="font-size: 8px; opacity: 0.8; max-width: 40mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${settings.card_text}</div>` : ''}
+                                </div>
                             </div>
                             
-                            <div class="barcode-box">
+                            <div class="barcode-box" style="margin-top: 2.5mm;">
                                 ${c.barcode ? `<img src="${c.barcode}" alt="barcode" />` : '<div style="height:10mm;color:#999;font-size:8px">Barcode</div>'}
                             </div>
 
@@ -246,10 +270,11 @@ function LoyaltyCards() {
                 <title>Карта лояльности - ${selectedCustomer?.name}</title>
                 <style>
                     @page { size: 85.6mm 53.98mm; margin: 0; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
                     body { margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
                     .card {
                         width: 85.6mm; height: 53.98mm;
-                        background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #2d5a87 70%, #1e3a5f 100%);
+                        background: ${settings.card_logo ? `url(${settings.card_logo}) no-repeat center center / cover` : 'linear-gradient(135deg, #0f172a 0%, #1e3a5f 40%, #2d5a87 70%, #1e3a5f 100%)'};
                         color: white;
                         border-radius: 10px;
                         padding: 5mm 7mm;
@@ -262,7 +287,7 @@ function LoyaltyCards() {
                         position: absolute;
                         top: -20mm; right: -20mm;
                         width: 50mm; height: 50mm;
-                        background: rgba(255,215,0,0.05);
+                        background: ${settings.card_logo ? 'transparent' : 'rgba(255,215,0,0.05)'};
                         border-radius: 50%;
                     }
                     .logo { font-size: 14px; font-weight: bold; }
@@ -280,9 +305,18 @@ function LoyaltyCards() {
             </head>
             <body>
                 <div class="card">
-                    <div class="logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        ${settings.card_logo ? 
+                            `<div></div>` : 
+                            `<div class="logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>`
+                        }
+                        ${settings.card_phone ? `<div style="font-size: 8px; opacity: 0.9;">📞 ${settings.card_phone}</div>` : ''}
+                    </div>
                     <div class="card-number">${formatCardNumber(cardData?.number || '')}</div>
-                    <div class="customer-name">${selectedCustomer?.name}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                        <div class="customer-name">${selectedCustomer?.name}</div>
+                        ${settings.card_text ? `<div style="font-size: 8px; opacity: 0.8; max-width: 40mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${settings.card_text}</div>` : ''}
+                    </div>
                     <div class="level">★ ${cardData?.level || 'Standard'}</div>
                     <div class="barcode-box">
                         ${barcodeImage ? `<img src="${barcodeImage}" alt="barcode" />` : '<div style="height:10mm;color:#999;font-size:8px">Barcode</div>'}
@@ -401,35 +435,56 @@ function LoyaltyCards() {
                                     {/* Карта */}
                                     <div style={{
                                         width: '320px', height: '200px',
-                                        background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)',
+                                        background: settings.card_logo ? `url(${settings.card_logo}) no-repeat center center / cover` : 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)',
                                         borderRadius: '16px',
                                         padding: '24px',
                                         color: 'white',
                                         position: 'relative',
-                                        boxShadow: '0 10px 40px rgba(0,0,0,0.3)'
+                                        boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        justifyContent: 'space-between'
                                     }}>
-                                        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
-                                            SmartPOS <span style={{ color: '#ffd700' }}>{t('loyaltycards.bonus', 'Бонус')}</span>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            {!settings.card_logo ? (
+                                                <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
+                                                    SmartPOS <span style={{ color: '#ffd700' }}>{t('loyaltycards.bonus', 'Бонус')}</span>
+                                                </div>
+                                            ) : (
+                                                <div></div>
+                                            )}
+                                            {settings.card_phone && (
+                                                <div style={{ fontSize: '11px', opacity: 0.9 }}>
+                                                    📞 {settings.card_phone}
+                                                </div>
+                                            )}
                                         </div>
                                         <div style={{
                                             fontSize: '18px', letterSpacing: '3px',
-                                            fontFamily: 'monospace', marginTop: '30px'
+                                            fontFamily: 'monospace', marginTop: '20px'
                                         }}>
                                             {formatCardNumber(cardData.number)}
                                         </div>
-                                        <div style={{ fontSize: '14px', textTransform: 'uppercase', marginTop: '8px' }}>
-                                            {selectedCustomer.name}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '8px' }}>
+                                            <div style={{ fontSize: '14px', textTransform: 'uppercase' }}>
+                                                {selectedCustomer.name}
+                                            </div>
+                                            {settings.card_text && (
+                                                <div style={{ fontSize: '11px', opacity: 0.8, maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {settings.card_text}
+                                                </div>
+                                            )}
                                         </div>
                                         <div style={{ fontSize: '12px', color: '#ffd700', marginTop: '4px' }}>
                                             {cardData.level}
                                         </div>
                                         <div ref={printRef} style={{
-                                            position: 'absolute', bottom: '16px', left: '24px', right: '24px',
-                                            background: 'white', padding: '6px 10px', borderRadius: '6px',
+                                            position: 'absolute', bottom: '16px', left: '16px', right: '16px',
+                                            background: 'white', padding: '4px 6px', borderRadius: '6px',
                                             textAlign: 'center'
                                         }}>
                                             {barcodeImage ? (
-                                                <img src={barcodeImage} alt="barcode" style={{ width: '100%', maxHeight: '40px', objectFit: 'contain' }} />
+                                                <img src={barcodeImage} alt="barcode" style={{ width: '100%', maxHeight: '45px', objectFit: 'contain' }} />
                                             ) : (
                                                 <div style={{ color: '#999', fontSize: '11px', padding: '8px 0' }}>{t('loyaltycards.zagruzka', 'Загрузка barcode...')}</div>
                                             )}
@@ -669,9 +724,82 @@ function LoyaltyCards() {
                                 <strong>{t('loyaltycards.suschestvuyuschie_karty', 'Существующие карты:')}</strong> {cards.length}<br />
                                 <strong>{t('loyaltycards.budet_sozdano', 'Будет создано:')}</strong> {batchCount} новых карт
                             </div>
+                            {cards.length > 0 && (
+                                <div style={{ marginTop: '16px' }}>
+                                    <strong style={{ display: 'block', marginBottom: '8px' }}>📋 Список существующих баркодов:</strong>
+                                    <div style={{ 
+                                        maxHeight: '200px', 
+                                        overflowY: 'auto', 
+                                        background: 'var(--bg-secondary)', 
+                                        borderRadius: '8px', 
+                                        border: '1px solid rgba(255,255,255,0.08)' 
+                                    }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                            <thead>
+                                                <tr style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary, #2a2a3e)', zIndex: 1 }}>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>№</th>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Номер карты (баркод)</th>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Клиент</th>
+                                                    <th style={{ padding: '8px 12px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Тип</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {cards.map((card, idx) => (
+                                                    <tr key={card.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                                        <td style={{ padding: '6px 12px', color: '#888' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '6px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#e879f9', letterSpacing: '1px' }}>{card.number}</td>
+                                                        <td style={{ padding: '6px 12px', color: card.name ? '#ddd' : '#666' }}>{card.name || '—'}</td>
+                                                        <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                                                            <span style={{ 
+                                                                padding: '2px 8px', 
+                                                                borderRadius: '4px', 
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                background: card.is_blank ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.15)',
+                                                                color: card.is_blank ? '#fbbf24' : '#10b981'
+                                                            }}>
+                                                                {card.is_blank ? 'Пустая' : 'Активная'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <div className="modal-footer">
+                        <div className="modal-footer" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             <button className="btn btn-secondary" onClick={() => setShowBatchPrint(false)} disabled={generatingBatch}>{t('loyaltycards.otmena', 'Отмена')}</button>
+                            {cards.length > 0 && (
+                                <button 
+                                    className="btn btn-success" 
+                                    style={{ background: '#10b981', color: 'white' }}
+                                    disabled={generatingBatch}
+                                    onClick={async () => {
+                                        setGeneratingBatch(true);
+                                        try {
+                                            const loadedCards = await Promise.all(cards.map(async (c) => {
+                                                try {
+                                                    const res = await loyaltyAPI.generateBarcode(c.number);
+                                                    return { ...c, barcode: res.data?.barcode };
+                                                } catch (e) {
+                                                    console.error('Error generating barcode for:', c.number, e);
+                                                    return c;
+                                                }
+                                            }));
+                                            printBatchCards(loadedCards);
+                                        } catch (err) {
+                                            console.error('Print existing error:', err);
+                                            toast.error('Ошибка печати существующих карт');
+                                        } finally {
+                                            setGeneratingBatch(false);
+                                        }
+                                    }}
+                                >
+                                    {generatingBatch ? 'Загрузка...' : <><Printer size={16} /> Печать существующих ({cards.length})</>}
+                                </button>
+                            )}
                             <button 
                                 className="btn btn-primary" 
                                 disabled={generatingBatch}

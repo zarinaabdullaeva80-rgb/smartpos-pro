@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, ToggleLeft, ToggleRight, Gift, Star, Clock, Users, Percent, DollarSign } from 'lucide-react';
+import { Settings, Save, ToggleLeft, ToggleRight, Gift, Star, Clock, Users, Percent, DollarSign, Upload, Trash2, Image, Phone, FileText } from 'lucide-react';
 import '../styles/Common.css';
 import { loyaltyAPI } from '../services/api';
 import { useI18n } from '../i18n';
@@ -13,7 +13,10 @@ export default function LoyaltySettings() {
         welcome_bonus: 0,
         birthday_bonus: 0,
         referral_bonus: 0,
-        enabled: true
+        enabled: true,
+        card_logo: null,
+        card_phone: '',
+        card_text: ''
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -56,6 +59,31 @@ export default function LoyaltySettings() {
         setSettings(prev => ({ ...prev, [field]: value }));
     };
 
+    const handleLogoUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            setMessage({ type: 'error', text: 'Пожалуйста, выберите файл изображения (PNG, JPG)' });
+            return;
+        }
+        
+        // Limit to 1.5MB to avoid database size issues with too large base64
+        if (file.size > 1.5 * 1024 * 1024) {
+            setMessage({ type: 'error', text: 'Размер файла не должен превышать 1.5 МБ' });
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            handleChange('card_logo', event.target.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRemoveLogo = () => {
+        handleChange('card_logo', null);
+    };
+
     if (loading) {
         return (
             <div className="page-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
@@ -95,7 +123,7 @@ export default function LoyaltySettings() {
                 </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '20px', marginBottom: '20px' }}>
 
                 {/* Основные настройки */}
                 <div className="card" style={{ padding: '24px' }}>
@@ -234,6 +262,176 @@ export default function LoyaltySettings() {
                         <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
                             Начисляется, когда клиент приглашает нового
                         </small>
+                    </div>
+                </div>
+            </div>
+
+            {/* Внешний вид карты лояльности */}
+            <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', fontSize: '16px', fontWeight: 600 }}>
+                    <Image size={20} style={{ color: 'var(--primary)' }} />
+                    Внешний вид карты лояльности
+                </h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
+                    {/* Настройки вида */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        
+                        {/* Загрузка Логотипа */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                <Image size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                                Логотип организации
+                            </label>
+                            
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                <label className="btn btn-secondary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                                    <Upload size={14} />
+                                    Выбрать изображение
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
+                                </label>
+                                
+                                {settings.card_logo && (
+                                    <button className="btn btn-danger" onClick={handleRemoveLogo} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px' }}>
+                                        <Trash2 size={14} />
+                                        Удалить логотип
+                                    </button>
+                                )}
+                            </div>
+                            <small style={{ display: 'block', marginTop: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                Рекомендуется горизонтальный логотип с прозрачным фоном (PNG/JPG, макс 1.5 МБ).
+                            </small>
+                        </div>
+
+                        {/* Произвольный телефон */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                <Phone size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                                Телефон для связи на карте
+                            </label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={settings.card_phone || ''}
+                                onChange={(e) => handleChange('card_phone', e.target.value)}
+                                placeholder="Например: +998 90 123 45 67"
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #dee2e6)', fontSize: '14px' }}
+                            />
+                            <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                Будет отображаться в верхнем правом углу карты лояльности
+                            </small>
+                        </div>
+
+                        {/* Дополнительные данные */}
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                                <FileText size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                                Дополнительные данные (адрес, сайт, инфо)
+                            </label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={settings.card_text || ''}
+                                onChange={(e) => handleChange('card_text', e.target.value)}
+                                placeholder="Например: г. Ташкент, ул. Навои, 15 или www.mypos.uz"
+                                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color, #dee2e6)', fontSize: '14px' }}
+                            />
+                            <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                Будет отображаться рядом с именем клиента
+                            </small>
+                        </div>
+                    </div>
+
+                    {/* Живой предпросмотр */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '10px', color: 'var(--text-secondary)' }}>
+                            ✨ Интерактивный предпросмотр карты:
+                        </div>
+                        
+                        {/* Карта */}
+                        <div style={{
+                            width: '320px', height: '200px',
+                            background: settings.card_logo ? `url(${settings.card_logo}) no-repeat center center / cover` : 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)',
+                            borderRadius: '16px',
+                            padding: '24px',
+                            color: 'white',
+                            position: 'relative',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            overflow: 'hidden'
+                        }}>
+                            {/* Волна водяного знака */}
+                            {!settings.card_logo && (
+                                <div style={{
+                                    content: '""',
+                                    position: 'absolute',
+                                    top: '-80px', right: '-80px',
+                                    width: '200px', height: '200px',
+                                    background: 'rgba(255,215,0,0.04)',
+                                    borderRadius: '50%',
+                                    pointerEvents: 'none'
+                                }}></div>
+                            )}
+
+                            {/* Верхняя строка */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 1 }}>
+                                {!settings.card_logo ? (
+                                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                                        SmartPOS <span style={{ color: '#ffd700' }}>Бонус</span>
+                                    </div>
+                                ) : (
+                                    <div></div>
+                                )}
+                                
+                                {settings.card_phone ? (
+                                    <div style={{ fontSize: '10px', opacity: 0.9, fontWeight: 500 }}>
+                                        📞 {settings.card_phone}
+                                    </div>
+                                ) : (
+                                    <div style={{ fontSize: '9px', color: '#ffd700', border: '1px solid rgba(255,215,0,0.3)', padding: '2px 6px', borderRadius: '4px' }}>
+                                        ★ Gold
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Номер карты */}
+                            <div style={{
+                                fontSize: '18px', letterSpacing: '3px',
+                                fontFamily: 'monospace', marginTop: '20px', zIndex: 1
+                            }}>
+                                9999 1234 5678 9012
+                            </div>
+
+                            {/* Данные клиента */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '8px', zIndex: 1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ fontSize: '12px', textTransform: 'uppercase', fontWeight: 600 }}>
+                                        ИВАН ИВАНОВ
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#ffd700', marginTop: '2px' }}>
+                                        Баланс: 2 500 баллов
+                                    </div>
+                                </div>
+                                
+                                {settings.card_text && (
+                                    <div style={{ fontSize: '10px', opacity: 0.8, maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                                        {settings.card_text}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Баркод подложка */}
+                            <div style={{
+                                background: 'white', padding: '3px 6px', borderRadius: '4px',
+                                textAlign: 'center', marginTop: '10px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <div style={{ color: '#aaa', fontSize: '10px', fontFamily: 'monospace', letterSpacing: '2px' }}>
+                                    ||||| BARCODE |||||
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

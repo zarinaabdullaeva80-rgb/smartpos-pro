@@ -57,6 +57,8 @@ function ProductSearchInput({ products, onSelect, placeholder, warehouseId }) {
             e.preventDefault();
             if (highlightIndex >= 0 && filtered[highlightIndex]) {
                 handleSelect(filtered[highlightIndex]);
+            } else if (filtered.length > 0) {
+                handleSelect(filtered[0]);
             }
         } else if (e.key === 'Escape') {
             setOpen(false);
