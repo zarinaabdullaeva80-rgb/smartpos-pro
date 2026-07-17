@@ -414,18 +414,44 @@ function LoyaltyCards() {
 
     const handleExportExcel = () => {
         try {
-            const dataToExport = customers.map(c => ({
-                'ФИО клиента': c.name || '',
-                'Телефон': c.phone || '',
-                'Email': c.email || '',
-                'Номер карты': c.card_number || '',
-                'Баллы (Баланс)': c.loyalty_points || 0,
-                'Дата регистрации': c.created_at ? new Date(c.created_at).toLocaleDateString('ru-RU') : ''
+            // Экспортируем список карт из localStorage (cards), так как там находятся сгенерированные и привязанные карты
+            const dataToExport = cards.map((c, idx) => ({
+                '№': idx + 1,
+                'Номер карты': c.number || '',
+                'ФИО клиента': c.name || '—',
+                'Телефон': c.phone || '—',
+                'Email': c.email || '—',
+                'Баллы (Баланс)': c.balance || 0,
+                'Статус': c.is_blank ? 'Пустая' : 'Активная',
+                'Дата создания': c.created_at ? new Date(c.created_at).toLocaleDateString('ru-RU') : ''
             }));
+
+            // Если список карт в localStorage пуст, экспортируем клиентов с картами из CRM
+            if (dataToExport.length === 0 && customers.length > 0) {
+                const customersWithCards = customers.filter(cust => cust.card_number);
+                customersWithCards.forEach((c, idx) => {
+                    dataToExport.push({
+                        '№': idx + 1,
+                        'Номер карты': c.card_number || '',
+                        'ФИО клиента': c.name || '',
+                        'Телефон': c.phone || '',
+                        'Email': c.email || '',
+                        'Баллы (Баланс)': c.loyalty_points || 0,
+                        'Статус': 'Активная',
+                        'Дата создания': c.created_at ? new Date(c.created_at).toLocaleDateString('ru-RU') : ''
+                    });
+                });
+            }
+
+            if (dataToExport.length === 0) {
+                toast.info('Нет данных для экспорта');
+                return;
+            }
 
             const worksheet = XLSX.utils.json_to_sheet(dataToExport);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, 'Карты лояльности');
+
 
             // Auto column width
             const maxLens = {};
@@ -499,29 +525,61 @@ function LoyaltyCards() {
                     return;
                 }
 
-                const mappedItems = json.map(row => {
+                const clientItems = [];
+                const blankCards = [];
+
+                json.forEach(row => {
                     const name = row['ФИО клиента'] || row['ФИО'] || row['Имя'] || row['name'] || row['Name'] || '';
                     const phone = row['Телефон'] || row['Телефонный номер'] || row['phone'] || row['Phone'] || '';
                     const email = row['Email'] || row['Почта'] || row['email'] || '';
-                    const card_number = row['Номер карты'] || row['Карта'] || row['card_number'] || row['card'] || '';
+                    const card_number = row['Номер карты'] || row['Карта'] || row['card_number'] || row['card'] || row['Штрих-код'] || row['Штрихкод'] || row['barcode'] || row['Barcode'] || '';
                     const points = row['Баллы (Баланс)'] || row['Баллы'] || row['Баланс'] || row['points'] || row['balance'] || 0;
 
-                    return { name, phone, email, card_number, points };
-                }).filter(item => item.name && item.phone);
+                    const numStr = String(card_number).trim();
 
-                if (mappedItems.length === 0) {
-                    toast.info('Не найдено подходящих строк с ФИО и Телефоном');
+                    if (name && phone) {
+                        clientItems.push({ name, phone, email, card_number: numStr, points });
+                    } else if (numStr) {
+                        blankCards.push({
+                            id: Date.now() + Math.random(),
+                            number: numStr,
+                            name: '',
+                            phone: '',
+                            email: '',
+                            level: 'Standard',
+                            balance: 0,
+                            earnedTotal: 0,
+                            spentTotal: 0,
+                            created_at: new Date().toISOString(),
+                            is_blank: true
+                        });
+                    }
+                });
+
+                if (clientItems.length === 0 && blankCards.length === 0) {
+                    toast.info('Не найдено подходящих данных (ФИО+Телефон для клиентов или Номер карты для пустых заготовок)');
                     return;
                 }
 
-                toast.info(`Отправка ${mappedItems.length} строк на сервер...`);
-                const response = await loyaltyAPI.importCards({ items: mappedItems });
+                if (blankCards.length > 0) {
+                    setCards(prev => {
+                        const existingNumbers = new Set(prev.map(c => c.number));
+                        const uniqueNew = blankCards.filter(c => !existingNumbers.has(c.number));
+                        return [...prev, ...uniqueNew];
+                    });
+                    toast.success(`Импортировано пустых заготовок: ${blankCards.length}`);
+                }
 
-                if (response.data?.success) {
-                    toast.success(`Импорт завершён! Добавлено: ${response.data.imported || 0}, Обновлено: ${response.data.updated || 0}`);
-                    loadCustomers();
-                } else {
-                    toast.error('Ошибка импорта: ' + (response.data?.error || 'Неизвестная ошибка'));
+                if (clientItems.length > 0) {
+                    toast.info(`Отправка ${clientItems.length} карт клиентов на сервер...`);
+                    const response = await loyaltyAPI.importCards({ items: clientItems });
+
+                    if (response.data?.success) {
+                        toast.success(`Импорт карт клиентов завершён! Добавлено: ${response.data.imported || 0}, Обновлено: ${response.data.updated || 0}`);
+                        loadCustomers();
+                    } else {
+                        toast.error('Ошибка импорта на сервере: ' + (response.data?.error || 'Неизвестная ошибка'));
+                    }
                 }
             } catch (err) {
                 console.error('Import excel error:', err);
