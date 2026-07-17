@@ -31,6 +31,9 @@ function LoyaltyCards() {
     // Групповое удаление карт
     const [selectedCards, setSelectedCards] = useState(new Set());
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    // Прикрепление клиента
+    const [attachModal, setAttachModal] = useState(null); // { cardId, cardNumber }
+    const [attachSearch, setAttachSearch] = useState('');
     const [barcodeImage, setBarcodeImage] = useState(null);
 
     // Списание баллов
@@ -368,6 +371,18 @@ function LoyaltyCards() {
         setSelectedCards(new Set());
         setShowDeleteModal(false);
         toast.success(`Удалено ${selectedCards.size} карт(ы)`);
+    };
+
+    const handleAttachCustomer = (customer) => {
+        if (!attachModal) return;
+        setCards(prev => prev.map(c =>
+            c.id === attachModal.cardId
+                ? { ...c, name: customer.name, phone: customer.phone || '', is_blank: false }
+                : c
+        ));
+        toast.success(`Карта ${attachModal.cardNumber} прикреплена к ${customer.name}`);
+        setAttachModal(null);
+        setAttachSearch('');
     };
 
     const filteredCustomers = customers.filter(c =>
@@ -730,187 +745,355 @@ function LoyaltyCards() {
                 </div>
             )}
 
-            {/* Модал генерации баркодов */}
+            {/* Модал генерации баркодов — полностью переделанный */}
             {showBatchPrint && (
                 <div className="modal-overlay" onClick={() => { setShowBatchPrint(false); setSelectedCards(new Set()); }}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '700px', width: '95vw', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
                         <div className="modal-header">
-                            <h2>{t('loyaltycards.generatsiya_barkodov_dlya_pechati', '🖨️ Генерация баркодов для печати')}</h2>
+                            <h2>🖨️ Генерация баркодов для печати</h2>
                         </div>
-                        <div className="modal-body">
-                            <p>{t('loyaltycards.sozdayte_pustye_karty_s_unikalnymi_nome', 'Создайте пустые карты с уникальными номерами для печати и последующей выдачи клиентам.')}</p>
-                            <div className="form-group">
-                                <label>{t('loyaltycards.kolichestvo_kart', 'Количество карт')}</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max="100"
-                                    value={batchCount}
-                                    onChange={e => setBatchCount(parseInt(e.target.value) || 10)}
-                                />
+
+                        <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+                            {/* Инфо-блок */}
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: '180px' }}>
+                                    <label style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                                        Количество новых карт для создания
+                                    </label>
+                                    <input
+                                        type="number" min="1" max="100"
+                                        value={batchCount}
+                                        onChange={e => setBatchCount(parseInt(e.target.value) || 10)}
+                                        style={{ width: '100%' }}
+                                    />
+                                </div>
+                                <div style={{ background: 'var(--bg-secondary)', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', display: 'flex', gap: '20px', alignItems: 'center', flex: 2 }}>
+                                    <div><span style={{ color: '#888' }}>Всего карт:</span> <strong>{cards.length}</strong></div>
+                                    <div><span style={{ color: '#888' }}>Выбрано:</span> <strong style={{ color: selectedCards.size > 0 ? '#e879f9' : 'inherit' }}>{selectedCards.size}</strong></div>
+                                    <div><span style={{ color: '#888' }}>Будет создано:</span> <strong style={{ color: '#10b981' }}>{batchCount}</strong></div>
+                                </div>
                             </div>
-                            <div style={{ background: 'var(--bg-secondary)', padding: '12px', borderRadius: '8px', marginTop: '16px' }}>
-                                <strong>{t('loyaltycards.suschestvuyuschie_karty', 'Существующие карты:')}</strong> {cards.length}<br />
-                                <strong>{t('loyaltycards.budet_sozdano', 'Будет создано:')}</strong> {batchCount} новых карт
-                            </div>
+
+                            {/* Таблица */}
                             {cards.length > 0 && (
-                                <div style={{ marginTop: '16px' }}>
-                                    {/* Заголовок таблицы с кнопками управления */}
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                        <strong>📋 Список существующих баркодов:</strong>
-                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <div>
+                                    {/* Топбар таблицы */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                        <strong style={{ fontSize: '13px' }}>📋 Список баркодов:</strong>
+                                        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                            {/* Выбрать все / снять */}
                                             <button
                                                 className="btn btn-secondary"
-                                                style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                style={{ padding: '5px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
                                                 onClick={toggleSelectAll}
                                             >
                                                 {selectedCards.size === cards.length
                                                     ? <><Square size={13} /> Снять всё</>
                                                     : <><CheckSquare size={13} /> Выбрать все</>}
                                             </button>
-                                            {selectedCards.size > 0 && (
-                                                <button
-                                                    className="btn"
-                                                    style={{ padding: '4px 10px', fontSize: '12px', background: '#ef4444', color: 'white', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                                    onClick={() => setShowDeleteModal(true)}
-                                                >
-                                                    <Trash2 size={13} /> Удалить ({selectedCards.size})
-                                                </button>
-                                            )}
+                                            {/* Печать выбранные */}
+                                            <button
+                                                className="btn"
+                                                style={{
+                                                    padding: '5px 12px', fontSize: '12px',
+                                                    background: selectedCards.size > 0 ? '#10b981' : 'var(--bg-secondary)',
+                                                    color: selectedCards.size > 0 ? 'white' : '#888',
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                    cursor: selectedCards.size > 0 ? 'pointer' : 'not-allowed'
+                                                }}
+                                                disabled={generatingBatch || selectedCards.size === 0}
+                                                onClick={async () => {
+                                                    if (selectedCards.size === 0) return;
+                                                    setGeneratingBatch(true);
+                                                    try {
+                                                        const toPrint = cards.filter(c => selectedCards.has(c.id));
+                                                        const loaded = await Promise.all(toPrint.map(async c => {
+                                                            try {
+                                                                const res = await loyaltyAPI.generateBarcode(c.number);
+                                                                return { ...c, barcode: res.data?.barcode };
+                                                            } catch { return c; }
+                                                        }));
+                                                        printBatchCards(loaded);
+                                                    } catch { toast.error('Ошибка печати'); }
+                                                    finally { setGeneratingBatch(false); }
+                                                }}
+                                            >
+                                                <Printer size={13} /> {selectedCards.size > 0 ? `Печать (${selectedCards.size})` : 'Печать выбранные'}
+                                            </button>
+                                            {/* Удалить выбранные */}
+                                            <button
+                                                className="btn"
+                                                style={{
+                                                    padding: '5px 12px', fontSize: '12px',
+                                                    background: selectedCards.size > 0 ? '#ef4444' : 'var(--bg-secondary)',
+                                                    color: selectedCards.size > 0 ? 'white' : '#888',
+                                                    display: 'flex', alignItems: 'center', gap: '4px',
+                                                    cursor: selectedCards.size > 0 ? 'pointer' : 'not-allowed'
+                                                }}
+                                                disabled={selectedCards.size === 0}
+                                                onClick={() => selectedCards.size > 0 && setShowDeleteModal(true)}
+                                            >
+                                                <Trash2 size={13} /> {selectedCards.size > 0 ? `Удалить (${selectedCards.size})` : 'Удалить выбранные'}
+                                            </button>
                                         </div>
                                     </div>
-                                    <div style={{ 
-                                        maxHeight: '220px', 
-                                        overflowY: 'auto', 
-                                        background: 'var(--bg-secondary)', 
-                                        borderRadius: '8px', 
-                                        border: '1px solid rgba(255,255,255,0.08)' 
-                                    }}>
-                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                            <thead>
-                                                <tr style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary, #2a2a3e)', zIndex: 1 }}>
-                                                    <th style={{ padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', width: '36px' }}>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedCards.size === cards.length && cards.length > 0}
-                                                            onChange={toggleSelectAll}
-                                                            style={{ cursor: 'pointer', width: '14px', height: '14px' }}
-                                                        />
-                                                    </th>
-                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>№</th>
-                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Номер карты (баркод)</th>
-                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Клиент</th>
-                                                    <th style={{ padding: '8px 8px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Тип</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {cards.map((card, idx) => (
-                                                    <tr
-                                                        key={card.id || idx}
-                                                        onClick={() => toggleSelectCard(card.id)}
-                                                        style={{
-                                                            borderBottom: '1px solid rgba(255,255,255,0.04)',
-                                                            cursor: 'pointer',
-                                                            background: selectedCards.has(card.id) ? 'rgba(239,68,68,0.10)' : 'transparent',
-                                                            transition: 'background 0.15s'
-                                                        }}
-                                                    >
-                                                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+
+                                    {/* Таблица карт */}
+                                    <div style={{ borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                                        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                                <thead>
+                                                    <tr style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary, #1e1e2e)', zIndex: 1 }}>
+                                                        <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', width: '40px' }}>
                                                             <input
                                                                 type="checkbox"
-                                                                checked={selectedCards.has(card.id)}
-                                                                onChange={() => toggleSelectCard(card.id)}
-                                                                onClick={e => e.stopPropagation()}
-                                                                style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                                checked={selectedCards.size === cards.length && cards.length > 0}
+                                                                onChange={toggleSelectAll}
+                                                                style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#e879f9' }}
                                                             />
-                                                        </td>
-                                                        <td style={{ padding: '6px 8px', color: '#888' }}>{idx + 1}</td>
-                                                        <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 600, color: '#e879f9', letterSpacing: '1px' }}>{card.number}</td>
-                                                        <td style={{ padding: '6px 8px', color: card.name ? '#ddd' : '#666' }}>{card.name || '—'}</td>
-                                                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                                                            <span style={{ 
-                                                                padding: '2px 8px', 
-                                                                borderRadius: '4px', 
-                                                                fontSize: '11px',
-                                                                fontWeight: 600,
-                                                                background: card.is_blank ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.15)',
-                                                                color: card.is_blank ? '#fbbf24' : '#10b981'
-                                                            }}>
-                                                                {card.is_blank ? 'Пустая' : 'Активная'}
-                                                            </span>
-                                                        </td>
+                                                        </th>
+                                                        <th style={{ padding: '10px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#aaa', fontWeight: 600, fontSize: '12px' }}>№</th>
+                                                        <th style={{ padding: '10px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#aaa', fontWeight: 600, fontSize: '12px' }}>НОМЕР КАРТЫ</th>
+                                                        <th style={{ padding: '10px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#aaa', fontWeight: 600, fontSize: '12px' }}>КЛИЕНТ</th>
+                                                        <th style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#aaa', fontWeight: 600, fontSize: '12px' }}>ТИП</th>
+                                                        <th style={{ padding: '10px 8px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#aaa', fontWeight: 600, fontSize: '12px' }}>ДЕЙСТВИЕ</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody>
+                                                    {cards.map((card, idx) => (
+                                                        <tr
+                                                            key={card.id || idx}
+                                                            onClick={() => toggleSelectCard(card.id)}
+                                                            style={{
+                                                                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                                                cursor: 'pointer',
+                                                                background: selectedCards.has(card.id)
+                                                                    ? 'rgba(232,121,249,0.08)'
+                                                                    : idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                                                                transition: 'background 0.1s'
+                                                            }}
+                                                        >
+                                                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedCards.has(card.id)}
+                                                                    onChange={() => toggleSelectCard(card.id)}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: '#e879f9' }}
+                                                                />
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px', color: '#666', fontSize: '12px' }}>{idx + 1}</td>
+                                                            <td style={{ padding: '8px 8px', fontFamily: 'monospace', fontWeight: 700, color: '#e879f9', letterSpacing: '1px', fontSize: '12px' }}>
+                                                                {card.number}
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px' }}>
+                                                                {card.name ? (
+                                                                    <span style={{ color: '#ddd', fontSize: '12px' }}>{card.name}</span>
+                                                                ) : (
+                                                                    <span style={{ color: '#555', fontSize: '12px', fontStyle: 'italic' }}>не прикреплена</span>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                                                                <span style={{
+                                                                    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                                                                    background: card.is_blank ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.15)',
+                                                                    color: card.is_blank ? '#fbbf24' : '#10b981'
+                                                                }}>
+                                                                    {card.is_blank ? 'Пустая' : 'Активная'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '8px 8px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                                                                <button
+                                                                    style={{
+                                                                        padding: '3px 10px', borderRadius: '6px', fontSize: '11px',
+                                                                        background: 'rgba(99,102,241,0.15)', color: '#818cf8',
+                                                                        border: '1px solid rgba(99,102,241,0.3)', cursor: 'pointer',
+                                                                        display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        setAttachModal({ cardId: card.id, cardNumber: card.number });
+                                                                        setAttachSearch('');
+                                                                    }}
+                                                                >
+                                                                    <User size={11} /> {card.name ? 'Изменить' : 'Прикрепить'}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
+
+                                    {/* Подсказка о выбранных */}
                                     {selectedCards.size > 0 && (
-                                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#ef4444' }}>
-                                            ⚠️ Выбрано {selectedCards.size} из {cards.length} карт для удаления
+                                        <div style={{ marginTop: '8px', fontSize: '12px', color: '#e879f9', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <CheckSquare size={13} /> Выбрано: {selectedCards.size} из {cards.length}
                                         </div>
                                     )}
                                 </div>
                             )}
                         </div>
-                        <div className="modal-footer" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button className="btn btn-secondary" onClick={() => setShowBatchPrint(false)} disabled={generatingBatch}>{t('loyaltycards.otmena', 'Отмена')}</button>
+
+                        {/* Футер — всегда виден */}
+                        <div className="modal-footer" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '12px' }}>
+                            <button className="btn btn-secondary" onClick={() => { setShowBatchPrint(false); setSelectedCards(new Set()); }} disabled={generatingBatch}>
+                                Отмена
+                            </button>
+
+                            {/* Удалить выбранные — всегда виден, но дизейблирован если нет выбора */}
+                            <button
+                                className="btn"
+                                style={{
+                                    background: selectedCards.size > 0 ? '#ef4444' : 'rgba(239,68,68,0.15)',
+                                    color: selectedCards.size > 0 ? 'white' : '#ef4444',
+                                    border: '1px solid rgba(239,68,68,0.3)',
+                                    opacity: selectedCards.size > 0 ? 1 : 0.5,
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                                disabled={selectedCards.size === 0}
+                                onClick={() => selectedCards.size > 0 && setShowDeleteModal(true)}
+                            >
+                                <Trash2 size={16} />
+                                {selectedCards.size > 0 ? `Удалить выбранные (${selectedCards.size})` : 'Удалить выбранные'}
+                            </button>
+
+                            {/* Печать все существующие */}
                             {cards.length > 0 && (
-                                <button 
-                                    className="btn btn-success" 
-                                    style={{ background: '#10b981', color: 'white' }}
+                                <button
+                                    className="btn"
+                                    style={{ background: '#10b981', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
                                     disabled={generatingBatch}
                                     onClick={async () => {
                                         setGeneratingBatch(true);
                                         try {
-                                            const loadedCards = await Promise.all(cards.map(async (c) => {
+                                            const toPrint = selectedCards.size > 0
+                                                ? cards.filter(c => selectedCards.has(c.id))
+                                                : cards;
+                                            const loaded = await Promise.all(toPrint.map(async c => {
                                                 try {
                                                     const res = await loyaltyAPI.generateBarcode(c.number);
                                                     return { ...c, barcode: res.data?.barcode };
-                                                } catch (e) {
-                                                    console.error('Error generating barcode for:', c.number, e);
-                                                    return c;
-                                                }
+                                                } catch { return c; }
                                             }));
-                                            printBatchCards(loadedCards);
-                                        } catch (err) {
-                                            console.error('Print existing error:', err);
-                                            toast.error('Ошибка печати существующих карт');
-                                        } finally {
-                                            setGeneratingBatch(false);
-                                        }
+                                            printBatchCards(loaded);
+                                        } catch { toast.error('Ошибка печати'); }
+                                        finally { setGeneratingBatch(false); }
                                     }}
                                 >
-                                    {generatingBatch ? 'Загрузка...' : <><Printer size={16} /> Печать существующих ({cards.length})</>}
+                                    <Printer size={16} />
+                                    {generatingBatch ? 'Загрузка...' : selectedCards.size > 0
+                                        ? `Печать выбранные (${selectedCards.size})`
+                                        : `Печать все (${cards.length})`}
                                 </button>
                             )}
-                            <button 
-                                className="btn btn-primary" 
+
+                            {/* Создать и распечатать новые */}
+                            <button
+                                className="btn btn-primary"
+                                style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}
                                 disabled={generatingBatch}
                                 onClick={async () => {
                                     setGeneratingBatch(true);
                                     try {
                                         const newCards = generateBatchBarcodes();
-                                        const loadedCards = await Promise.all(newCards.map(async (c) => {
+                                        const loaded = await Promise.all(newCards.map(async c => {
                                             try {
                                                 const res = await loyaltyAPI.generateBarcode(c.number);
                                                 return { ...c, barcode: res.data?.barcode };
-                                            } catch (e) {
-                                                console.error('Error generating barcode for:', c.number, e);
-                                                return c;
-                                            }
+                                            } catch { return c; }
                                         }));
-                                        printBatchCards(loadedCards);
+                                        printBatchCards(loaded);
                                         setShowBatchPrint(false);
-                                    } catch (err) {
-                                        console.error('Batch generation error:', err);
-                                        toast.error('Ошибка генерации штрихкодов');
-                                    } finally {
-                                        setGeneratingBatch(false);
-                                    }
+                                    } catch { toast.error('Ошибка генерации'); }
+                                    finally { setGeneratingBatch(false); }
                                 }}
                             >
-                                {generatingBatch ? 'Генерация...' : <><Printer size={16} /> {t('loyaltycards.sozdat_i_raspechatat', 'Создать и распечатать')}</>}
+                                <Printer size={16} />
+                                {generatingBatch ? 'Генерация...' : `Создать +${batchCount} и распечатать`}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Модал прикрепления клиента к карте */}
+            {attachModal && (
+                <div className="modal-overlay" onClick={() => { setAttachModal(null); setAttachSearch(''); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+                        <div className="modal-header">
+                            <div>
+                                <h2><User size={18} style={{ verticalAlign: 'middle', marginRight: '8px' }} />Прикрепить клиента</h2>
+                                <div style={{ fontSize: '12px', color: '#aaa', marginTop: '4px' }}>
+                                    Карта: <span style={{ fontFamily: 'monospace', color: '#e879f9' }}>{attachModal.cardNumber}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ position: 'relative', marginBottom: '12px' }}>
+                                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
+                                <input
+                                    type="text"
+                                    placeholder="Поиск по имени или телефону..."
+                                    value={attachSearch}
+                                    onChange={e => setAttachSearch(e.target.value)}
+                                    autoFocus
+                                    style={{ width: '100%', paddingLeft: '38px' }}
+                                />
+                            </div>
+                            <div style={{ maxHeight: '320px', overflowY: 'auto', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                {customers
+                                    .filter(c =>
+                                        !attachSearch ||
+                                        c.name?.toLowerCase().includes(attachSearch.toLowerCase()) ||
+                                        c.phone?.includes(attachSearch)
+                                    )
+                                    .slice(0, 50)
+                                    .map(c => (
+                                        <div
+                                            key={c.id}
+                                            onClick={() => handleAttachCustomer(c)}
+                                            style={{
+                                                padding: '12px 16px',
+                                                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                                cursor: 'pointer',
+                                                display: 'flex', alignItems: 'center', gap: '12px',
+                                                transition: 'background 0.1s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <div style={{
+                                                width: '36px', height: '36px', borderRadius: '50%',
+                                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                color: 'white', fontWeight: 'bold', fontSize: '14px', flexShrink: 0
+                                            }}>
+                                                {c.name?.[0]?.toUpperCase() || '?'}
+                                            </div>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '14px' }}>{c.name}</div>
+                                                <div style={{ fontSize: '12px', color: '#888' }}>{c.phone || '—'}</div>
+                                            </div>
+                                            <div style={{ fontSize: '12px', color: '#10b981' }}>
+                                                {c.loyalty_points ? `${c.loyalty_points} б.` : ''}
+                                            </div>
+                                        </div>
+                                    ))
+                                }
+                                {customers.filter(c =>
+                                    !attachSearch ||
+                                    c.name?.toLowerCase().includes(attachSearch.toLowerCase()) ||
+                                    c.phone?.includes(attachSearch)
+                                ).length === 0 && (
+                                    <div style={{ padding: '30px', textAlign: 'center', color: '#666' }}>
+                                        Клиенты не найдены
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => { setAttachModal(null); setAttachSearch(''); }}>Отмена</button>
                         </div>
                     </div>
                 </div>
