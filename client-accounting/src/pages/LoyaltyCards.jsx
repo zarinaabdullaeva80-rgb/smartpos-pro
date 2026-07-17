@@ -177,12 +177,12 @@ function LoyaltyCards() {
             <head>
                 <title>${t('loyaltycards.karty_loyalnosti', 'Карты лояльности - SmartPOS Pro')}</title>
                 <style>
-                    @page { size: A4; margin: 8mm; }
+                    @page { size: A4; margin: 6mm 10mm; }
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
                     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; }
-                    .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6mm; justify-content: center; }
+                    .cards-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3.5mm 6mm; justify-content: center; }
                     .card-item {
-                        width: 85.6mm; height: 53.98mm;
+                        width: 85.6mm; height: 49mm;
                         background: ${settings.card_logo ? `url(${settings.card_logo}) no-repeat center center / cover` : 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #1e3a5f 100%)'};
                         border-radius: 10px;
                         padding: 4mm 6mm;
@@ -201,7 +201,7 @@ function LoyaltyCards() {
                     .card-owner { font-size: 9px; text-transform: uppercase; opacity: 0.9; }
                     .card-level { font-size: 8px; color: #ffd700; }
                     .barcode-box { background: white; padding: 0.5mm 1mm; border-radius: 4px; margin-top: 1mm; text-align: center; display: flex; justify-content: center; align-items: center; }
-                    .barcode-box img { width: 100%; max-height: 12mm; object-fit: contain; }
+                    .barcode-box img { width: 100%; height: 12mm; object-fit: fill; }
                     .card-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 8px; opacity: 0.9; margin-top: 1mm; }
                     .card-cashback { background: rgba(255,215,0,0.2); padding: 0.5mm 2mm; border-radius: 2px; color: #ffd700; font-weight: bold; }
                 </style>
@@ -749,7 +749,7 @@ function LoyaltyCards() {
                                             textAlign: 'center'
                                         }}>
                                             {barcodeImage ? (
-                                                <img src={barcodeImage} alt="barcode" style={{ width: '100%', maxHeight: '45px', objectFit: 'contain' }} />
+                                                <img src={barcodeImage} alt="barcode" style={{ width: '100%', height: '42px', objectFit: 'fill' }} />
                                             ) : (
                                                 <div style={{ color: '#999', fontSize: '11px', padding: '8px 0' }}>{t('loyaltycards.zagruzka', 'Загрузка barcode...')}</div>
                                             )}
