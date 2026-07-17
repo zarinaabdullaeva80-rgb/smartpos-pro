@@ -462,6 +462,147 @@ router.post('/spend', authenticateToken, async (req, res) => {
 });
 
 /**
+ * Получить историю транзакций по всей организации (всех карт)
+ */
+router.get('/transactions', authenticateToken, async (req, res) => {
+    try {
+        const { limit = 100, offset = 0 } = req.query;
+        const orgId = req.user?.organization_id || 1;
+        const result = await pool.query(`
+            SELECT lt.*, u.full_name as created_by_name, c.name as customer_name, c.phone as customer_phone, c.card_number
+            FROM loyalty_transactions lt
+            LEFT JOIN users u ON lt.created_by = u.id
+            LEFT JOIN customers c ON lt.customer_id = c.id
+            WHERE lt.organization_id = $1
+            ORDER BY lt.created_at DESC
+            LIMIT $2 OFFSET $3
+        `, [orgId, parseInt(limit), parseInt(offset)]);
+
+        const transactions = result.rows;
+        for (const tx of transactions) {
+            if (tx.sale_id) {
+                try {
+                    const itemsRes = await pool.query(`
+                        SELECT si.quantity, si.price, p.name as product_name
+                        FROM sale_items si
+                        LEFT JOIN products p ON si.product_id = p.id
+                        WHERE si.sale_id = $1
+                        ORDER BY si.id
+                    `, [tx.sale_id]);
+                    tx.sale_items = itemsRes.rows;
+                } catch (e) {
+                    tx.sale_items = [];
+                }
+            } else {
+                tx.sale_items = [];
+            }
+        }
+
+        res.json({ transactions });
+    } catch (error) {
+        console.error('Get all transactions error:', error);
+        res.status(500).json({ error: 'Ошибка получения истории всех действий' });
+    }
+});
+
+/**
+ * Импорт карт лояльности из Excel (JSON-данные)
+ */
+router.post('/import', authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { items } = req.body;
+        if (!Array.isArray(items)) {
+            return res.status(400).json({ error: 'Неверный формат данных' });
+        }
+
+        const orgId = req.user?.organization_id || 1;
+        const createdBy = req.user?.id || 1;
+        let imported = 0;
+        let updated = 0;
+        const errors = [];
+
+        await client.query('BEGIN');
+
+        for (const item of items) {
+            try {
+                const name = item.name?.trim();
+                const phone = item.phone?.trim();
+                const email = item.email?.trim() || null;
+                let cardNumber = item.card_number?.toString()?.trim() || null;
+                const points = parseInt(item.points) || 0;
+
+                if (!name || !phone) {
+                    errors.push(`Пропущено имя или телефон для строки: ${JSON.stringify(item)}`);
+                    continue;
+                }
+
+                // Поиск по телефону
+                const existRes = await client.query(
+                    'SELECT id, card_number, loyalty_points FROM customers WHERE phone = $1 AND organization_id = $2',
+                    [phone, orgId]
+                );
+
+                let customerId;
+                if (existRes.rows.length > 0) {
+                    const existing = existRes.rows[0];
+                    customerId = existing.id;
+                    cardNumber = cardNumber || existing.card_number || generateCardNumber(customerId);
+
+                    await client.query(
+                        `UPDATE customers 
+                         SET name = $1, email = $2, card_number = $3, loyalty_points = $4, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = $5`,
+                        [name, email, cardNumber, points, customerId]
+                    );
+                    updated++;
+                } else {
+                    const insertRes = await client.query(
+                        `INSERT INTO customers (name, phone, email, loyalty_points, organization_id)
+                         VALUES ($1, $2, $3, $4, $5)
+                         RETURNING id`,
+                        [name, phone, email, points, orgId]
+                    );
+                    customerId = insertRes.rows[0].id;
+                    cardNumber = cardNumber || generateCardNumber(customerId);
+
+                    await client.query(
+                        `UPDATE customers SET card_number = $1 WHERE id = $2`,
+                        [cardNumber, customerId]
+                    );
+                    imported++;
+                }
+
+                if (points > 0) {
+                    await client.query(
+                        `DELETE FROM loyalty_transactions 
+                         WHERE customer_id = $1 AND description = 'Начисление при импорте из Excel' AND organization_id = $2`,
+                        [customerId, orgId]
+                    );
+
+                    await client.query(
+                        `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, description, created_by, organization_id)
+                         VALUES ($1, 'earn', $2, $3, $4, $5)`,
+                        [customerId, points, 'Начисление при импорте из Excel', createdBy, orgId]
+                    );
+                }
+            } catch (err) {
+                errors.push(`Ошибка импорта строки ${item.name || ''}: ${err.message}`);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, imported, updated, errors });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Import error:', error);
+        res.status(500).json({ error: 'Внутренняя ошибка импорта' });
+    } finally {
+        client.release();
+    }
+});
+
+/**
  * История транзакций клиента
  */
 router.get('/transactions/:customerId', authenticateToken, async (req, res) => {

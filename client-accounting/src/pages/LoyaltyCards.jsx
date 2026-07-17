@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, CreditCard, Printer, QrCode, Download, User, Star, Gift, History, Settings, Plus, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Search, CreditCard, Printer, QrCode, Download, User, Star, Gift, History, Settings, Plus, Trash2, CheckSquare, Square, FileSpreadsheet, Upload } from 'lucide-react';
 import QRCode from 'react-qr-code';
+import * as XLSX from 'xlsx';
 import { crmAPI, loyaltyAPI } from '../services/api';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
@@ -41,6 +42,13 @@ function LoyaltyCards() {
     const [spendAmount, setSpendAmount] = useState('');
     const [spendDescription, setSpendDescription] = useState('');
 
+    // История всех действий
+    const [showAllHistory, setShowAllHistory] = useState(false);
+    const [allTransactions, setAllTransactions] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historySearch, setHistorySearch] = useState('');
+    const fileInputRef = useRef(null);
+
     // Сохранение карт в localStorage
     useEffect(() => {
         localStorage.setItem('loyalty_cards', JSON.stringify(cards));
@@ -50,6 +58,25 @@ function LoyaltyCards() {
         loadCustomers();
         loadSettings();
     }, []);
+
+    const loadAllHistory = async () => {
+        setHistoryLoading(true);
+        try {
+            const res = await loyaltyAPI.getAllTransactions({ limit: 200 });
+            setAllTransactions(res.data?.transactions || []);
+        } catch (err) {
+            console.error('Load all transactions error:', err);
+            toast.error('Не удалось загрузить историю действий');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showAllHistory) {
+            loadAllHistory();
+        }
+    }, [showAllHistory]);
 
     const loadCustomers = async () => {
         try {
@@ -385,6 +412,126 @@ function LoyaltyCards() {
         setAttachSearch('');
     };
 
+    const handleExportExcel = () => {
+        try {
+            const dataToExport = customers.map(c => ({
+                'ФИО клиента': c.name || '',
+                'Телефон': c.phone || '',
+                'Email': c.email || '',
+                'Номер карты': c.card_number || '',
+                'Баллы (Баланс)': c.loyalty_points || 0,
+                'Дата регистрации': c.created_at ? new Date(c.created_at).toLocaleDateString('ru-RU') : ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Карты лояльности');
+
+            // Auto column width
+            const maxLens = {};
+            dataToExport.forEach(row => {
+                Object.keys(row).forEach(key => {
+                    const len = String(row[key] || '').length;
+                    maxLens[key] = Math.max(maxLens[key] || 10, len);
+                });
+            });
+            worksheet['!cols'] = Object.keys(maxLens).map(key => ({ wch: maxLens[key] + 3 }));
+
+            // Save file
+            const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+            const date = new Date().toISOString().split('T')[0];
+            const fullFilename = `LoyaltyCards_${date}.xlsx`;
+
+            if (window.electron && window.electron.saveFile) {
+                const bytes = new Uint8Array(excelBuffer);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                const fileData = btoa(binary);
+                window.electron.saveFile({
+                    folder: 'exports',
+                    filename: fullFilename,
+                    data: fileData,
+                    encoding: 'base64'
+                }).then(res => {
+                    if (res.success) {
+                        const openFolder = confirm(`Файл сохранён:\n${res.path}\n\nОткрыть папку?`);
+                        if (openFolder) {
+                            const folderPath = res.path.substring(0, res.path.lastIndexOf('\\'));
+                            window.electron.openFolder(folderPath);
+                        }
+                    } else {
+                        toast.error(`Ошибка сохранения: ${res.error}`);
+                    }
+                });
+            } else {
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = fullFilename;
+                link.click();
+                URL.revokeObjectURL(link.href);
+                toast.success('Экспорт завершён!');
+            }
+        } catch (err) {
+            console.error('Export error:', err);
+            toast.error('Ошибка экспорта Excel: ' + err.message);
+        }
+    };
+
+    const handleImportExcel = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet);
+
+                if (json.length === 0) {
+                    toast.info('Файл Excel пуст');
+                    return;
+                }
+
+                const mappedItems = json.map(row => {
+                    const name = row['ФИО клиента'] || row['ФИО'] || row['Имя'] || row['name'] || row['Name'] || '';
+                    const phone = row['Телефон'] || row['Телефонный номер'] || row['phone'] || row['Phone'] || '';
+                    const email = row['Email'] || row['Почта'] || row['email'] || '';
+                    const card_number = row['Номер карты'] || row['Карта'] || row['card_number'] || row['card'] || '';
+                    const points = row['Баллы (Баланс)'] || row['Баллы'] || row['Баланс'] || row['points'] || row['balance'] || 0;
+
+                    return { name, phone, email, card_number, points };
+                }).filter(item => item.name && item.phone);
+
+                if (mappedItems.length === 0) {
+                    toast.info('Не найдено подходящих строк с ФИО и Телефоном');
+                    return;
+                }
+
+                toast.info(`Отправка ${mappedItems.length} строк на сервер...`);
+                const response = await loyaltyAPI.importCards({ items: mappedItems });
+
+                if (response.data?.success) {
+                    toast.success(`Импорт завершён! Добавлено: ${response.data.imported || 0}, Обновлено: ${response.data.updated || 0}`);
+                    loadCustomers();
+                } else {
+                    toast.error('Ошибка импорта: ' + (response.data?.error || 'Неизвестная ошибка'));
+                }
+            } catch (err) {
+                console.error('Import excel error:', err);
+                toast.error('Ошибка чтения Excel: ' + err.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        event.target.value = '';
+    };
+
     const filteredCustomers = customers.filter(c =>
         c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.phone?.includes(searchTerm) ||
@@ -398,7 +545,23 @@ function LoyaltyCards() {
                     <h1>{t('loyaltycards.nakopitelnye_karty', '🎴 Накопительные карты')}</h1>
                     <p className="text-muted">Управление картами лояльности клиентов ({cards.length} карт)</p>
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={handleImportExcel}
+                        style={{ display: 'none' }}
+                    />
+                    <button className="btn btn-secondary" style={{ borderColor: '#10b981', color: '#10b981', background: 'transparent' }} onClick={() => fileInputRef.current?.click()}>
+                        <Upload size={18} /> Импорт
+                    </button>
+                    <button className="btn btn-secondary" style={{ borderColor: '#3b82f6', color: '#3b82f6', background: 'transparent' }} onClick={handleExportExcel}>
+                        <FileSpreadsheet size={18} /> Экспорт
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => setShowAllHistory(true)}>
+                        <History size={18} /> История действий
+                    </button>
                     <button className="btn btn-secondary" onClick={() => setShowBatchPrint(true)}>
                         <Printer size={18} /> Генерация баркодов
                     </button>
@@ -1169,6 +1332,113 @@ function LoyaltyCards() {
                             <button className="btn btn-warning" style={{ color: '#fff' }} onClick={handleSpendPoints}>
                                 ➖ Списать
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Модал истории всех действий */}
+            {showAllHistory && (
+                <div className="modal-overlay" onClick={() => setShowAllHistory(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '850px', width: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+                        <div className="modal-header">
+                            <h2>📜 История действий по картам лояльности</h2>
+                        </div>
+                        <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px', alignItems: 'center' }}>
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Поиск по имени клиента, телефону или карте..."
+                                        value={historySearch}
+                                        onChange={e => setHistorySearch(e.target.value)}
+                                        style={{ paddingLeft: '38px', width: '100%' }}
+                                    />
+                                </div>
+                                <button className="btn btn-secondary" onClick={loadAllHistory} disabled={historyLoading}>
+                                    Обновить
+                                </button>
+                            </div>
+
+                            {historyLoading ? (
+                                <div style={{ padding: '60px', textAlign: 'center', color: '#888' }}>
+                                    Загрузка истории операций...
+                                </div>
+                            ) : allTransactions.length === 0 ? (
+                                <div style={{ padding: '60px', textAlign: 'center', color: '#888' }}>
+                                    История операций пуста
+                                </div>
+                            ) : (
+                                <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', overflow: 'hidden' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                        <thead>
+                                            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Дата</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Клиент</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Карта</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Тип</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'right' }}>Баллы</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Описание</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left' }}>Оператор</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {allTransactions
+                                                .filter(tx => {
+                                                    const s = historySearch.toLowerCase();
+                                                    return !s ||
+                                                        tx.customer_name?.toLowerCase().includes(s) ||
+                                                        tx.customer_phone?.includes(s) ||
+                                                        tx.card_number?.includes(s) ||
+                                                        tx.description?.toLowerCase().includes(s);
+                                                })
+                                                .map((tx, idx) => (
+                                                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                                                        <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                                            {new Date(tx.created_at).toLocaleString('ru-RU')}
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            <div style={{ fontWeight: 600 }}>{tx.customer_name}</div>
+                                                            <div style={{ fontSize: '11px', color: '#888' }}>{tx.customer_phone}</div>
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', fontFamily: 'monospace' }}>
+                                                            {tx.card_number ? formatCardNumber(tx.card_number) : '—'}
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px' }}>
+                                                            {tx.transaction_type === 'earn' ? (
+                                                                <span style={{ color: '#10b981', background: 'rgba(16,185,129,0.12)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
+                                                                    Начисление
+                                                                </span>
+                                                            ) : (
+                                                                <span style={{ color: '#ef4444', background: 'rgba(239,68,68,0.12)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
+                                                                    Списание
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 'bold', color: tx.points > 0 ? '#10b981' : '#ef4444' }}>
+                                                            {tx.points > 0 ? `+${tx.points}` : tx.points}
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', color: '#ccc' }}>
+                                                            {tx.description}
+                                                            {tx.sale_items && tx.sale_items.length > 0 && (
+                                                                <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                                                                    {tx.sale_items.map((it, i) => `${it.product_name} x${it.quantity}`).join(', ')}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td style={{ padding: '12px 16px', color: '#888' }}>
+                                                            {tx.created_by_name || 'Система'}
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-overlay-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                            <button className="btn btn-secondary" onClick={() => setShowAllHistory(false)}>Закрыть</button>
                         </div>
                     </div>
                 </div>
