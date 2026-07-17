@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, CreditCard, Printer, QrCode, Download, User, Star, Gift, History, Settings, Plus, Trash2 } from 'lucide-react';
+import { Search, CreditCard, Printer, QrCode, Download, User, Star, Gift, History, Settings, Plus, Trash2, CheckSquare, Square } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { crmAPI, loyaltyAPI } from '../services/api';
 import { useToast } from '../components/ToastProvider';
@@ -27,6 +27,10 @@ function LoyaltyCards() {
     const [batchCount, setBatchCount] = useState(10);
     const [generatingBatch, setGeneratingBatch] = useState(false);
     const printRef = useRef();
+
+    // Групповое удаление карт
+    const [selectedCards, setSelectedCards] = useState(new Set());
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [barcodeImage, setBarcodeImage] = useState(null);
 
     // Списание баллов
@@ -217,7 +221,7 @@ function LoyaltyCards() {
         setBarcodeImage(null);
         try {
             // Загрузить данные карты
-            const cardResponse = await loyaltyAPI.getCardById(customer.id);
+            const cardResponse = await loyaltyAPI.getCard(customer.id);
             setCardData(cardResponse.data?.card || cardResponse.data);
 
             // Загрузить barcode
@@ -339,6 +343,31 @@ function LoyaltyCards() {
 
     const formatCurrency = (value) => {
         return new Intl.NumberFormat('ru-RU').format(value || 0) + " so'm";
+    };
+
+    // Групповое удаление
+    const toggleSelectCard = (id) => {
+        setSelectedCards(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedCards.size === cards.length) {
+            setSelectedCards(new Set());
+        } else {
+            setSelectedCards(new Set(cards.map(c => c.id)));
+        }
+    };
+
+    const deleteSelectedCards = () => {
+        setCards(prev => prev.filter(c => !selectedCards.has(c.id)));
+        setSelectedCards(new Set());
+        setShowDeleteModal(false);
+        toast.success(`Удалено ${selectedCards.size} карт(ы)`);
     };
 
     const filteredCustomers = customers.filter(c =>
@@ -703,8 +732,8 @@ function LoyaltyCards() {
 
             {/* Модал генерации баркодов */}
             {showBatchPrint && (
-                <div className="modal-overlay" onClick={() => setShowBatchPrint(false)}>
-                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '450px' }}>
+                <div className="modal-overlay" onClick={() => { setShowBatchPrint(false); setSelectedCards(new Set()); }}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
                         <div className="modal-header">
                             <h2>{t('loyaltycards.generatsiya_barkodov_dlya_pechati', '🖨️ Генерация баркодов для печати')}</h2>
                         </div>
@@ -726,9 +755,32 @@ function LoyaltyCards() {
                             </div>
                             {cards.length > 0 && (
                                 <div style={{ marginTop: '16px' }}>
-                                    <strong style={{ display: 'block', marginBottom: '8px' }}>📋 Список существующих баркодов:</strong>
+                                    {/* Заголовок таблицы с кнопками управления */}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                        <strong>📋 Список существующих баркодов:</strong>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                            <button
+                                                className="btn btn-secondary"
+                                                style={{ padding: '4px 10px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                onClick={toggleSelectAll}
+                                            >
+                                                {selectedCards.size === cards.length
+                                                    ? <><Square size={13} /> Снять всё</>
+                                                    : <><CheckSquare size={13} /> Выбрать все</>}
+                                            </button>
+                                            {selectedCards.size > 0 && (
+                                                <button
+                                                    className="btn"
+                                                    style={{ padding: '4px 10px', fontSize: '12px', background: '#ef4444', color: 'white', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                    onClick={() => setShowDeleteModal(true)}
+                                                >
+                                                    <Trash2 size={13} /> Удалить ({selectedCards.size})
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                     <div style={{ 
-                                        maxHeight: '200px', 
+                                        maxHeight: '220px', 
                                         overflowY: 'auto', 
                                         background: 'var(--bg-secondary)', 
                                         borderRadius: '8px', 
@@ -737,19 +789,45 @@ function LoyaltyCards() {
                                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                                             <thead>
                                                 <tr style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary, #2a2a3e)', zIndex: 1 }}>
-                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>№</th>
-                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Номер карты (баркод)</th>
-                                                    <th style={{ padding: '8px 12px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Клиент</th>
-                                                    <th style={{ padding: '8px 12px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Тип</th>
+                                                    <th style={{ padding: '8px 10px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', width: '36px' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedCards.size === cards.length && cards.length > 0}
+                                                            onChange={toggleSelectAll}
+                                                            style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                        />
+                                                    </th>
+                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>№</th>
+                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Номер карты (баркод)</th>
+                                                    <th style={{ padding: '8px 8px', textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Клиент</th>
+                                                    <th style={{ padding: '8px 8px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', fontWeight: 600 }}>Тип</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {cards.map((card, idx) => (
-                                                    <tr key={card.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                                                        <td style={{ padding: '6px 12px', color: '#888' }}>{idx + 1}</td>
-                                                        <td style={{ padding: '6px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#e879f9', letterSpacing: '1px' }}>{card.number}</td>
-                                                        <td style={{ padding: '6px 12px', color: card.name ? '#ddd' : '#666' }}>{card.name || '—'}</td>
-                                                        <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                                                    <tr
+                                                        key={card.id || idx}
+                                                        onClick={() => toggleSelectCard(card.id)}
+                                                        style={{
+                                                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                                            cursor: 'pointer',
+                                                            background: selectedCards.has(card.id) ? 'rgba(239,68,68,0.10)' : 'transparent',
+                                                            transition: 'background 0.15s'
+                                                        }}
+                                                    >
+                                                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedCards.has(card.id)}
+                                                                onChange={() => toggleSelectCard(card.id)}
+                                                                onClick={e => e.stopPropagation()}
+                                                                style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                            />
+                                                        </td>
+                                                        <td style={{ padding: '6px 8px', color: '#888' }}>{idx + 1}</td>
+                                                        <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 600, color: '#e879f9', letterSpacing: '1px' }}>{card.number}</td>
+                                                        <td style={{ padding: '6px 8px', color: card.name ? '#ddd' : '#666' }}>{card.name || '—'}</td>
+                                                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                                                             <span style={{ 
                                                                 padding: '2px 8px', 
                                                                 borderRadius: '4px', 
@@ -766,6 +844,11 @@ function LoyaltyCards() {
                                             </tbody>
                                         </table>
                                     </div>
+                                    {selectedCards.size > 0 && (
+                                        <div style={{ marginTop: '8px', fontSize: '13px', color: '#ef4444' }}>
+                                            ⚠️ Выбрано {selectedCards.size} из {cards.length} карт для удаления
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -832,6 +915,36 @@ function LoyaltyCards() {
                     </div>
                 </div>
             )}
+            {/* Модал подтверждения удаления */}
+            {showDeleteModal && (
+                <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+                    <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+                        <div className="modal-header" style={{ background: 'rgba(239,68,68,0.1)', borderBottom: '1px solid rgba(239,68,68,0.2)' }}>
+                            <h2 style={{ color: '#ef4444' }}>🗑️ Удаление карт</h2>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ fontSize: '15px', marginBottom: '12px' }}>
+                                Вы уверены, что хотите удалить <strong style={{ color: '#ef4444' }}>{selectedCards.size}</strong> карт(ы)?
+                            </p>
+                            <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '12px', fontSize: '13px', color: '#f87171' }}>
+                                ⚠️ Это действие удалит выбранные карты из локального хранилища. Восстановить их будет невозможно.
+                                Карты клиентов в базе данных не затрагиваются — удаляются только заготовки для печати.
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)}>Отмена</button>
+                            <button
+                                className="btn"
+                                style={{ background: '#ef4444', color: 'white' }}
+                                onClick={deleteSelectedCards}
+                            >
+                                <Trash2 size={16} /> Удалить {selectedCards.size} карт(ы)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Модал списания баллов */}
             {showSpendModal && (
                 <div className="modal-overlay" onClick={() => setShowSpendModal(false)}>

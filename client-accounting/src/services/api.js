@@ -947,6 +947,7 @@ export const loyaltyAPI = {
     getCards: (params) => api.get('/loyalty/cards', { params }),
     createCard: (data) => api.post('/loyalty/cards', data),
     getCard: (customerId) => api.get(`/loyalty/card/${customerId}`),
+    getCardById: (customerId) => api.get(`/loyalty/card/${customerId}`), // алиас getCard
     searchCustomer: (query) => api.get(`/loyalty/check/${query}`),
     addPoints: (cardId, points, reason) => api.post(`/loyalty/cards/${cardId}/points`, { points, reason }),
     earn: (data) => api.post('/loyalty/earn', data),
@@ -960,6 +961,7 @@ export const loyaltyAPI = {
     getGiftCertificates: () => api.get('/loyalty/certificates'),
     createCertificate: (data) => api.post('/loyalty/certificates', data)
 };
+
 
 // Batches API (партионный учёт)
 export const batchesAPI = {
