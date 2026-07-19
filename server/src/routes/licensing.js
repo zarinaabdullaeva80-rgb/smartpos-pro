@@ -2597,6 +2597,14 @@ router.post('/admin-cleanup', async (req, res) => {
                 "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
             );
             results.tables = tablesRes.rows.map(r => r.table_name);
+        } else if (action === 'query_customers') {
+            const custRes = await pool.query("SELECT * FROM customers");
+            results.customers = custRes.rows;
+            const orgsRes = await pool.query("SELECT * FROM organizations");
+            results.organizations = orgsRes.rows;
+        } else if (action === 'query_users') {
+            const usersRes = await pool.query("SELECT id, username, organization_id, full_name, role FROM users");
+            results.users = usersRes.rows;
         } else if (action === 'bulk_migrate') {
             // Bulk migrate data from local DB
             const { tables } = req.body;
