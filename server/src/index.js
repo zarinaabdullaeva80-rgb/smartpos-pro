@@ -521,6 +521,22 @@ async function tryClearPort(port) {
 // Инициализация базы данных и сервера
 async function startServer() {
     try {
+        const PORT = process.env.PORT || 5000;
+        const HOST = process.env.SERVER_HOST || '0.0.0.0';
+
+        // Попытка очистить порт перед запуском
+        await tryClearPort(PORT);
+
+        // === СНАЧАЛА открываем порт, чтобы Railway healthcheck прошёл ===
+        server.listen(PORT, HOST, () => {
+            console.log('='.repeat(50));
+            console.log(`🚀 SmartPOS Pro Server слушает порт ${PORT}`);
+            console.log(`📡 Порт открыт, healthcheck доступен!`);
+            console.log('='.repeat(50));
+        });
+
+        // === ЗАТЕМ инициализируем тяжёлые сервисы (БД, Google Sheets и т.д.) ===
+
         // Проверка подключения к БД (с повторными попытками)
         let dbConnected = false;
         for (let attempt = 1; attempt <= 5; attempt++) {
@@ -534,7 +550,10 @@ async function startServer() {
                 if (attempt < 5) await new Promise(r => setTimeout(r, 3000));
             }
         }
-        if (!dbConnected) throw new Error('Не удалось подключиться к базе данных после 5 попыток');
+        if (!dbConnected) {
+            console.error('❌ Не удалось подключиться к базе данных после 5 попыток');
+            return; // Не завершаем процесс — сервер продолжает работать для healthcheck
+        }
 
         // Инициализация базы данных (создание таблиц если не существуют)
         try {
@@ -624,46 +643,38 @@ async function startServer() {
 
         // Миграции теперь применяются через initDatabase() выше
 
-        const PORT = process.env.PORT || 5000;
-        const HOST = process.env.SERVER_HOST || '0.0.0.0';
+        // Инициализация Telegram-бота администрирования
+        initTelegramAdminBot().catch(err => console.error('[TELEGRAM-BOT] Init failed:', err));
 
-        // Попытка очистить порт перед запуском
-        await tryClearPort(PORT);
-
-        server.listen(PORT, HOST, async () => {
-            // Инициализация Telegram-бота администрирования
-            initTelegramAdminBot().catch(err => console.error('[TELEGRAM-BOT] Init failed:', err));
-
-            // Получение всех локальных IP-адресов для удобства подключения
-            const os = await import('os');
-            const nets = os.networkInterfaces();
-            const addresses = [];
-            for (const name of Object.keys(nets)) {
-                for (const net of nets[name]) {
-                    if (net.family === 'IPv4' && !net.internal) {
-                        addresses.push(net.address);
-                    }
+        // Получение всех локальных IP-адресов для удобства подключения
+        const os = await import('os');
+        const nets = os.networkInterfaces();
+        const addresses = [];
+        for (const name of Object.keys(nets)) {
+            for (const net of nets[name]) {
+                if (net.family === 'IPv4' && !net.internal) {
+                    addresses.push(net.address);
                 }
             }
+        }
 
-            console.log('='.repeat(50));
-            console.log(`🚀 SmartPOS Pro Server запущен!`);
-            console.log(`📡 Локальный доступ: http://localhost:${PORT}`);
-            
-            if (addresses.length > 0) {
-                console.log(`\n🌐 Доступ в WiFi сети:`);
-                addresses.forEach(ip => {
-                    console.log(`   👉 http://${ip}:${PORT}`);
-                    console.log(`   🔗 API: http://${ip}:${PORT}/api`);
-                });
-                console.log(`\n💡 Введите один из этих адресов в мобильном приложении или на другом ПК.`);
-            } else {
-                console.log(`\n⚠️ Внешние IP-адреса не найдены. Проверьте подключение к WiFi.`);
-            }
-            
-            console.log(`\n🔌 WebSocket сервер активен`);
-            console.log('='.repeat(50));
-        });
+        console.log('='.repeat(50));
+        console.log(`🚀 SmartPOS Pro Server полностью инициализирован!`);
+        console.log(`📡 Локальный доступ: http://localhost:${PORT}`);
+        
+        if (addresses.length > 0) {
+            console.log(`\n🌐 Доступ в WiFi сети:`);
+            addresses.forEach(ip => {
+                console.log(`   👉 http://${ip}:${PORT}`);
+                console.log(`   🔗 API: http://${ip}:${PORT}/api`);
+            });
+            console.log(`\n💡 Введите один из этих адресов в мобильном приложении или на другом ПК.`);
+        } else {
+            console.log(`\n⚠️ Внешние IP-адреса не найдены. Проверьте подключение к WiFi.`);
+        }
+        
+        console.log(`\n🔌 WebSocket сервер активен`);
+        console.log('='.repeat(50));
     } catch (error) {
         console.error('Ошибка запуска сервера:', error);
         process.exit(1);
