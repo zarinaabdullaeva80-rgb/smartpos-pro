@@ -228,10 +228,10 @@ export default function CashierSwitchScreen({ navigation, onCashierChange }) {
 
             {/* Диалог PIN */}
             <Portal>
-                <Dialog visible={showPinDialog} onDismiss={() => setShowPinDialog(false)}>
-                    <Dialog.Title>🔐 Введите PIN</Dialog.Title>
+                <Dialog visible={showPinDialog} onDismiss={() => setShowPinDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>🔐 Введите PIN</Dialog.Title>
                     <Dialog.Content>
-                        <Paragraph>Для переключения на {selectedCashier?.name}</Paragraph>
+                        <Paragraph style={{ color: colors.textSecondary }}>Для переключения на {selectedCashier?.name}</Paragraph>
                         <TextInput
                             value={pin}
                             onChangeText={setPin}
@@ -239,26 +239,28 @@ export default function CashierSwitchScreen({ navigation, onCashierChange }) {
                             secureTextEntry
                             maxLength={6}
                             mode="outlined"
-                            style={{ marginTop: 16 }}
+                            style={{ marginTop: 16, backgroundColor: colors.input }}
+                            textColor={colors.text}
                             autoFocus
                         />
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowPinDialog(false)}>Отмена</Button>
+                        <Button onPress={() => setShowPinDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
                         <Button mode="contained" onPress={handlePinSubmit}>Войти</Button>
                     </Dialog.Actions>
                 </Dialog>
 
                 {/* Диалог добавления */}
-                <Dialog visible={showAddDialog} onDismiss={() => setShowAddDialog(false)}>
-                    <Dialog.Title>👤 Новый кассир</Dialog.Title>
+                <Dialog visible={showAddDialog} onDismiss={() => setShowAddDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>👤 Новый кассир</Dialog.Title>
                     <Dialog.Content>
                         <TextInput
                             label="Имя кассира"
                             value={newCashierName}
                             onChangeText={setNewCashierName}
                             mode="outlined"
-                            style={{ marginBottom: 12 }}
+                            style={{ marginBottom: 12, backgroundColor: colors.input }}
+                            textColor={colors.text}
                         />
                         <TextInput
                             label="PIN-код (4-6 цифр)"
@@ -268,10 +270,12 @@ export default function CashierSwitchScreen({ navigation, onCashierChange }) {
                             secureTextEntry
                             maxLength={6}
                             mode="outlined"
+                            style={{ backgroundColor: colors.input }}
+                            textColor={colors.text}
                         />
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowAddDialog(false)}>Отмена</Button>
+                        <Button onPress={() => setShowAddDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
                         <Button mode="contained" onPress={handleAddCashier}>Добавить</Button>
                     </Dialog.Actions>
                 </Dialog>

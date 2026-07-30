@@ -35,6 +35,10 @@ export default function CartScreen({ route, navigation }) {
     const [showDeductDialog, setShowDeductDialog] = useState(false);
     const [deductAmount, setDeductAmount] = useState('');
     const [deductLoading, setDeductLoading] = useState(false);
+    // Loyalty — начисление
+    const [showAddPointsDialog, setShowAddPointsDialog] = useState(false);
+    const [addPointsAmount, setAddPointsAmount] = useState('');
+    const [addPointsLoading, setAddPointsLoading] = useState(false);
     // Loyalty — кешбек
     const [cashbackEnabled, setCashbackEnabled] = useState(false);
     const [cashbackPercent, setCashbackPercent] = useState(0);
@@ -116,26 +120,42 @@ export default function CartScreen({ route, navigation }) {
 
     // --- Loyalty search ---
     const searchLoyaltyCustomer = async () => {
-        if (!loyaltyPhone.trim()) {
-            Alert.alert('Ошибка', 'Введите номер телефона или имя');
+        const query = loyaltyPhone.trim();
+        if (!query) {
+            setLoyaltyError('Введите цифры карты лояльности, телефон или имя');
             return;
         }
+        setLoyaltyError('');
         try {
             setLoyaltySearching(true);
-            const res = await loyaltyAPI.checkBalance(loyaltyPhone.trim());
+            let res;
+            try {
+                res = await loyaltyAPI.scanCard(query, null);
+            } catch {
+                res = await loyaltyAPI.checkBalance(query);
+            }
+
             if (res.data?.customer) {
-                setLoyaltyCustomer(res.data.customer);
-                setCustomerName(res.data.customer.name || res.data.customer.full_name || '');
+                const c = res.data.customer;
+                setLoyaltyCustomer({
+                    ...c,
+                    points: c.balance ?? c.points ?? c.loyalty_points ?? 0,
+                    loyalty_points: c.balance ?? c.points ?? c.loyalty_points ?? 0,
+                });
+                setCustomerName(c.name || c.full_name || '');
                 setShowLoyaltySearch(false);
+                setLoyaltyError('');
                 SoundManager.playSuccess();
             } else {
-                Alert.alert('Не найден', 'Клиент не найден');
+                setLoyaltyError('Клиент или карта с такими данными не найдена');
+                SoundManager.playError();
             }
         } catch (error) {
+            SoundManager.playError();
             if (error.response?.status === 404) {
-                Alert.alert('Не найден', 'Клиент с таким номером не найден');
+                setLoyaltyError('Клиент или карта с таким номером/цифрами не найдена');
             } else {
-                Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка поиска');
+                setLoyaltyError(error.response?.data?.error || 'Ошибка поиска карты');
             }
         } finally {
             setLoyaltySearching(false);
@@ -223,6 +243,27 @@ export default function CartScreen({ route, navigation }) {
             Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка списания');
         } finally {
             setDeductLoading(false);
+        }
+    };
+
+    // --- Ручное начисление ---
+    const confirmAddPoints = async () => {
+        const pts = parseInt(addPointsAmount);
+        if (!pts || pts <= 0) { Alert.alert('Ошибка', 'Введите количество баллов для начисления'); return; }
+        setAddPointsLoading(true);
+        try {
+            await loyaltyAPI.addPoints(loyaltyCustomer.id, pts, 'Ручное начисление в кассе');
+            const available = loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0;
+            const newBalance = available + pts;
+            setLoyaltyCustomer(prev => ({ ...prev, points: newBalance, loyalty_points: newBalance }));
+            setAddPointsAmount('');
+            setShowAddPointsDialog(false);
+            SoundManager.playSuccess();
+            Alert.alert('✅ Начислено', `${pts} баллов успешно начислено на карту`);
+        } catch (error) {
+            Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка начисления');
+        } finally {
+            setAddPointsLoading(false);
         }
     };
 
@@ -418,7 +459,7 @@ export default function CartScreen({ route, navigation }) {
                                     </View>
                                     <IconButton icon="close" iconColor="#fff" size={20} onPress={removeLoyaltyCustomer} />
                                 </View>
-                                {/* Три кнопки действий */}
+                                {/* Кнопки действий лояльности */}
                                 <View style={styles.loyaltyActionsRow}>
                                     <Button
                                         mode="outlined"
@@ -428,6 +469,14 @@ export default function CartScreen({ route, navigation }) {
                                         style={styles.loyaltyActionBtn}
                                         labelStyle={styles.loyaltyActionLabel}
                                     >Баланс</Button>
+                                    <Button
+                                        mode="outlined"
+                                        icon="plus-circle"
+                                        compact
+                                        onPress={() => { setAddPointsAmount(''); setShowAddPointsDialog(true); }}
+                                        style={[styles.loyaltyActionBtn, { borderColor: '#4ade80' }]}
+                                        labelStyle={[styles.loyaltyActionLabel, { color: '#4ade80' }]}
+                                    >Начислить</Button>
                                     <Button
                                         mode="outlined"
                                         icon="minus-circle"
@@ -556,27 +605,27 @@ export default function CartScreen({ route, navigation }) {
 
             {/* Loyalty Balance Dialog */}
             <Portal>
-                <Dialog visible={showBalanceDialog} onDismiss={() => setShowBalanceDialog(false)}>
-                    <Dialog.Title>⭐ Баланс карты лояльности</Dialog.Title>
+                <Dialog visible={showBalanceDialog} onDismiss={() => setShowBalanceDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>⭐ Баланс карты лояльности</Dialog.Title>
                     <Dialog.Content>
                         <View style={{ alignItems: 'center', marginBottom: 16 }}>
                             <Paragraph style={{ color: '#4ade80', fontSize: 36, fontWeight: 'bold' }}>
                                 {loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0}
                             </Paragraph>
-                            <Paragraph style={{ color: '#90a4ae' }}>баллов</Paragraph>
+                            <Paragraph style={{ color: colors.textSecondary }}>баллов</Paragraph>
                             <Paragraph style={{ color: '#ffd700', marginTop: 4 }}>
                                 {loyaltyCustomer?.level || ''}
                             </Paragraph>
                         </View>
                         <Divider style={{ marginBottom: 12 }} />
-                        <Paragraph style={{ color: '#90a4ae', marginBottom: 8, fontWeight: 'bold' }}>Последние операции:</Paragraph>
+                        <Paragraph style={{ color: colors.textSecondary, marginBottom: 8, fontWeight: 'bold' }}>Последние операции:</Paragraph>
                         {balanceLoading
                             ? <ActivityIndicator size="small" />
                             : loyaltyTransactions.length === 0
-                                ? <Paragraph style={{ color: '#90a4ae' }}>Операций нет</Paragraph>
+                                ? <Paragraph style={{ color: colors.textSecondary }}>Операций нет</Paragraph>
                                 : loyaltyTransactions.map((t, i) => (
                                     <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <Paragraph style={{ color: '#ccc', flex: 1, fontSize: 12 }} numberOfLines={1}>
+                                        <Paragraph style={{ color: colors.text, flex: 1, fontSize: 12 }} numberOfLines={1}>
                                             {t.description || t.reason || t.type || 'Операция'}
                                         </Paragraph>
                                         <Paragraph style={{ color: t.points > 0 ? '#4ade80' : '#f87171', fontWeight: 'bold', fontSize: 12 }}>
@@ -587,17 +636,17 @@ export default function CartScreen({ route, navigation }) {
                         }
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowBalanceDialog(false)}>Закрыть</Button>
+                        <Button onPress={() => setShowBalanceDialog(false)} textColor={colors.primary}>Закрыть</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>
 
             {/* Loyalty Deduct Dialog */}
             <Portal>
-                <Dialog visible={showDeductDialog} onDismiss={() => setShowDeductDialog(false)}>
-                    <Dialog.Title>➖ Списание баллов</Dialog.Title>
+                <Dialog visible={showDeductDialog} onDismiss={() => setShowDeductDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>➖ Списание баллов</Dialog.Title>
                     <Dialog.Content>
-                        <Paragraph style={{ color: '#90a4ae', marginBottom: 12 }}>
+                        <Paragraph style={{ color: colors.textSecondary, marginBottom: 12 }}>
                             Доступно: {loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0} баллов
                         </Paragraph>
                         <TextInput
@@ -607,11 +656,13 @@ export default function CartScreen({ route, navigation }) {
                             keyboardType="numeric"
                             mode="outlined"
                             left={<TextInput.Icon icon="minus-circle" />}
+                            style={{ backgroundColor: colors.input }}
+                            textColor={colors.text}
                             autoFocus
                         />
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowDeductDialog(false)}>Отмена</Button>
+                        <Button onPress={() => setShowDeductDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
                         <Button
                             onPress={confirmDeduct}
                             loading={deductLoading}
@@ -622,35 +673,84 @@ export default function CartScreen({ route, navigation }) {
                 </Dialog>
             </Portal>
 
+            {/* Loyalty Add Points Dialog */}
+            <Portal>
+                <Dialog visible={showAddPointsDialog} onDismiss={() => setShowAddPointsDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>➕ Начисление баллов</Dialog.Title>
+                    <Dialog.Content>
+                        <Paragraph style={{ color: colors.textSecondary, marginBottom: 12 }}>
+                            Текущий баланс: {loyaltyCustomer?.points || loyaltyCustomer?.loyalty_points || 0} баллов
+                        </Paragraph>
+                        <TextInput
+                            label="Количество баллов"
+                            value={addPointsAmount}
+                            onChangeText={setAddPointsAmount}
+                            keyboardType="numeric"
+                            mode="outlined"
+                            left={<TextInput.Icon icon="plus-circle" />}
+                            style={{ backgroundColor: colors.input }}
+                            textColor={colors.text}
+                            autoFocus
+                        />
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <Button onPress={() => setShowAddPointsDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
+                        <Button
+                            onPress={confirmAddPoints}
+                            loading={addPointsLoading}
+                            disabled={addPointsLoading}
+                            textColor="#4ade80"
+                        >Начислить</Button>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+
             {/* Loyalty Search Dialog */}
             <Portal>
-                <Dialog visible={showLoyaltySearch} onDismiss={() => setShowLoyaltySearch(false)}>
-                    <Dialog.Title>🔍 Карта лояльности</Dialog.Title>
+                <Dialog 
+                    visible={showLoyaltySearch} 
+                    onDismiss={() => { setShowLoyaltySearch(false); setLoyaltyError(''); }}
+                    style={{ backgroundColor: colors.surface, borderRadius: 16 }}
+                >
+                    <Dialog.Title style={{ color: colors.text }}>🔍 Поиск карты лояльности</Dialog.Title>
                     <Dialog.Content>
+                        <Paragraph style={{ color: colors.textSecondary, marginBottom: 8, fontSize: 12 }}>
+                            Поиск по цифрам карты лояльности, номеру телефона или имени клиента:
+                        </Paragraph>
                         <TextInput
-                            label="Телефон или имя"
+                            label="Цифры карты, телефон или имя"
                             value={loyaltyPhone}
-                            onChangeText={setLoyaltyPhone}
-                            keyboardType="phone-pad"
+                            onChangeText={(t) => { setLoyaltyPhone(t); setLoyaltyError(''); }}
+                            keyboardType="default"
                             mode="outlined"
-                            left={<TextInput.Icon icon="phone" />}
+                            left={<TextInput.Icon icon="card-search" />}
                             onSubmitEditing={searchLoyaltyCustomer}
-                            style={{ marginBottom: 12 }}
+                            placeholder="Напр. 77770001 или 901234567"
+                            style={{ marginBottom: 12, backgroundColor: colors.input }}
+                            textColor={colors.text}
+                            autoFocus
                         />
+                        {loyaltyError ? (
+                            <View style={{ backgroundColor: 'rgba(239,68,68,0.15)', padding: 10, borderRadius: 8, marginBottom: 10 }}>
+                                <Paragraph style={{ color: colors.error, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                                    ⚠️ {loyaltyError}
+                                </Paragraph>
+                            </View>
+                        ) : null}
                         <Button
                             mode="outlined"
-                            icon="barcode-scan"
+                            icon="camera"
                             onPress={scanLoyaltyBarcode}
                             style={styles.barcodeBtn}
-                            contentStyle={{ flexDirection: 'row-reverse' }}
+                            textColor={colors.primary}
                         >
-                            Сканировать штрихкод карты
+                            📷 Сканировать карту камерой
                         </Button>
                         {loyaltySearching && <ActivityIndicator size="small" style={{ marginTop: 12 }} />}
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowLoyaltySearch(false)}>Отмена</Button>
-                        <Button onPress={searchLoyaltyCustomer} loading={loyaltySearching}>Найти</Button>
+                        <Button onPress={() => { setShowLoyaltySearch(false); setLoyaltyError(''); }} textColor={colors.textSecondary}>Отмена</Button>
+                        <Button onPress={searchLoyaltyCustomer} loading={loyaltySearching} mode="contained">Найти</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>

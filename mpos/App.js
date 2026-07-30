@@ -78,9 +78,19 @@ const createPaperTheme = (isDark) => {
             secondary: colors.secondary,
             background: colors.background,
             surface: colors.surface,
+            surfaceVariant: colors.surfaceVariant,
             error: colors.error,
             onSurface: colors.text,
             onBackground: colors.text,
+            backdrop: 'rgba(0, 0, 0, 0.75)',
+            elevation: {
+                level0: 'transparent',
+                level1: colors.surface,
+                level2: colors.surface,
+                level3: colors.surface,
+                level4: colors.surface,
+                level5: colors.surface,
+            },
         },
     };
 };
@@ -213,6 +223,7 @@ function AppNavigator({ onLogout }) {
                                     <Stack.Screen name="SalesHistory" component={SalesHistoryScreen} options={{ title: 'История' }} />
                                     <Stack.Screen name="SaleDetails" component={SaleDetailsScreen} options={{ title: 'Детали' }} />
                                     <Stack.Screen name="Scanner" component={BarcodeScannerScreen} options={{ headerShown: false }} />
+                                    <Stack.Screen name="BarcodeScanner" component={BarcodeScannerScreen} options={{ headerShown: false }} />
                                     <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} options={{ title: 'Оплата' }} />
                                     <Stack.Screen name="Returns" component={ReturnsScreen} options={{ title: 'Возвраты' }} />
                                     <Stack.Screen name="ReturnsHistory" component={ReturnsHistoryScreen} options={{ title: 'История возвратов' }} />

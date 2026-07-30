@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, Alert, Platform, Image, Modal, TouchableOpacity } from 'react-native';
-import { Card, Title, Paragraph, Button, Chip, Divider, TextInput, List, ActivityIndicator, Avatar, Dialog, Portal, Text } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl, Alert, Platform, Image, Modal, TouchableOpacity, FlatList } from 'react-native';
+import { Card, Title, Paragraph, Button, Chip, Divider, TextInput, List, ActivityIndicator, Avatar, Dialog, Portal, Text, SegmentedButtons, IconButton } from 'react-native-paper';
 import { loyaltyAPI, customersAPI } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
@@ -14,12 +14,17 @@ export default function LoyaltyScreen({ navigation }) {
     const [customer, setCustomer] = useState(null);
     const [transactions, setTransactions] = useState([]);
     const [searching, setSearching] = useState(false);
+
+    // Модалы баллов
     const [showPointsDialog, setShowPointsDialog] = useState(false);
     const [pointsInput, setPointsInput] = useState('');
-    const [showCreateDialog, setShowCreateDialog] = useState(false);
-    const [newCustomerName, setNewCustomerName] = useState('');
     const [showSpendDialog, setShowSpendDialog] = useState(false);
     const [spendPointsInput, setSpendPointsInput] = useState('');
+
+    // Модал создания клиента
+    const [showCreateDialog, setShowCreateDialog] = useState(false);
+    const [newCustomerName, setNewCustomerName] = useState('');
+    const [newCustomerPhone, setNewCustomerPhone] = useState('');
 
     // Карта лояльности (barcode)
     const [cardData, setCardData] = useState(null);
@@ -27,9 +32,43 @@ export default function LoyaltyScreen({ navigation }) {
     const [showBarcodeModal, setShowBarcodeModal] = useState(false);
     const [loadingCard, setLoadingCard] = useState(false);
 
+    // --- 3. Прикрепление карты к клиенту ---
+    const [showAttachDialog, setShowAttachDialog] = useState(false);
+    const [attachCardNumber, setAttachCardNumber] = useState('');
+    const [attachSearchQuery, setAttachSearchQuery] = useState('');
+    const [attachCustomers, setAttachCustomers] = useState([]);
+    const [selectedAttachCustomer, setSelectedAttachCustomer] = useState(null);
+    const [attachLoading, setAttachLoading] = useState(false);
+
+    // --- 1. Общая история vs История карты ---
+    const [historyTab, setHistoryTab] = useState('customer'); // 'customer' | 'all'
+    const [allTransactions, setAllTransactions] = useState([]);
+    const [loadingAllTx, setLoadingAllTx] = useState(false);
+
     useEffect(() => {
         loadProgram();
+        loadAllTransactions();
+        autoLoadCustomer();
     }, []);
+
+    const autoLoadCustomer = async () => {
+        try {
+            const res = await customersAPI.getAll({ limit: 20 });
+            const list = res.data?.customers || res.data || [];
+            setAttachCustomers(list);
+            if (list.length > 0) {
+                const first = list.find(c => c.card_number || c.loyalty_points > 0) || list[0];
+                setCustomer(first);
+                loadCard(first.id);
+                try {
+                    const txRes = await loyaltyAPI.getTransactions(first.id);
+                    setTransactions(txRes.data?.transactions || []);
+                } catch { setTransactions([]); }
+            }
+        } catch (e) {
+            console.log('[Loyalty] autoLoadCustomer error:', e.message);
+        }
+    };
 
     const loadProgram = async () => {
         try {
@@ -42,6 +81,19 @@ export default function LoyaltyScreen({ navigation }) {
         } finally {
             setLoading(false);
             setRefreshing(false);
+        }
+    };
+
+    const loadAllTransactions = async () => {
+        try {
+            setLoadingAllTx(true);
+            const res = await loyaltyAPI.getAllTransactions({ limit: 50 });
+            setAllTransactions(res.data?.transactions || []);
+        } catch (error) {
+            console.error('Error loading all transactions:', error);
+            setAllTransactions([]);
+        } finally {
+            setLoadingAllTx(false);
         }
     };
 
@@ -62,7 +114,6 @@ export default function LoyaltyScreen({ navigation }) {
             }
         } catch (error) {
             console.error('Error loading card:', error);
-            // Попробовать загрузить barcode через прямой endpoint
             try {
                 const res = await loyaltyAPI.getCard(custId);
                 if (res.data?.card) setCardData(res.data.card);
@@ -72,64 +123,177 @@ export default function LoyaltyScreen({ navigation }) {
         }
     };
 
+    // Поиск клиента по цифрам карты / телефону / имени
     const searchCustomer = async () => {
-        if (!searchPhone.trim()) {
-            Alert.alert('Ошибка', 'Введите номер телефона или имя');
+        const query = searchPhone.trim();
+        if (!query) {
+            Alert.alert('Ошибка', 'Введите цифры карты лояльности, телефон или имя');
             return;
         }
 
         try {
             setSearching(true);
-            const res = await loyaltyAPI.checkBalance(searchPhone.trim());
-            if (res.data) {
-                const cust = res.data.customer || res.data;
+            // Пробуем сначала сканировать / искать по карте
+            let res;
+            try {
+                res = await loyaltyAPI.scanCard(query, null);
+            } catch {
+                res = await loyaltyAPI.checkBalance(query);
+            }
+
+            if (res.data?.customer) {
+                const cust = res.data.customer;
                 setCustomer(cust);
-                // Загрузить карту и barcode
                 const custId = cust.id;
                 if (custId) {
                     loadCard(custId);
                     try {
                         const txRes = await loyaltyAPI.getTransactions(custId);
                         setTransactions(txRes.data?.transactions || []);
-                    } catch (txErr) {
+                    } catch {
                         setTransactions([]);
                     }
                 }
                 SoundManager.playSuccess();
             } else {
-                setCustomer(null);
-                setCardData(null);
-                setBarcodeImage(null);
-                setTransactions([]);
-                Alert.alert(
-                    'Не найден',
-                    'Клиент не найден. Создать нового?',
-                    [
-                        { text: 'Отмена', style: 'cancel' },
-                        { text: 'Создать', onPress: () => { setNewCustomerName(''); setShowCreateDialog(true); } }
-                    ]
-                );
+                handleUnattachedCard(query);
             }
         } catch (error) {
             if (error.response?.status === 404) {
-                Alert.alert(
-                    'Клиент не найден',
-                    'Хотите создать нового клиента?',
-                    [
-                        { text: 'Отмена', style: 'cancel' },
-                        { text: 'Создать', onPress: () => { setNewCustomerName(''); setShowCreateDialog(true); } }
-                    ]
-                );
+                handleUnattachedCard(query);
             } else {
                 SoundManager.playError();
                 Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка поиска');
             }
-            setCustomer(null);
-            setCardData(null);
-            setBarcodeImage(null);
-            setTransactions([]);
         } finally {
             setSearching(false);
+        }
+    };
+
+    // --- 2. Сканирование карты камерой ---
+    const scanCardWithCamera = () => {
+        navigation.navigate('BarcodeScanner', {
+            onScan: (scannedCode) => handleScanCard(scannedCode),
+        });
+    };
+
+    const handleScanCard = async (scannedCode) => {
+        if (!scannedCode || !scannedCode.trim()) return;
+        const cleanCode = scannedCode.trim();
+        setSearchPhone(cleanCode);
+
+        try {
+            setSearching(true);
+            const res = await loyaltyAPI.scanCard(cleanCode, null);
+            if (res.data?.customer) {
+                const cust = res.data.customer;
+                setCustomer(cust);
+                loadCard(cust.id);
+                try {
+                    const txRes = await loyaltyAPI.getTransactions(cust.id);
+                    setTransactions(txRes.data?.transactions || []);
+                } catch { setTransactions([]); }
+                SoundManager.playSuccess();
+            } else {
+                // 4. Прикрепление карты после сканирования
+                handleUnattachedCard(cleanCode);
+            }
+        } catch (error) {
+            if (error.response?.status === 404) {
+                // 4. Прикрепление карты после сканирования
+                handleUnattachedCard(cleanCode);
+            } else {
+                SoundManager.playError();
+                Alert.alert('Ошибка', error.response?.data?.error || 'Ошибка сканирования');
+            }
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    // --- 4. Прикрепление карты после сканирования / если карта не привязана ---
+    const handleUnattachedCard = (cardNumber) => {
+        setCustomer(null);
+        setCardData(null);
+        setBarcodeImage(null);
+        setTransactions([]);
+        SoundManager.playTap();
+
+        Alert.alert(
+            '💳 Карта не найдена',
+            `Карта № ${cardNumber} не привязана к клиенту. Выберите действие:`,
+            [
+                { text: 'Отмена', style: 'cancel' },
+                {
+                    text: 'Привязать к клиенту',
+                    onPress: () => openAttachModal(cardNumber)
+                },
+                {
+                    text: 'Создать нового',
+                    onPress: () => {
+                        setNewCustomerName('');
+                        setNewCustomerPhone(cardNumber.length < 12 ? cardNumber : '');
+                        setAttachCardNumber(cardNumber);
+                        setShowCreateDialog(true);
+                    }
+                }
+            ]
+        );
+    };
+
+    // --- 3. Модал прикрепления карты к существующему клиенту ---
+    const openAttachModal = async (prefilledCardNumber = '') => {
+        setAttachCardNumber(prefilledCardNumber || '');
+        setAttachSearchQuery('');
+        setSelectedAttachCustomer(null);
+        setShowAttachDialog(true);
+        loadAttachCustomers('');
+    };
+
+    const loadAttachCustomers = async (searchQuery = '') => {
+        try {
+            setAttachLoading(true);
+            const res = await customersAPI.getAll({ search: searchQuery, limit: 30 });
+            const list = res.data?.customers || res.data || [];
+            setAttachCustomers(list);
+        } catch (err) {
+            console.error('Error loading customers for attach:', err);
+            setAttachCustomers([]);
+        } finally {
+            setAttachLoading(false);
+        }
+    };
+
+    const confirmAttachCard = async () => {
+        if (!selectedAttachCustomer) {
+            Alert.alert('Ошибка', 'Выберите клиента для привязки карты');
+            return;
+        }
+        if (!attachCardNumber.trim()) {
+            Alert.alert('Ошибка', 'Введите номер карты');
+            return;
+        }
+
+        try {
+            setAttachLoading(true);
+            const res = await loyaltyAPI.attachCard(selectedAttachCustomer.id, attachCardNumber.trim());
+            setShowAttachDialog(false);
+            SoundManager.playSuccess();
+            Alert.alert('✅ Успех', res.data?.message || 'Карта успешно привязана!');
+            
+            const cust = res.data?.customer || selectedAttachCustomer;
+            setCustomer(cust);
+            setSearchPhone(cust.phone || attachCardNumber.trim());
+            loadCard(cust.id);
+            try {
+                const txRes = await loyaltyAPI.getTransactions(cust.id);
+                setTransactions(txRes.data?.transactions || []);
+            } catch { setTransactions([]); }
+        } catch (error) {
+            SoundManager.playError();
+            Alert.alert('Ошибка', error.response?.data?.error || 'Не удалось привязать карту');
+        } finally {
+            setAttachLoading(false);
         }
     };
 
@@ -141,13 +305,21 @@ export default function LoyaltyScreen({ navigation }) {
         try {
             const res = await customersAPI.create({
                 name: newCustomerName.trim(),
-                phone: searchPhone.trim(),
+                phone: newCustomerPhone.trim() || searchPhone.trim() || undefined,
+                card_number: attachCardNumber.trim() || undefined,
                 loyalty_points: 0
             });
+            const created = res.data?.customer || res.data;
             setShowCreateDialog(false);
+            setAttachCardNumber('');
             SoundManager.playSuccess();
-            Alert.alert('Успех', 'Клиент создан с картой лояльности');
-            searchCustomer();
+            Alert.alert('✅ Успех', 'Клиент создан и карта привязана');
+            if (created) {
+                setCustomer(created);
+                setSearchPhone(created.phone || created.card_number || '');
+                loadCard(created.id);
+                setTransactions([]);
+            }
         } catch (error) {
             SoundManager.playError();
             Alert.alert('Ошибка', error.response?.data?.error || 'Не удалось создать клиента');
@@ -172,6 +344,7 @@ export default function LoyaltyScreen({ navigation }) {
             SoundManager.playSuccess();
             Alert.alert('Успех', `Начислено ${points} баллов`);
             searchCustomer();
+            loadAllTransactions();
         } catch (error) {
             SoundManager.playError();
             Alert.alert('Ошибка', error.response?.data?.error || 'Не удалось начислить баллы');
@@ -201,6 +374,7 @@ export default function LoyaltyScreen({ navigation }) {
             SoundManager.playSuccess();
             Alert.alert('Успех', `Списано ${points} баллов`);
             searchCustomer();
+            loadAllTransactions();
         } catch (error) {
             SoundManager.playError();
             Alert.alert('Ошибка', error.response?.data?.error || 'Не удалось списать баллы');
@@ -210,10 +384,6 @@ export default function LoyaltyScreen({ navigation }) {
     const formatDate = (dateStr) => {
         if (!dateStr) return 'Н/Д';
         return new Date(dateStr).toLocaleString('ru-RU');
-    };
-
-    const formatCurrency = (value) => {
-        return Math.round(value || 0).toLocaleString('ru-RU') + " so'm";
     };
 
     const formatCardNumber = (number) => {
@@ -242,8 +412,10 @@ export default function LoyaltyScreen({ navigation }) {
         <>
             <ScrollView
                 style={[styles.container, dynamicStyles.container]}
+                contentContainerStyle={{ flexGrow: 1, paddingBottom: 60 }}
+                keyboardShouldPersistTaps="handled"
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadProgram(); }} />
+                    <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadProgram(); loadAllTransactions(); autoLoadCustomer(); }} />
                 }
             >
                 {/* Программа лояльности */}
@@ -256,9 +428,9 @@ export default function LoyaltyScreen({ navigation }) {
                             <View style={styles.statsRow}>
                                 <View style={styles.stat}>
                                     <Paragraph style={[styles.statValue, { color: colors.primary }]}>
-                                        {program.pointsRate || 1}%
+                                        {program.pointsRate || 2}%
                                     </Paragraph>
-                                    <Paragraph style={dynamicStyles.textSecondary}>Начисление</Paragraph>
+                                    <Paragraph style={dynamicStyles.textSecondary}>Кэшбек</Paragraph>
                                 </View>
                                 <View style={styles.stat}>
                                     <Paragraph style={[styles.statValue, { color: colors.success }]}>
@@ -271,31 +443,65 @@ export default function LoyaltyScreen({ navigation }) {
                     </Card>
                 )}
 
-                {/* Поиск клиента */}
+                {/* Поиск и прикрепление карты лояльности */}
                 <Card style={[styles.card, dynamicStyles.card]}>
                     <Card.Content>
-                        <Title style={dynamicStyles.text}>🔍 Поиск клиента</Title>
+                        <Title style={dynamicStyles.text}>💳 Поиск и карты лояльности</Title>
                         <TextInput
-                            label="Номер телефона"
+                            label="Цифры карты, телефон или имя"
                             value={searchPhone}
                             onChangeText={setSearchPhone}
-                            keyboardType="phone-pad"
+                            keyboardType="default"
                             style={[styles.input, dynamicStyles.input]}
                             mode="outlined"
-                            left={<TextInput.Icon icon="phone" />}
+                            left={<TextInput.Icon icon="card-account-details-star" />}
                             right={<TextInput.Icon icon="magnify" onPress={searchCustomer} />}
                             onSubmitEditing={searchCustomer}
+                            placeholder="Напр. 77770001 или 901234567"
                         />
-                        <Button
-                            mode="contained"
-                            onPress={searchCustomer}
-                            loading={searching}
-                            disabled={searching}
-                            style={styles.button}
-                            icon="account-search"
-                        >
-                            Найти клиента
-                        </Button>
+                        <View style={styles.searchButtonsRow}>
+                            <Button
+                                mode="contained"
+                                onPress={searchCustomer}
+                                loading={searching}
+                                disabled={searching}
+                                style={{ flex: 1 }}
+                                icon="magnify"
+                            >
+                                Найти
+                            </Button>
+                            <Button
+                                mode="contained-tonal"
+                                onPress={scanCardWithCamera}
+                                style={{ flex: 1 }}
+                                icon="camera"
+                            >
+                                Сканер
+                            </Button>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                            <Button
+                                mode="outlined"
+                                onPress={() => openAttachModal('')}
+                                style={{ flex: 1, borderStyle: 'dashed' }}
+                                icon="link-variant"
+                            >
+                                Привязать карту
+                            </Button>
+                            <Button
+                                mode="contained-tonal"
+                                onPress={() => {
+                                    setNewCustomerName('');
+                                    setNewCustomerPhone('');
+                                    setAttachCardNumber('');
+                                    setShowCreateDialog(true);
+                                }}
+                                style={{ flex: 1 }}
+                                icon="account-plus"
+                            >
+                                + Новый клиент
+                            </Button>
+                        </View>
                     </Card.Content>
                 </Card>
 
@@ -311,7 +517,12 @@ export default function LoyaltyScreen({ navigation }) {
                                 />
                                 <View style={styles.customerInfo}>
                                     <Title style={dynamicStyles.text}>{customer.name || customer.full_name || 'Клиент'}</Title>
-                                    <Paragraph style={dynamicStyles.textSecondary}>{customer.phone}</Paragraph>
+                                    <Paragraph style={dynamicStyles.textSecondary}>{customer.phone || 'Нет телефона'}</Paragraph>
+                                    {customer.card_number && (
+                                        <Chip compact style={{ marginTop: 4, backgroundColor: 'rgba(255,215,0,0.15)' }} textStyle={{ color: '#ffd700', fontSize: 11 }}>
+                                            💳 № {customer.card_number}
+                                        </Chip>
+                                    )}
                                 </View>
                             </View>
 
@@ -351,10 +562,7 @@ export default function LoyaltyScreen({ navigation }) {
                                                 <Paragraph style={styles.cardBrand}>SmartPOS</Paragraph>
                                                 <Paragraph style={styles.cardBrandAccent}>Бонус</Paragraph>
                                             </View>
-                                            <Chip
-                                                style={styles.levelChip}
-                                                textStyle={styles.levelChipText}
-                                            >
+                                            <Chip style={styles.levelChip} textStyle={styles.levelChipText}>
                                                 {cardData?.level || customer.level || '⭐ Standard'}
                                             </Chip>
                                         </View>
@@ -370,11 +578,7 @@ export default function LoyaltyScreen({ navigation }) {
                                         {/* Barcode */}
                                         {barcodeImage ? (
                                             <View style={styles.barcodeContainer}>
-                                                <Image
-                                                    source={{ uri: barcodeImage }}
-                                                    style={styles.barcodeImage}
-                                                    resizeMode="contain"
-                                                />
+                                                <Image source={{ uri: barcodeImage }} style={styles.barcodeImage} resizeMode="contain" />
                                             </View>
                                         ) : loadingCard ? (
                                             <View style={styles.barcodeContainer}>
@@ -382,9 +586,7 @@ export default function LoyaltyScreen({ navigation }) {
                                             </View>
                                         ) : (
                                             <View style={styles.barcodeContainer}>
-                                                <Paragraph style={styles.barcodePlaceholder}>
-                                                    Нажмите для загрузки barcode
-                                                </Paragraph>
+                                                <Paragraph style={styles.barcodePlaceholder}>Нажмите для просмотра barcode</Paragraph>
                                             </View>
                                         )}
 
@@ -396,9 +598,7 @@ export default function LoyaltyScreen({ navigation }) {
                                                 </Paragraph>
                                             </View>
                                             <View style={styles.cashbackBadge}>
-                                                <Paragraph style={styles.cashbackText}>
-                                                    Кэшбек {program?.pointsRate || 2}%
-                                                </Paragraph>
+                                                <Paragraph style={styles.cashbackText}>Кэшбек {program?.pointsRate || 2}%</Paragraph>
                                             </View>
                                         </View>
                                     </View>
@@ -406,65 +606,101 @@ export default function LoyaltyScreen({ navigation }) {
                             )}
 
                             <View style={styles.buttonRow}>
-                                <Button
-                                    mode="contained"
-                                    onPress={addPoints}
-                                    style={styles.actionButton}
-                                    icon="plus"
-                                >
+                                <Button mode="contained" onPress={addPoints} style={styles.actionButton} icon="plus">
                                     Начислить
                                 </Button>
-                                <Button
-                                    mode="contained"
-                                    onPress={spendPoints}
-                                    style={[styles.actionButton, { backgroundColor: '#FF9800' }]}
-                                    icon="minus"
-                                >
+                                <Button mode="contained" onPress={spendPoints} style={[styles.actionButton, { backgroundColor: '#FF9800' }]} icon="minus">
                                     Списать
                                 </Button>
-                                <Button
-                                    mode="outlined"
-                                    onPress={() => setShowBarcodeModal(true)}
-                                    style={styles.actionButton}
-                                    icon="barcode"
-                                >
-                                    Barcode
+                                <Button mode="outlined" onPress={() => openAttachModal(customer.card_number || '')} style={styles.actionButton} icon="link-variant">
+                                    Перепривязать
                                 </Button>
                             </View>
                         </Card.Content>
                     </Card>
                 )}
 
-                {/* История транзакций */}
-                {customer && transactions.length > 0 && (
-                    <Card style={[styles.card, dynamicStyles.card]}>
-                        <Card.Content>
-                            <Title style={dynamicStyles.text}>📋 История начислений</Title>
-                            {transactions.slice(0, 10).map((tx, index) => (
-                                <List.Item
-                                    key={index}
-                                    title={tx.reason || tx.description || 'Операция'}
-                                    description={formatDate(tx.created_at || tx.date)}
-                                    left={() => (
-                                        <Avatar.Icon
-                                            size={36}
-                                            icon={tx.points > 0 || tx.amount > 0 ? 'plus' : 'minus'}
-                                            style={{ backgroundColor: tx.points > 0 || tx.amount > 0 ? '#4CAF50' : '#F44336' }}
-                                        />
-                                    )}
-                                    right={() => (
-                                        <Chip
-                                            style={{ backgroundColor: tx.points > 0 || tx.amount > 0 ? '#E8F5E9' : '#FFEBEE' }}
-                                            textStyle={{ color: tx.points > 0 || tx.amount > 0 ? '#4CAF50' : '#F44336' }}
-                                        >
-                                            {tx.points > 0 || tx.amount > 0 ? '+' : ''}{tx.points || tx.amount}
-                                        </Chip>
-                                    )}
-                                />
-                            ))}
-                        </Card.Content>
-                    </Card>
-                )}
+                {/* --- 1. История транзакций (Вкладки: История карты / Общая история) --- */}
+                <Card style={[styles.card, dynamicStyles.card]}>
+                    <Card.Content>
+                        <SegmentedButtons
+                            value={historyTab}
+                            onValueChange={setHistoryTab}
+                            buttons={[
+                                { value: 'customer', label: customer ? 'История карты' : 'История клиента' },
+                                { value: 'all', label: 'Общая история' },
+                            ]}
+                            style={{ marginBottom: 12 }}
+                        />
+
+                        {historyTab === 'customer' ? (
+                            !customer ? (
+                                <Paragraph style={{ color: '#90a4ae', textAlign: 'center', marginVertical: 16 }}>
+                                    Найдите или отсканируйте карту клиента для просмотра его истории
+                                </Paragraph>
+                            ) : transactions.length === 0 ? (
+                                <Paragraph style={{ color: '#90a4ae', textAlign: 'center', marginVertical: 16 }}>
+                                    История транзакций пуста
+                                </Paragraph>
+                            ) : (
+                                transactions.slice(0, 15).map((tx, index) => (
+                                    <List.Item
+                                        key={index}
+                                        title={tx.reason || tx.description || 'Операция с баллами'}
+                                        description={`${formatDate(tx.created_at || tx.date)}${tx.created_by_name ? ` • ${tx.created_by_name}` : ''}`}
+                                        left={() => (
+                                            <Avatar.Icon
+                                                size={36}
+                                                icon={tx.points > 0 || tx.amount > 0 ? 'plus' : 'minus'}
+                                                style={{ backgroundColor: tx.points > 0 || tx.amount > 0 ? '#4CAF50' : '#F44336' }}
+                                            />
+                                        )}
+                                        right={() => (
+                                            <Chip
+                                                style={{ backgroundColor: tx.points > 0 || tx.amount > 0 ? '#E8F5E9' : '#FFEBEE' }}
+                                                textStyle={{ color: tx.points > 0 || tx.amount > 0 ? '#4CAF50' : '#F44336', fontWeight: 'bold' }}
+                                            >
+                                                {tx.points > 0 || tx.amount > 0 ? '+' : ''}{tx.points || tx.amount} б.
+                                            </Chip>
+                                        )}
+                                    />
+                                ))
+                            )
+                        ) : (
+                            /* Общая история всех карт */
+                            loadingAllTx ? (
+                                <ActivityIndicator size="small" style={{ marginVertical: 16 }} />
+                            ) : allTransactions.length === 0 ? (
+                                <Paragraph style={{ color: '#90a4ae', textAlign: 'center', marginVertical: 16 }}>
+                                    Операций по картам лояльности ещё не было
+                                </Paragraph>
+                            ) : (
+                                allTransactions.map((tx, index) => (
+                                    <List.Item
+                                        key={index}
+                                        title={`${tx.customer_name || 'Клиент'} (${tx.card_number || '№--'})`}
+                                        description={`${tx.reason || tx.description || 'Операция'} • ${formatDate(tx.created_at)}`}
+                                        left={() => (
+                                            <Avatar.Icon
+                                                size={36}
+                                                icon={tx.points > 0 ? 'plus' : 'minus'}
+                                                style={{ backgroundColor: tx.points > 0 ? '#4CAF50' : '#F44336' }}
+                                            />
+                                        )}
+                                        right={() => (
+                                            <Chip
+                                                style={{ backgroundColor: tx.points > 0 ? '#E8F5E9' : '#FFEBEE' }}
+                                                textStyle={{ color: tx.points > 0 ? '#4CAF50' : '#F44336', fontWeight: 'bold' }}
+                                            >
+                                                {tx.points > 0 ? '+' : ''}{tx.points} б.
+                                            </Chip>
+                                        )}
+                                    />
+                                ))
+                            )
+                        )}
+                    </Card.Content>
+                </Card>
 
                 <View style={styles.bottomPadding} />
             </ScrollView>
@@ -491,11 +727,7 @@ export default function LoyaltyScreen({ navigation }) {
                                 {customer?.name || customer?.full_name || ''}
                             </Paragraph>
                             {barcodeImage ? (
-                                <Image
-                                    source={{ uri: barcodeImage }}
-                                    style={styles.modalBarcode}
-                                    resizeMode="contain"
-                                />
+                                <Image source={{ uri: barcodeImage }} style={styles.modalBarcode} resizeMode="contain" />
                             ) : (
                                 <View style={styles.modalBarcodePlaceholder}>
                                     <ActivityIndicator size="small" color="#1e3a5f" />
@@ -505,11 +737,7 @@ export default function LoyaltyScreen({ navigation }) {
                             <Paragraph style={styles.modalBalance}>
                                 Баланс: {(cardData?.balance || customer?.points || customer?.loyalty_points || 0).toLocaleString('ru-RU')} баллов
                             </Paragraph>
-                            <Button
-                                mode="text"
-                                onPress={() => setShowBarcodeModal(false)}
-                                style={{ marginTop: 8 }}
-                            >
+                            <Button mode="text" onPress={() => setShowBarcodeModal(false)} style={{ marginTop: 8 }}>
                                 Закрыть
                             </Button>
                         </View>
@@ -517,10 +745,102 @@ export default function LoyaltyScreen({ navigation }) {
                 </TouchableOpacity>
             </Modal>
 
+                        {/* --- 3 & 4. Диалог прикрепления карты к клиенту --- */}
+            <Portal>
+                <Dialog visible={showAttachDialog} onDismiss={() => setShowAttachDialog(false)} style={{ maxHeight: '80%', backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>🔗 Привязать карту к клиенту</Dialog.Title>
+                    <Dialog.Content>
+                        <TextInput
+                            label="Номер карты"
+                            value={attachCardNumber}
+                            onChangeText={setAttachCardNumber}
+                            mode="outlined"
+                            left={<TextInput.Icon icon="credit-card" />}
+                            right={<TextInput.Icon icon="camera" onPress={() => { setShowAttachDialog(false); scanCardWithCamera(); }} />}
+                            style={{ marginBottom: 12, backgroundColor: colors.input }}
+                            textColor={colors.text}
+                            placeholder="Введите или отсканируйте номер"
+                        />
+
+                        <Paragraph style={{ color: colors.textSecondary, marginBottom: 8, fontSize: 12 }}>
+                            Выберите клиента из списка:
+                        </Paragraph>
+
+                        <TextInput
+                            label="Поиск клиента"
+                            value={attachSearchQuery}
+                            onChangeText={(t) => { setAttachSearchQuery(t); loadAttachCustomers(t); }}
+                            mode="outlined"
+                            dense
+                            left={<TextInput.Icon icon="magnify" />}
+                            style={{ marginBottom: 10, backgroundColor: colors.input }}
+                            textColor={colors.text}
+                        />
+
+                        {attachLoading ? (
+                            <ActivityIndicator size="small" style={{ marginVertical: 16 }} />
+                        ) : attachCustomers.length === 0 ? (
+                            <Paragraph style={{ color: colors.textSecondary, textAlign: 'center', marginVertical: 12 }}>
+                                Клиенты не найдены
+                            </Paragraph>
+                        ) : (
+                            <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled={true} keyboardShouldPersistTaps="handled">
+                                {attachCustomers.map((c) => {
+                                    const isSelected = selectedAttachCustomer?.id === c.id;
+                                    return (
+                                        <TouchableOpacity
+                                            key={c.id}
+                                            onPress={() => setSelectedAttachCustomer(c)}
+                                            style={{
+                                                padding: 10,
+                                                borderRadius: 8,
+                                                backgroundColor: isSelected ? 'rgba(59,130,246,0.2)' : 'transparent',
+                                                borderWidth: isSelected ? 1 : 0,
+                                                borderColor: colors.primary,
+                                                marginBottom: 4,
+                                                flexDirection: 'row',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between'
+                                            }}
+                                        >
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={{ fontWeight: isSelected ? 'bold' : 'normal', color: colors.text }}>{c.name}</Text>
+                                                <Text style={{ fontSize: 11, color: colors.textSecondary }}>{c.phone || 'Без телефона'} {c.card_number ? '• Карта: ' + c.card_number : ''}</Text>
+                                            </View>
+                                            {isSelected && <Chip compact textStyle={{ fontSize: 10 }}>Выбран</Chip>}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+                        )}
+                    </Dialog.Content>
+                    <Dialog.Actions style={{ justifyContent: 'space-between' }}>
+                        <Button
+                            onPress={() => {
+                                setShowAttachDialog(false);
+                                setNewCustomerName('');
+                                setNewCustomerPhone('');
+                                setShowCreateDialog(true);
+                            }}
+                            icon="account-plus"
+                            compact
+                        >
+                            + Новый
+                        </Button>
+                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                            <Button onPress={() => setShowAttachDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
+                            <Button onPress={confirmAttachCard} loading={attachLoading} disabled={!selectedAttachCustomer || !attachCardNumber.trim()} mode="contained">
+                                Привязать
+                            </Button>
+                        </View>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+
             {/* Диалог начисления баллов */}
             <Portal>
-                <Dialog visible={showPointsDialog} onDismiss={() => setShowPointsDialog(false)}>
-                    <Dialog.Title>Начислить баллы</Dialog.Title>
+                <Dialog visible={showPointsDialog} onDismiss={() => setShowPointsDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>Начислить баллы</Dialog.Title>
                     <Dialog.Content>
                         <TextInput
                             label="Количество баллов"
@@ -528,49 +848,59 @@ export default function LoyaltyScreen({ navigation }) {
                             onChangeText={setPointsInput}
                             keyboardType="numeric"
                             mode="outlined"
-
+                            style={{ backgroundColor: colors.input }}
+                            textColor={colors.text}
                         />
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowPointsDialog(false)}>Отмена</Button>
-                        <Button onPress={confirmAddPoints}>Начислить</Button>
+                        <Button onPress={() => setShowPointsDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
+                        <Button onPress={confirmAddPoints} mode="contained">Начислить</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>
 
             {/* Диалог создания клиента */}
             <Portal>
-                <Dialog visible={showCreateDialog} onDismiss={() => setShowCreateDialog(false)}>
-                    <Dialog.Title>Новый клиент</Dialog.Title>
+                <Dialog visible={showCreateDialog} onDismiss={() => setShowCreateDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>Новый клиент с картой</Dialog.Title>
                     <Dialog.Content>
                         <TextInput
                             label="Имя клиента"
                             value={newCustomerName}
                             onChangeText={setNewCustomerName}
                             mode="outlined"
-
-                            style={{ marginBottom: 8 }}
+                            style={{ marginBottom: 8, backgroundColor: colors.input }}
+                            textColor={colors.text}
+                            autoFocus
                         />
                         <TextInput
                             label="Телефон"
-                            value={searchPhone}
-                            disabled={true}
+                            value={newCustomerPhone}
+                            onChangeText={setNewCustomerPhone}
+                            keyboardType="phone-pad"
                             mode="outlined"
+                            style={{ marginBottom: 8, backgroundColor: colors.input }}
+                            textColor={colors.text}
                         />
+                        {attachCardNumber ? (
+                            <Chip icon="credit-card" style={{ backgroundColor: 'rgba(59,130,246,0.15)' }}>
+                                Привязываемая карта: {attachCardNumber}
+                            </Chip>
+                        ) : null}
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowCreateDialog(false)}>Отмена</Button>
-                        <Button onPress={createCustomer}>Создать</Button>
+                        <Button onPress={() => setShowCreateDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
+                        <Button onPress={createCustomer} mode="contained">Создать и привязать</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>
 
             {/* Диалог списания баллов */}
             <Portal>
-                <Dialog visible={showSpendDialog} onDismiss={() => setShowSpendDialog(false)}>
-                    <Dialog.Title>Списать баллы</Dialog.Title>
+                <Dialog visible={showSpendDialog} onDismiss={() => setShowSpendDialog(false)} style={{ backgroundColor: colors.surface, borderRadius: 16 }}>
+                    <Dialog.Title style={{ color: colors.text }}>Списать баллы</Dialog.Title>
                     <Dialog.Content>
-                        <Paragraph style={{ marginBottom: 8, color: '#666' }}>
+                        <Paragraph style={{ marginBottom: 8, color: colors.textSecondary }}>
                             Баланс: {customer?.points || customer?.loyalty_points || 0} баллов
                         </Paragraph>
                         <TextInput
@@ -579,11 +909,13 @@ export default function LoyaltyScreen({ navigation }) {
                             onChangeText={setSpendPointsInput}
                             keyboardType="numeric"
                             mode="outlined"
+                            style={{ backgroundColor: colors.input }}
+                            textColor={colors.text}
                         />
                     </Dialog.Content>
                     <Dialog.Actions>
-                        <Button onPress={() => setShowSpendDialog(false)}>Отмена</Button>
-                        <Button onPress={confirmSpendPoints}>Списать</Button>
+                        <Button onPress={() => setShowSpendDialog(false)} textColor={colors.textSecondary}>Отмена</Button>
+                        <Button onPress={confirmSpendPoints} textColor="#f87171">Списать</Button>
                     </Dialog.Actions>
                 </Dialog>
             </Portal>
@@ -596,8 +928,8 @@ const styles = StyleSheet.create({
     center: { justifyContent: 'center', alignItems: 'center' },
     card: { margin: 16, marginBottom: 8 },
     loadingText: { marginTop: 16 },
-    input: { marginBottom: 12 },
-    button: { marginTop: 8 },
+    input: { marginBottom: 8 },
+    searchButtonsRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
     divider: { marginVertical: 16 },
     statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
     stat: { alignItems: 'center' },
