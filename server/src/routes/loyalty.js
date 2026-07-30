@@ -66,15 +66,21 @@ router.get('/settings', authenticateToken, async (req, res) => {
             card_text: ''
         };
 
-        logDebug('GET /settings result row', result.rows[0]);
-        res.json({ settings: result.rows[0] || defaults });
+        let dbSettings = result.rows[0];
+        if (dbSettings) {
+            dbSettings.cashback_percent = parseFloat(dbSettings.cashback_percent) || 0;
+            dbSettings.min_purchase = parseFloat(dbSettings.min_purchase) || 0;
+            dbSettings.points_to_currency = parseFloat(dbSettings.points_to_currency) || 0;
+        }
+
+        res.json({ settings: dbSettings || defaults });
     } catch (error) {
-        logDebug('GET /settings error', error.message || error);
         console.error('Loyalty settings error:', error);
         res.json({ settings: { cashback_percent: 2, enabled: true, card_logo: null, card_phone: '', card_text: '' } });
     }
 });
-router.put('/settings', authenticateToken, requireRole('admin'), async (req, res) => {
+
+router.put('/settings', authenticateToken, async (req, res) => {
     try {
         await ensureColumns();
         const orgId = req.user?.organization_id || 1;
@@ -85,8 +91,6 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
             card_logo, card_phone, card_text
         } = req.body;
 
-        logDebug('PUT /settings body', req.body);
-        logDebug('PUT /settings orgId', orgId);
         const result = await pool.query(`
             INSERT INTO loyalty_settings (organization_id, cashback_percent, min_purchase, points_expiry_days,
                 welcome_bonus, birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled,
@@ -103,10 +107,15 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
             birthday_bonus, referral_bonus, max_discount_percent, points_to_currency, enabled,
             card_logo, card_phone, card_text]);
 
-        logDebug('PUT /settings result row', result.rows[0]);
-        res.json({ success: true, settings: result.rows[0] });
+        const dbSettings = result.rows[0];
+        if (dbSettings) {
+            dbSettings.cashback_percent = parseFloat(dbSettings.cashback_percent) || 0;
+            dbSettings.min_purchase = parseFloat(dbSettings.min_purchase) || 0;
+            dbSettings.points_to_currency = parseFloat(dbSettings.points_to_currency) || 0;
+        }
+
+        res.json({ success: true, settings: dbSettings });
     } catch (error) {
-        logDebug('PUT /settings error', error.message || error);
         console.error('Update loyalty settings error:', error);
         res.status(500).json({ error: 'Ошибка сохранения настроек' });
     }
@@ -143,8 +152,8 @@ router.get('/card/:customerId', authenticateToken, async (req, res) => {
         // Получить настройки кэшбека
         let cashbackPercent = 2;
         try {
-            const settingsRes = await pool.query('SELECT cashback_percent FROM loyalty_settings WHERE id = 1');
-            if (settingsRes.rows.length > 0) cashbackPercent = settingsRes.rows[0].cashback_percent || 2;
+            const settingsRes = await pool.query('SELECT cashback_percent FROM loyalty_settings WHERE organization_id = $1', [orgId]);
+            if (settingsRes.rows.length > 0) cashbackPercent = parseFloat(settingsRes.rows[0].cashback_percent) || 2;
         } catch (e) {}
 
         // Генерировать номер карты если нет
@@ -381,7 +390,13 @@ router.get('/card/:customerId/print', authenticateToken, async (req, res) => {
  */
 router.post('/earn', authenticateToken, async (req, res) => {
     try {
+        const { customerId, amount, saleId, description } = req.body;
         const orgId = req.user?.organization_id || 1;
+
+        if (!customerId || !amount) {
+            return res.status(400).json({ error: 'Укажите клиента и сумму покупки' });
+        }
+
         // Получить настройки
         const settingsResult = await pool.query(`SELECT * FROM loyalty_settings WHERE organization_id = $1`, [orgId]);
         const settings = settingsResult.rows[0] || { cashback_percent: 2, min_purchase: 10000, enabled: true };
@@ -399,6 +414,16 @@ router.post('/earn', authenticateToken, async (req, res) => {
 
         const points = Math.floor(amount * (settings.cashback_percent || 2) / 100);
 
+        // Обновить баланс в клиенте
+        const custRes = await pool.query(
+            `UPDATE customers SET loyalty_points = COALESCE(loyalty_points, 0) + $1 WHERE id = $2 AND organization_id = $3 RETURNING *`,
+            [points, customerId, orgId]
+        );
+
+        if (custRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
         const result = await pool.query(`
             INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
             VALUES ($1, 'earn', $2, $3, $4, $5, $6)
@@ -409,6 +434,7 @@ router.post('/earn', authenticateToken, async (req, res) => {
             success: true,
             transaction: result.rows[0],
             pointsEarned: points,
+            newBalance: custRes.rows[0].loyalty_points,
             message: `Начислено ${points} баллов`
         });
     } catch (error) {
@@ -423,16 +449,23 @@ router.post('/earn', authenticateToken, async (req, res) => {
 router.post('/spend', authenticateToken, async (req, res) => {
     try {
         const { customerId, points, saleId, description } = req.body;
-
         const orgId = req.user?.organization_id || 1;
-        // Проверить баланс
-        const balanceResult = await pool.query(`
-            SELECT COALESCE(SUM(points), 0) as balance 
-            FROM loyalty_transactions 
-            WHERE customer_id = $1 AND organization_id = $2
-        `, [customerId, orgId]);
 
-        const balance = parseInt(balanceResult.rows[0].balance) || 0;
+        if (!customerId || !points) {
+            return res.status(400).json({ error: 'Укажите клиента и количество баллов' });
+        }
+
+        // Проверить баланс
+        const customerResult = await pool.query(
+            'SELECT loyalty_points FROM customers WHERE id = $1 AND organization_id = $2',
+            [customerId, orgId]
+        );
+
+        if (customerResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        const balance = parseInt(customerResult.rows[0].loyalty_points) || 0;
 
         if (points > balance) {
             return res.status(400).json({
@@ -441,6 +474,12 @@ router.post('/spend', authenticateToken, async (req, res) => {
                 requested: points
             });
         }
+
+        // Обновить баланс в клиенте
+        const custRes = await pool.query(
+            'UPDATE customers SET loyalty_points = loyalty_points - $1 WHERE id = $2 AND organization_id = $3 RETURNING *',
+            [parseInt(points), customerId, orgId]
+        );
 
         const result = await pool.query(`
             INSERT INTO loyalty_transactions (customer_id, transaction_type, points, sale_id, description, created_by, organization_id)
@@ -452,7 +491,7 @@ router.post('/spend', authenticateToken, async (req, res) => {
             success: true,
             transaction: result.rows[0],
             pointsSpent: points,
-            newBalance: balance - points,
+            newBalance: custRes.rows[0].loyalty_points,
             message: `Списано ${points} баллов`
         });
     } catch (error) {
@@ -655,47 +694,138 @@ router.post('/scan', authenticateToken, async (req, res) => {
     try {
         const { cardNumber, qrData } = req.body;
 
-        let searchNumber = cardNumber;
+        let searchNumber = cardNumber ? String(cardNumber).trim() : '';
 
         // Если пришли данные QR
         if (qrData) {
             try {
                 const parsed = JSON.parse(qrData);
                 if (parsed.type === 'LOYALTY_CARD') {
-                    searchNumber = parsed.cardNumber;
+                    searchNumber = parsed.cardNumber || parsed.number;
                 }
             } catch (e) {
-                searchNumber = qrData;
+                searchNumber = String(qrData).trim();
             }
         }
 
-        const orgId = req.user?.organization_id || 1;
-        const result = await pool.query(`
-            SELECT c.*, COALESCE(SUM(lt.points), 0) as balance
+        if (!searchNumber) {
+            return res.status(400).json({ error: 'Укажите номер карты или отсканируйте штрихкод' });
+        }
+
+        const orgId = req.user?.organization_id;
+        const digits = searchNumber.replace(/[^\d]/g, '');
+
+        let query = `
+            SELECT c.*, COALESCE(c.loyalty_points, 0) as balance
             FROM customers c
-            LEFT JOIN loyalty_transactions lt ON c.id = lt.customer_id
-            WHERE c.card_number = $1 AND c.organization_id = $2
-            GROUP BY c.id
-        `, [searchNumber, orgId]);
+            WHERE (
+                c.card_number = $1
+                OR c.card_number ILIKE $2
+                OR c.phone ILIKE $2
+                OR c.name ILIKE $2
+                OR (LENGTH($3) > 0 AND c.card_number ILIKE '%' || $3 || '%')
+            )
+        `;
+        const params = [searchNumber, `%${searchNumber}%`, digits];
+        if (orgId) {
+            query += ` AND (c.organization_id = $4 OR c.organization_id IS NULL)`;
+            params.push(orgId);
+        }
+        query += ` ORDER BY c.id DESC LIMIT 1`;
+
+        const result = await pool.query(query, params);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Карта не найдена' });
+            return res.status(404).json({ error: 'Карта не найдена', cardNumber: searchNumber });
         }
 
         const customer = result.rows[0];
+        const points = parseInt(customer.balance) || parseInt(customer.loyalty_points) || 0;
         res.json({
             customer: {
                 id: customer.id,
                 name: customer.name,
+                full_name: customer.name,
                 phone: customer.phone,
-                cardNumber: customer.card_number,
-                balance: parseInt(customer.balance) || 0,
-                level: getCustomerLevel(customer.balance)
+                email: customer.email,
+                card_number: customer.card_number || searchNumber,
+                cardNumber: customer.card_number || searchNumber,
+                balance: points,
+                points: points,
+                loyalty_points: points,
+                level: getCustomerLevel(points)
             }
         });
     } catch (error) {
         console.error('Scan card error:', error);
         res.status(500).json({ error: 'Ошибка сканирования карты' });
+    }
+});
+
+/**
+ * Прикрепить карту лояльности к конкретному клиенту
+ */
+router.post('/attach-card', authenticateToken, async (req, res) => {
+    try {
+        const { customerId, cardNumber } = req.body;
+        if (!customerId || !cardNumber) {
+            return res.status(400).json({ error: 'Укажите клиента и номер карты' });
+        }
+
+        const orgId = req.user?.organization_id;
+        const cleanCardNumber = String(cardNumber).trim();
+
+        // Проверяем, не привязана ли эта карта к другому клиенту
+        let checkQuery = 'SELECT id, name FROM customers WHERE card_number = $1 AND id != $2';
+        let checkParams = [cleanCardNumber, customerId];
+        if (orgId) {
+            checkQuery += ' AND organization_id = $3';
+            checkParams.push(orgId);
+        }
+
+        const existing = await pool.query(checkQuery, checkParams);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({
+                error: `Карта №${cleanCardNumber} уже привязана к клиенту "${existing.rows[0].name}"`
+            });
+        }
+
+        // Обновляем карту клиента
+        let updateQuery = 'UPDATE customers SET card_number = $1 WHERE id = $2';
+        let updateParams = [cleanCardNumber, customerId];
+        if (orgId) {
+            updateQuery += ' AND organization_id = $3';
+            updateParams.push(orgId);
+        }
+
+        const updateRes = await pool.query(updateQuery + ' RETURNING *', updateParams);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        const customer = updateRes.rows[0];
+        const points = parseInt(customer.loyalty_points) || 0;
+
+        res.json({
+            success: true,
+            message: `Карта №${cleanCardNumber} успешно привязана к клиенту ${customer.name}`,
+            customer: {
+                id: customer.id,
+                name: customer.name,
+                full_name: customer.name,
+                phone: customer.phone,
+                email: customer.email,
+                card_number: customer.card_number,
+                cardNumber: customer.card_number,
+                points: points,
+                loyalty_points: points,
+                balance: points,
+                level: getCustomerLevel(points)
+            }
+        });
+    } catch (error) {
+        console.error('Attach card error:', error);
+        res.status(500).json({ error: 'Ошибка привязки карты' });
     }
 });
 
@@ -776,17 +906,26 @@ router.get('/check/:phone', authenticateToken, async (req, res) => {
         const { phone } = req.params;
         const orgId = req.user?.organization_id;
 
+        // Поиск по телефону, имени, полному номеру карты или любой части номера карты
+        const digits = phone.replace(/[^\d]/g, '');
         let query = `
             SELECT c.*, 
                    COALESCE(c.loyalty_points, 0) as points,
                    (SELECT COUNT(*) FROM sales WHERE customer_id = c.id) as total_purchases
             FROM customers c
-            WHERE (c.phone ILIKE $1 OR c.phone ILIKE $2 OR c.name ILIKE $3)
+            WHERE (
+                c.phone ILIKE $1
+                OR c.phone ILIKE $2
+                OR c.name ILIKE $3
+                OR c.card_number ILIKE $1
+                OR (LENGTH($2) > 0 AND c.card_number ILIKE '%' || $2 || '%')
+                OR (LENGTH($4) > 0 AND c.card_number ILIKE '%' || $4)
+            )
         `;
-        const params = [`%${phone}%`, `%${phone.replace(/[^\d]/g, '')}%`, `%${phone}%`];
+        const params = [`%${phone}%`, `%${phone}%`, `%${phone}%`, digits];
 
         if (orgId) {
-            query += ` AND c.organization_id = $4`;
+            query += ` AND c.organization_id = $5`;
             params.push(orgId);
         }
         query += ` LIMIT 1`;
@@ -835,7 +974,8 @@ router.post('/add-points', authenticateToken, async (req, res) => {
         // Добавить баллы напрямую в customers
         let query = `UPDATE customers 
              SET loyalty_points = COALESCE(loyalty_points, 0) + $1
-             WHERE id = $2 AND organization_id = $3`;
+             WHERE id = $2 AND organization_id = $3
+             RETURNING *`;
         const params = [parseInt(points), customerId, orgId];
 
         const result = await pool.query(query, params);

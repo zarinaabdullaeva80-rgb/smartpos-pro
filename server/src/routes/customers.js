@@ -132,7 +132,7 @@ router.post('/', authenticateToken, async (req, res) => {
         if (welcomeBonus > 0) {
             try {
                 await pool.query(
-                    `INSERT INTO loyalty_transactions (customer_id, type, points, description, created_by)
+                    `INSERT INTO loyalty_transactions (customer_id, transaction_type, points, description, created_by)
                      VALUES ($1, 'earn', $2, 'Приветственный бонус', $3)`,
                     [customer.id, welcomeBonus, req.user.id]
                 );
@@ -156,7 +156,7 @@ router.post('/', authenticateToken, async (req, res) => {
 router.put('/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone, email, discount, notes } = req.body;
+        const { name, phone, email, discount, notes, card_number, loyalty_points } = req.body;
 
         const orgId = getOrgId(req);
 
@@ -166,12 +166,23 @@ router.put('/:id', authenticateToken, async (req, res) => {
                  email = COALESCE($3, email),
                  discount = COALESCE($4, discount),
                  notes = COALESCE($5, notes),
+                 card_number = COALESCE($6, card_number),
+                 loyalty_points = COALESCE($7, loyalty_points),
                  updated_at = NOW()
-             WHERE id = $6`;
-        const updateParams = [name, phone, email, discount !== undefined ? parseFloat(discount) : null, notes, id];
+             WHERE id = $8`;
+        const updateParams = [
+            name, 
+            phone, 
+            email, 
+            discount !== undefined && discount !== null ? parseFloat(discount) : null, 
+            notes,
+            card_number !== undefined ? card_number : null,
+            loyalty_points !== undefined && loyalty_points !== null ? parseInt(loyalty_points) : null,
+            id
+        ];
 
         if (orgId) {
-            updateQuery += ' AND organization_id = $7';
+            updateQuery += ' AND organization_id = $9';
             updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
