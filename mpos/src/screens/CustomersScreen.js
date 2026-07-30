@@ -22,16 +22,38 @@ export default function CustomersScreen({ navigation, route }) {
     const loadCustomers = async () => {
         setLoading(true);
         try {
-            const response = await api.get('/customers', { params: { search: searchQuery } });
+            const response = await api.get('/customers', { params: { search: searchQuery, limit: 500 } });
             setCustomers(response.data.customers || []);
         } catch (error) {
-            setCustomers([
-                { id: 1, name: 'Иван Иванов', phone: '+998901234567', loyalty_points: 150, discount: 5 },
-                { id: 2, name: 'Мария Петрова', phone: '+998909876543', loyalty_points: 500, discount: 10 },
-            ]);
+            setCustomers([]);
         } finally {
             setLoading(false);
         }
+    };
+
+    const confirmDeleteCustomer = (customer) => {
+        Alert.alert(
+            'Удаление клиента',
+            `Вы действительно хотите удалить клиента "${customer.name}"?`,
+            [
+                { text: 'Отмена', style: 'cancel' },
+                {
+                    text: 'Удалить',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await api.delete(`/customers/${customer.id}`);
+                            SoundManager.playSuccess();
+                            loadCustomers();
+                            Alert.alert('Успех', 'Клиент успешно удалён');
+                        } catch (err) {
+                            SoundManager.playError();
+                            Alert.alert('Ошибка', err.response?.data?.error || 'Не удалось удалить клиента');
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const openNewCustomerModal = () => {
@@ -88,21 +110,29 @@ export default function CustomersScreen({ navigation, route }) {
                     <Title style={[styles.name, dynamicStyles.text]}>{item.name}</Title>
                     <Paragraph style={dynamicStyles.textSecondary}>{item.phone || 'Нет телефона'}</Paragraph>
                     <View style={styles.badges}>
+                        {item.card_number ? <Paragraph style={{ color: colors.primary }}>💳 {item.card_number}</Paragraph> : null}
                         {item.loyalty_points > 0 && <Paragraph style={{ color: colors.warning }}>🎁 {item.loyalty_points} баллов</Paragraph>}
                         {item.discount > 0 && <Paragraph style={{ color: colors.success }}>💰 Скидка {item.discount}%</Paragraph>}
                     </View>
                 </View>
                 <IconButton icon="pencil" iconColor={colors.primary} onPress={() => openEditModal(item)} />
+                <IconButton icon="delete-outline" iconColor={colors.error} onPress={() => confirmDeleteCustomer(item)} />
             </Card.Content>
         </Card>
     );
 
+    const filteredCustomers = customers.filter(c => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return c.name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.card_number?.includes(q);
+    });
+
     return (
         <View style={[styles.container, dynamicStyles.container]}>
-            <Searchbar placeholder="Поиск..." value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={loadCustomers} style={[styles.searchbar, dynamicStyles.searchbar]} />
+            <Searchbar placeholder="Поиск по имени, телефону или номеру карты..." value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={loadCustomers} style={[styles.searchbar, dynamicStyles.searchbar]} />
 
             <FlatList
-                data={customers.filter(c => c.name?.toLowerCase().includes(searchQuery.toLowerCase()) || c.phone?.includes(searchQuery))}
+                data={filteredCustomers}
                 renderItem={renderCustomer}
                 keyExtractor={item => String(item.id)}
                 contentContainerStyle={styles.list}

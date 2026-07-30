@@ -14,7 +14,7 @@ function getOrgId(req) {
 // Получить всех клиентов
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const { search, limit = 100 } = req.query;
+        const { search, limit = 500 } = req.query;
 
         const orgId = getOrgId(req);
 
@@ -32,12 +32,20 @@ router.get('/', authenticateToken, async (req, res) => {
         }
 
         if (search) {
-            query += ` AND (name ILIKE $${paramIndex} OR phone ILIKE $${paramIndex})`;
-            params.push(`%${search}%`);
-            paramIndex++;
+            const cleanSearch = String(search).trim();
+            const digits = cleanSearch.replace(/[^\d]/g, '');
+            query += ` AND (
+                name ILIKE $${paramIndex}
+                OR phone ILIKE $${paramIndex}
+                OR card_number ILIKE $${paramIndex}
+                OR (LENGTH($${paramIndex + 1}) > 0 AND card_number ILIKE '%' || $${paramIndex + 1} || '%')
+            )`;
+            params.push(`%${cleanSearch}%`, digits);
+            paramIndex += 2;
         }
 
-        query += ` ORDER BY name ASC LIMIT ${parseInt(limit)}`;
+        const maxLimit = Math.min(parseInt(limit) || 500, 2000);
+        query += ` ORDER BY name ASC LIMIT ${maxLimit}`;
 
         const result = await pool.query(query, params);
 

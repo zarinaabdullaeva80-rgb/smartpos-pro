@@ -339,11 +339,14 @@ export const loyaltyAPI = {
     addPoints: (customerId, points, reason) => api.post('/loyalty/add-points', { customerId, points, reason }),
     redeemPoints: (customerId, points, saleId) => api.post('/loyalty/redeem', { customerId, points, saleId }),
     getTransactions: (customerId) => api.get(`/loyalty/transactions/${customerId}`),
+    getAllTransactions: (params) => api.get('/loyalty/transactions', { params }),
     checkBalance: (phone) => api.get(`/loyalty/check/${encodeURIComponent(phone)}`),
     getCard: (customerId) => api.get(`/loyalty/card/${customerId}`),
     getBarcode: (customerId) => api.get(`/loyalty/card/${customerId}/barcode`),
     getQR: (customerId) => api.get(`/loyalty/card/${customerId}/qr`),
     scanCard: (cardNumber, qrData) => api.post('/loyalty/scan', { cardNumber, qrData }),
+    attachCard: (customerId, cardNumber) => api.post('/loyalty/attach-card', { customerId, cardNumber }),
+    detachCard: (customerId) => api.post('/loyalty/detach-card', { customerId }),
 };
 
 // Sync API - Синхронизация с 1С и десктопом

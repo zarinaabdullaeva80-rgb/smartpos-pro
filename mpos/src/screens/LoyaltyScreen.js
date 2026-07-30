@@ -53,7 +53,7 @@ export default function LoyaltyScreen({ navigation }) {
 
     const autoLoadCustomer = async () => {
         try {
-            const res = await customersAPI.getAll({ limit: 20 });
+            const res = await customersAPI.getAll({ limit: 500 });
             const list = res.data?.customers || res.data || [];
             setAttachCustomers(list);
             if (list.length > 0) {
@@ -253,7 +253,7 @@ export default function LoyaltyScreen({ navigation }) {
     const loadAttachCustomers = async (searchQuery = '') => {
         try {
             setAttachLoading(true);
-            const res = await customersAPI.getAll({ search: searchQuery, limit: 30 });
+            const res = await customersAPI.getAll({ search: searchQuery, limit: 500 });
             const list = res.data?.customers || res.data || [];
             setAttachCustomers(list);
         } catch (err) {
@@ -262,6 +262,34 @@ export default function LoyaltyScreen({ navigation }) {
         } finally {
             setAttachLoading(false);
         }
+    };
+
+    const confirmDetachCard = async () => {
+        if (!customer) return;
+        Alert.alert(
+            'Отвязать карту',
+            `Вы действительно хотите отвязать карту лояльности у клиента "${customer.name || customer.full_name}"?`,
+            [
+                { text: 'Отмена', style: 'cancel' },
+                {
+                    text: 'Отвязать',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await loyaltyAPI.detachCard(customer.id);
+                            SoundManager.playSuccess();
+                            Alert.alert('✅ Успех', 'Карта лояльности отвязана от клиента');
+                            setCardData(null);
+                            setBarcodeImage(null);
+                            setCustomer(prev => ({ ...prev, card_number: null }));
+                        } catch (e) {
+                            SoundManager.playError();
+                            Alert.alert('Ошибка', e.response?.data?.error || 'Не удалось отвязать карту');
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const confirmAttachCard = async () => {
@@ -615,6 +643,11 @@ export default function LoyaltyScreen({ navigation }) {
                                 <Button mode="outlined" onPress={() => openAttachModal(customer.card_number || '')} style={styles.actionButton} icon="link-variant">
                                     Перепривязать
                                 </Button>
+                                {customer.card_number ? (
+                                    <Button mode="outlined" onPress={confirmDetachCard} style={[styles.actionButton, { borderColor: colors.error }]} textColor={colors.error} icon="link-off">
+                                        Отвязать
+                                    </Button>
+                                ) : null}
                             </View>
                         </Card.Content>
                     </Card>

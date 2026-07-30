@@ -829,6 +829,40 @@ router.post('/attach-card', authenticateToken, async (req, res) => {
     }
 });
 
+/**
+ * Открепить (удалить) карту лояльности у клиента
+ */
+router.post('/detach-card', authenticateToken, async (req, res) => {
+    try {
+        const { customerId } = req.body;
+        if (!customerId) {
+            return res.status(400).json({ error: 'Укажите ID клиента' });
+        }
+
+        const orgId = req.user?.organization_id;
+        let updateQuery = 'UPDATE customers SET card_number = NULL WHERE id = $1';
+        let updateParams = [customerId];
+        if (orgId) {
+            updateQuery += ' AND organization_id = $2';
+            updateParams.push(orgId);
+        }
+
+        const updateRes = await pool.query(updateQuery + ' RETURNING *', updateParams);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Клиент не найден' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Карта лояльности отвязана от клиента',
+            customer: updateRes.rows[0]
+        });
+    } catch (error) {
+        console.error('Detach card error:', error);
+        res.status(500).json({ error: 'Ошибка отвязки карты' });
+    }
+});
+
 // ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 
 function generateCardNumber(customerId) {
