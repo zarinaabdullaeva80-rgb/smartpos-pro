@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Platform, TextInput as RNTextInput } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Alert, Platform } from 'react-native';
 import { Button, Title, Paragraph, IconButton, TextInput } from 'react-native-paper';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
 
-// Camera only available on native
-let Camera = null;
-let CameraView = null;
+// Expo SDK 54: expo-camera exports CameraView (component) and Camera (static methods object)
+let CameraViewComponent = null;
+let requestCameraPermission = null;
+
 if (Platform.OS !== 'web') {
-    const cameraModule = require('expo-camera');
-    Camera = cameraModule.Camera;
-    CameraView = cameraModule.CameraView;
+    try {
+        const cameraModule = require('expo-camera');
+        CameraViewComponent = cameraModule.CameraView;
+        // SDK 54: requestCameraPermissionsAsync is a top-level export AND on Camera object
+        requestCameraPermission = cameraModule.requestCameraPermissionsAsync 
+            || cameraModule.Camera?.requestCameraPermissionsAsync;
+    } catch (e) {
+        console.warn('[BarcodeScannerScreen] expo-camera not available:', e.message);
+    }
 }
 
 export default function BarcodeScannerScreen({ route, navigation }) {
@@ -24,14 +31,23 @@ export default function BarcodeScannerScreen({ route, navigation }) {
 
     useEffect(() => {
         if (Platform.OS !== 'web') {
-            requestPermission();
+            doRequestPermission();
         }
     }, []);
 
-    const requestPermission = async () => {
-        if (!Camera) return;
-        const { status } = await Camera.requestCameraPermissionsAsync();
-        setHasPermission(status === 'granted');
+    const doRequestPermission = async () => {
+        if (!requestCameraPermission) {
+            console.warn('[BarcodeScannerScreen] No requestCameraPermissionsAsync available, granting by default');
+            setHasPermission(true);
+            return;
+        }
+        try {
+            const { status } = await requestCameraPermission();
+            setHasPermission(status === 'granted');
+        } catch (e) {
+            console.warn('[BarcodeScannerScreen] Permission request error:', e);
+            setHasPermission(true);
+        }
     };
 
     const handleWebSubmit = () => {
@@ -44,7 +60,7 @@ export default function BarcodeScannerScreen({ route, navigation }) {
         }
     };
 
-    const handleBarCodeScanned = ({ type, data }) => {
+    const handleBarCodeScanned = useCallback(({ type, data }) => {
         if (scanned) return;
 
         setScanned(true);
@@ -58,7 +74,7 @@ export default function BarcodeScannerScreen({ route, navigation }) {
                 { text: 'OK', onPress: () => setScanned(false) }
             ]);
         }
-    };
+    }, [scanned, onScan, navigation]);
 
     const dynamicStyles = {
         container: { backgroundColor: colors.background },
@@ -106,7 +122,7 @@ export default function BarcodeScannerScreen({ route, navigation }) {
                 <Paragraph style={[dynamicStyles.textSecondary, styles.message]}>
                     Разрешите доступ к камере в настройках
                 </Paragraph>
-                <Button mode="contained" onPress={requestPermission} style={styles.button}>
+                <Button mode="contained" onPress={doRequestPermission} style={styles.button}>
                     Запросить доступ
                 </Button>
                 <Button mode="outlined" onPress={() => navigation.goBack()} style={styles.button}>
@@ -116,15 +132,42 @@ export default function BarcodeScannerScreen({ route, navigation }) {
         );
     }
 
+    // Если CameraView не загрузился — показать фоллбэк с ручным вводом
+    if (!CameraViewComponent) {
+        return (
+            <View style={[styles.container, styles.center, dynamicStyles.container]}>
+                <Title style={[dynamicStyles.text, { marginBottom: 12 }]}>📷 Камера недоступна</Title>
+                <Paragraph style={[dynamicStyles.textSecondary, styles.message]}>
+                    Введите номер карты или штрихкод вручную:
+                </Paragraph>
+                <TextInput
+                    label="Номер карты / штрихкод"
+                    value={webBarcode}
+                    onChangeText={setWebBarcode}
+                    mode="outlined"
+                    style={{ width: 300, marginBottom: 16 }}
+                    autoFocus={true}
+                    onSubmitEditing={handleWebSubmit}
+                />
+                <Button mode="contained" onPress={handleWebSubmit} style={[styles.button, { width: 300 }]}>
+                    Найти
+                </Button>
+                <Button mode="outlined" onPress={() => navigation.goBack()} style={[styles.button, { width: 300 }]}>
+                    Назад
+                </Button>
+            </View>
+        );
+    }
+
     return (
         <View style={styles.container}>
-            <CameraView
+            <CameraViewComponent
                 style={styles.camera}
                 facing="back"
                 enableTorch={torch}
                 onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                 barcodeScannerSettings={{
-                    barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
+                    barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'code93', 'codabar', 'itf14', 'qr', 'pdf417', 'aztec', 'datamatrix'],
                 }}
             />
 
