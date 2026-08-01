@@ -43,6 +43,8 @@ export default function CartScreen({ route, navigation }) {
     const [cashbackEnabled, setCashbackEnabled] = useState(false);
     const [cashbackPercent, setCashbackPercent] = useState(0);
     const [cashbackAmount, setCashbackAmount] = useState(0);
+    // Loyalty — ошибка поиска
+    const [loyaltyError, setLoyaltyError] = useState('');
 
     useEffect(() => {
         checkShift();
