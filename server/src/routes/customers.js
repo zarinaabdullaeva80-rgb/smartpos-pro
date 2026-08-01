@@ -214,29 +214,54 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
 // Удалить клиента
 router.delete('/:id', authenticateToken, async (req, res) => {
+    const client = await pool.connect();
     try {
         const { id } = req.params;
-
         const orgId = getOrgId(req);
-        let deleteQuery = 'DELETE FROM customers WHERE id = $1';
-        const deleteParams = [id];
 
+        await client.query('BEGIN');
+
+        // Проверяем, что клиент принадлежит этой организации
+        let checkQuery = 'SELECT id FROM customers WHERE id = $1';
+        const checkParams = [id];
         if (orgId) {
-            deleteQuery += ' AND organization_id = $2';
-            deleteParams.push(orgId);
+            checkQuery += ' AND organization_id = $2';
+            checkParams.push(orgId);
         }
-        deleteQuery += ' RETURNING id';
-
-        const result = await pool.query(deleteQuery, deleteParams);
-
-        if (result.rows.length === 0) {
+        const checkResult = await client.query(checkQuery, checkParams);
+        if (checkResult.rows.length === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Клиент не найден' });
         }
 
+        // Удаляем связанные транзакции лояльности
+        try {
+            await client.query('DELETE FROM loyalty_transactions WHERE customer_id = $1', [id]);
+        } catch (e) { /* таблица может не существовать */ }
+
+        // Удаляем связанные депозиты
+        try {
+            await client.query('DELETE FROM customer_deposits WHERE customer_id = $1', [id]);
+        } catch (e) { /* таблица может не существовать */ }
+
+        // Обнуляем ссылки на клиента в заказах (не удаляем заказы)
+        try {
+            await client.query('UPDATE orders SET customer_id = NULL WHERE customer_id = $1', [id]);
+        } catch (e) { /* таблица может не существовать */ }
+
+        // Теперь удаляем самого клиента
+        await client.query('DELETE FROM customers WHERE id = $1', [id]);
+
+        await client.query('COMMIT');
+
+        console.log(`[Customers] Deleted customer ${id}`);
         res.json({ success: true, message: 'Клиент удалён' });
     } catch (error) {
+        await client.query('ROLLBACK');
         console.error('[Customers] DELETE error:', error);
-        res.status(500).json({ error: 'Ошибка удаления клиента' });
+        res.status(500).json({ error: 'Ошибка удаления клиента', details: error.message });
+    } finally {
+        client.release();
     }
 });
 
