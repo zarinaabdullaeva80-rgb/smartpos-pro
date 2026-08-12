@@ -4,6 +4,7 @@ import { settingsAPI } from '../services/api';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
 
+
 /**
  * Страница настроек платёжных систем
  */
@@ -13,14 +14,14 @@ function PaymentSettings() {
     const [settings, setSettings] = useState({
         payme: {
             enabled: true,
-            merchantId: '',
+            merchantId: '6a7c062740e17562c3de2fb3',
             description: 'Payme — популярная платёжная система'
         },
         click: {
             enabled: true,
-            serviceId: '',
-            merchantId: '',
-            secretKey: '',
+            serviceId: '109579',
+            merchantId: '63646',
+            secretKey: 'fvy6lQSn6o0F',
             description: 'Click — мобильные платежи'
         },
         uzum: {
@@ -29,10 +30,8 @@ function PaymentSettings() {
             description: 'UZUM Bank — банковские платежи'
         }
     });
-
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
-
     useEffect(() => {
         loadSettings();
     }, []);

@@ -12,8 +12,12 @@ const PAYMENT_SYSTEMS_DEFAULTS = {
         name: 'Payme',
         color: '#00CCCC',
         icon: '💳',
-        generateUrl: (merchantId, amount, orderId) =>
-            `https://payme.uz/checkout/${merchantId}?a=${Math.round(amount * 100)}&o=${orderId}`
+        generateUrl: (merchantId, amount, orderId, isTest = false) => {
+            const raw = `m=${merchantId};ac.order_id=${orderId};a=${Math.round(amount * 100)}`;
+            const b64 = typeof btoa === 'function' ? btoa(unescape(encodeURIComponent(raw))) : Buffer.from(raw).toString('base64');
+            const domain = isTest ? 'test.paycom.uz' : 'checkout.paycom.uz';
+            return `https://${domain}/${b64}`;
+        }
     },
     click: {
         id: 'click',
@@ -21,7 +25,7 @@ const PAYMENT_SYSTEMS_DEFAULTS = {
         color: '#00A2E8',
         icon: '📱',
         generateUrl: (merchantId, amount, orderId, serviceId) =>
-            `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${Math.round(amount)}&transaction_param=${orderId}`
+            `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${Math.round(amount)}&transaction_param=${encodeURIComponent(orderId)}`
     },
     uzum: {
         id: 'uzum',
@@ -60,21 +64,24 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
         // Payme
         const payme = settings?.payme;
         if (!payme || payme.enabled !== false) {
+            const mId = payme?.merchantId || '6a7c062740e17562c3de2fb3';
             systems.push({
                 ...PAYMENT_SYSTEMS_DEFAULTS.payme,
-                merchantId: payme?.merchantId || '',
-                configured: !!payme?.merchantId,
+                merchantId: mId,
+                configured: true,
             });
         }
 
         // Click
         const click = settings?.click;
         if (!click || click.enabled !== false) {
+            const mId = click?.merchantId || '63646';
+            const sId = click?.serviceId || '109579';
             systems.push({
                 ...PAYMENT_SYSTEMS_DEFAULTS.click,
-                merchantId: click?.merchantId || '',
-                serviceId: click?.serviceId || '',
-                configured: !!(click?.merchantId && click?.serviceId),
+                merchantId: mId,
+                serviceId: sId,
+                configured: true,
             });
         }
 
@@ -106,17 +113,20 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
 
     const isDemo = !system.configured;
 
+    const [isTestMode, setIsTestMode] = useState(false);
+
     const paymentUrl = system.id === 'click'
         ? system.generateUrl(
-            system.merchantId || 'DEMO_CLICK',
+            system.merchantId || '63646',
             amount,
             orderId,
-            system.serviceId || 'DEMO_SERVICE'
+            system.serviceId || '109579'
         )
         : system.generateUrl(
-            system.merchantId || `DEMO_${system.id.toUpperCase()}`,
+            system.merchantId || (system.id === 'payme' ? '6a7c062740e17562c3de2fb3' : `DEMO_${system.id.toUpperCase()}`),
             amount,
-            orderId
+            orderId,
+            isTestMode
         );
 
     const handleCopyLink = () => {
@@ -241,9 +251,29 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
                     </div>
 
                     {/* Инструкция */}
-                    <p style={{ textAlign: 'center', color: '#666', marginBottom: '16px', fontSize: '14px' }}>
+                    <p style={{ textAlign: 'center', color: '#666', marginBottom: '8px', fontSize: '14px' }}>
                         Отсканируйте QR-код в приложении <strong>{system.name}</strong>
                     </p>
+
+                    {system.id === 'payme' && (
+                        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+                            <button
+                                type="button"
+                                onClick={() => setIsTestMode(!isTestMode)}
+                                style={{
+                                    background: isTestMode ? '#fff3cd' : '#f3f4f6',
+                                    border: '1px solid ' + (isTestMode ? '#ffeba8' : '#d1d5db'),
+                                    borderRadius: '6px',
+                                    padding: '4px 10px',
+                                    fontSize: '12px',
+                                    color: isTestMode ? '#856404' : '#4b5563',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                {isTestMode ? '🧪 Среда: Sandbox (test.paycom.uz)' : '🌐 Среда: Продакшн (checkout.paycom.uz)'}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Ссылка */}
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '20px' }}>
