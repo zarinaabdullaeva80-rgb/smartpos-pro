@@ -296,6 +296,14 @@ textarea {
   transition: all var(--transition-base);
 }
 
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  height: auto;
+  padding: 0;
+  margin: 0;
+}
+
 input:focus,
 select:focus,
 textarea:focus {

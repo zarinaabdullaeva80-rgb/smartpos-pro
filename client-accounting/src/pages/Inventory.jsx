@@ -32,7 +32,8 @@ const Inventory = () => {
         setHistoryLoading(true);
         try {
             const response = await inventoryAPI.getHistory();
-            setHistoryLog(response.data || response || []);
+            const data = response?.data || response;
+            setHistoryLog(Array.isArray(data) ? data : (data?.history || []));
         } catch (error) {
             console.error('Error loading inventory history:', error);
             handleError('Не удалось загрузить историю корректировок');
@@ -42,6 +43,7 @@ const Inventory = () => {
     };
 
     const filteredHistoryLog = useMemo(() => {
+        if (!Array.isArray(historyLog)) return [];
         if (!historySearch) return historyLog;
         const q = historySearch.toLowerCase();
         return historyLog.filter(item =>
@@ -68,7 +70,8 @@ const Inventory = () => {
         setLoading(true);
         try {
             const response = await inventoryAPI.getAll({ status: filterStatus || undefined });
-            setInventories(response.data?.inventories || response.data || []);
+            const data = response?.data || response;
+            setInventories(Array.isArray(data) ? data : (data?.inventories || []));
         } catch (error) {
             console.error('Error loading inventories:', error);
             handleError('Не удалось загрузить инвентаризации');

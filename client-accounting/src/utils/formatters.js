@@ -14,6 +14,9 @@ export const formatCurrency = (value, options = {}) => {
     return showSymbol ? `${formatted} сум` : formatted;
 };
 
+// Алиас для обратной совместимости
+export const formatCurrencyUZS = formatCurrency;
+
 // Форматирование числа без валюты
 export const formatNumber = (value, decimals = 0) => {
     return new Intl.NumberFormat('uz-UZ', {

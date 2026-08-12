@@ -7,10 +7,20 @@ import ExportButton from '../components/ExportButton';
 
 import { useConfirm } from '../components/ConfirmDialog';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
+
 const Finance = () => {
     const { handleSuccess, handleError } = useActionHandler();
     const confirm = useConfirm();
     const { t } = useI18n();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setModalType('payment'); setEditingItem(null); });
+    useShortcutAction('escape', () => { if (showModal) setShowModal(false); });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
     const [activeTab, setActiveTab] = useState('accounts');
     const [accounts, setAccounts] = useState([]);
     const [payments, setPayments] = useState([]);

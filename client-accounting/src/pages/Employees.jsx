@@ -9,10 +9,20 @@ import { useToast } from '../components/ToastProvider';
 
 import { useConfirm } from '../components/ConfirmDialog';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
+
 const Employees = () => {
     const toast = useToast();
     const confirm = useConfirm();
     const { t } = useI18n();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setModalType('employee'); setEditingItem(null); });
+    useShortcutAction('escape', () => { if (showModal) setShowModal(false); });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
     const [activeTab, setActiveTab] = useState('employees');
     const [employees, setEmployees] = useState([]);
     const [payroll, setPayroll] = useState([]);
@@ -53,7 +63,7 @@ const Employees = () => {
         try {
             const res = await inventoryAPI.getAll();
             const data = res?.data || res;
-            setInventories(data?.inventories || data || []);
+            setInventories(Array.isArray(data) ? data : (data?.inventories || []));
         } catch (e) {
             console.error('Ошибка загрузки инвентаризаций:', e);
             setInventories([]);

@@ -11,12 +11,17 @@ import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
 import * as XLSX from 'xlsx';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 function Reports() {
     const toast = useToast();
     const { t } = useI18n();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('refresh', () => loadReports());
+    useShortcutAction('export', () => exportToExcel());
     const [financial, setFinancial] = useState(null);
     const [topProducts, setTopProducts] = useState([]);
     const [salesAnalytics, setSalesAnalytics] = useState([]);

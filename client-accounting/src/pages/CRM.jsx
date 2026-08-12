@@ -5,10 +5,19 @@ import { crmAPI } from '../services/api';
 import ExportButton from '../components/ExportButton';
 import { useI18n } from '../i18n';
 import { useConfirm } from '../components/ConfirmDialog';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
 
 const CRM = () => {
     const { t } = useI18n();
     const confirm = useConfirm();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setEditingCustomer(null); });
+    useShortcutAction('escape', () => { if (showModal) setShowModal(false); });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');

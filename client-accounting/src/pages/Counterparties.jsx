@@ -6,10 +6,22 @@ import useActionHandler from '../hooks/useActionHandler';
 import ExportButton from '../components/ExportButton';
 
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
 
 function Counterparties() {
     const { handleSuccess, handleError } = useActionHandler();
     const { t } = useI18n();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setSelectedCounterparty(null); });
+    useShortcutAction('escape', () => {
+        if (showModal) setShowModal(false);
+        else if (showDetailModal) setShowDetailModal(false);
+    });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
     const [counterparties, setCounterparties] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);

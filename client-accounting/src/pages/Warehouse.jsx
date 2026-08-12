@@ -7,10 +7,20 @@ import ExportButton from '../components/ExportButton';
 
 import { useConfirm } from '../components/ConfirmDialog';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
+
 const Warehouse = () => {
     const { handleSuccess, handleError } = useActionHandler();
     const confirm = useConfirm();
     const { t } = useI18n();
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setModalType('warehouse'); setEditingItem(null); });
+    useShortcutAction('escape', () => { if (showModal) setShowModal(false); });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
     const [activeTab, setActiveTab] = useState('warehouses');
     const [warehouses, setWarehouses] = useState([]);
     const [stock, setStock] = useState([]);

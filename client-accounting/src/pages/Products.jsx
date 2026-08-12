@@ -12,6 +12,7 @@ import ImportButton from '../components/ImportButton';
 import { exportConfig } from '../config/exportConfig';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
 
 function Products() {
     const toast = useToast();
@@ -34,6 +35,15 @@ function Products() {
     const [inlineBarcodeValue, setInlineBarcodeValue] = useState('');
     const [moveCategoryForProductId, setMoveCategoryForProductId] = useState(null); // per-product category move
     const [inlineBarcodePrintId, setInlineBarcodePrintId] = useState(null); // inline barcode printing settings
+
+    // ── Валюты ──
+    const [selectedCurrency, setSelectedCurrency] = useState(() => localStorage.getItem('products_currency') || 'UZS');
+    const [currencyRates, setCurrencyRates] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('currencyRates') || 'null') || { USD: 12650, EUR: 14000, RUB: 142 }; }
+        catch { return { USD: 12650, EUR: 14000, RUB: 142 }; }
+    });
+    const [showRatesPanel, setShowRatesPanel] = useState(false);
+    const [ratesInput, setRatesInput] = useState({ USD: '', EUR: '', RUB: '' });
 
     // ── Новые состояния: режимы, сортировка, пагинация, фильтры ──
     const [viewMode, setViewMode] = useState(() => localStorage.getItem('products_viewMode') || 'table');
@@ -72,6 +82,21 @@ function Products() {
     const { handleSuccess, handleError } = useActionHandler();
 
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setEditingProduct(null); });
+    useShortcutAction('refresh', () => setRefreshTrigger(n => n + 1));
+    useShortcutAction('escape', () => {
+        if (showModal) setShowModal(false);
+        else if (showBarcodeModal) setShowBarcodeModal(false);
+        else if (showFilters) setShowFilters(false);
+        else if (inlineEditId) setInlineEditId(null);
+        else if (inlineAddMode) setInlineAddMode(false);
+    });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('input[placeholder*="Поиск"], input[placeholder*="оиск"], input[placeholder*="earch"]');
+        if (el) el.focus();
+    });
 
     // Ref для прокрутки к форме inline-редактирования
     const inlineEditRef = useRef(null);
@@ -113,9 +138,57 @@ function Products() {
         loadProducts();
     }, [refreshTrigger]);
 
+    useEffect(() => { loadCategories(); }, []);
+
+    // Загружаем курсы валют с бэкенда
     useEffect(() => {
-        loadCategories();
+        api.get('/currencies/manual-rates').then(res => {
+            if (res.data?.rates) {
+                setCurrencyRates(prev => ({ ...prev, ...res.data.rates }));
+                localStorage.setItem('currencyRates', JSON.stringify({ ...currencyRates, ...res.data.rates }));
+            }
+        }).catch(() => {/* используем localStorage */});
     }, []);
+
+    // Сохранение выбранной валюты
+    useEffect(() => { localStorage.setItem('products_currency', selectedCurrency); }, [selectedCurrency]);
+
+    // Хелпер: конвертируем цену из UZS в выбранную валюту с учётом custom_rates товара
+    const formatPriceDisplay = (uzs, product) => {
+        if (!uzs && uzs !== 0) return '—';
+        const val = Number(uzs) || 0;
+        if (selectedCurrency === 'UZS') return formatCurrencyUZS(val);
+        // Если у товара есть свой курс — используем его
+        let rate;
+        if (product?.custom_rates) {
+            const pr = typeof product.custom_rates === 'string' ? JSON.parse(product.custom_rates) : product.custom_rates;
+            rate = pr?.[selectedCurrency];
+        }
+        if (!rate) rate = currencyRates[selectedCurrency];
+        if (!rate) return formatCurrencyUZS(val);
+        const symbols = { USD: '$', EUR: '€', RUB: '₽' };
+        return `${symbols[selectedCurrency] || ''}${(val / rate).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    // Сохранение ручных курсов
+    const handleSaveRates = async () => {
+        const rates = {};
+        if (ratesInput.USD) rates.USD = parseFloat(ratesInput.USD);
+        if (ratesInput.EUR) rates.EUR = parseFloat(ratesInput.EUR);
+        if (ratesInput.RUB) rates.RUB = parseFloat(ratesInput.RUB);
+        if (Object.keys(rates).length === 0) { setShowRatesPanel(false); return; }
+        const merged = { ...currencyRates, ...rates };
+        setCurrencyRates(merged);
+        localStorage.setItem('currencyRates', JSON.stringify(merged));
+        try {
+            await api.post('/currencies/manual-rates', { rates });
+            toast.success('Курсы сохранены');
+        } catch (e) {
+            console.log('[Rates] Saved locally');
+            toast.success('Курсы сохранены');
+        }
+        setShowRatesPanel(false);
+    };
 
     const loadCategories = async () => {
         try {
@@ -336,6 +409,9 @@ function Products() {
     const handleEdit = (product) => {
         setEditingProduct(product);
         setInlineEditId(product.id);
+        const cr = product.custom_rates
+            ? (typeof product.custom_rates === 'string' ? JSON.parse(product.custom_rates) : product.custom_rates)
+            : null;
         setFormData({
             code: product.code,
             name: product.name,
@@ -350,7 +426,9 @@ function Products() {
             supplier: product.supplier || '',
             description: product.description || '',
             barcode: product.barcode || '',
-            is_active: product.is_active !== false
+            is_active: product.is_active !== false,
+            customRates: cr || {},
+            useCustomRates: !!cr && Object.keys(cr).length > 0
         });
     };
 
@@ -473,6 +551,13 @@ function Products() {
         return formatCurrencyUZS(value);
     };
 
+    const CURRENCIES = [
+        { code: 'UZS', label: 'UZS — Сум', symbol: 'сум' },
+        { code: 'USD', label: 'USD — Доллар', symbol: '$' },
+        { code: 'EUR', label: 'EUR — Евро', symbol: '€' },
+        { code: 'RUB', label: 'RUB — Рубль', symbol: '₽' },
+    ];
+
     return (
         <div className="products-page fade-in">
             {/* ── Вкладки ── */}
@@ -554,7 +639,7 @@ function Products() {
                 </div>
             </div>
 
-            <div className="card mb-3">
+            <div className="card mb-3" style={{ position: 'relative' }}>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', padding: '12px' }}>
                     <div className="search-bar" style={{ flex: 1, margin: 0, minWidth: '200px' }}>
                         <Search size={18} />
@@ -579,6 +664,62 @@ function Products() {
                     <button className={`btn btn-sm ${showFilters ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setShowFilters(!showFilters)} style={{ fontSize: '12px' }}>
                         <Filter size={14} /> Фильтры
                     </button>
+
+                    {/* ── Селектор валюты ── */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary,#aaa)', whiteSpace: 'nowrap' }}>Валюта:</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', background: 'var(--bg-secondary,#1e1e2e)', borderRadius: '8px', padding: '2px 4px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                            {CURRENCIES.map(c => (
+                                <button
+                                    key={c.code}
+                                    onClick={() => setSelectedCurrency(c.code)}
+                                    title={c.label}
+                                    style={{
+                                        padding: '5px 10px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+                                        background: selectedCurrency === c.code ? 'var(--primary,#7c3aed)' : 'transparent',
+                                        color: selectedCurrency === c.code ? '#fff' : 'var(--text-secondary,#aaa)',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >{c.code}</button>
+                            ))}
+                            <button
+                                onClick={() => { setRatesInput({ USD: currencyRates.USD || '', EUR: currencyRates.EUR || '', RUB: currencyRates.RUB || '' }); setShowRatesPanel(v => !v); }}
+                                title="Настроить курсы валют"
+                                style={{
+                                    padding: '5px 8px', border: 'none', borderRadius: '6px', cursor: 'pointer',
+                                    background: showRatesPanel ? 'rgba(124,58,237,0.3)' : 'transparent',
+                                    color: showRatesPanel ? '#a78bfa' : '#888', fontSize: '14px', lineHeight: 1
+                                }}
+                            >⚙</button>
+                        </div>
+                    </div>
+
+                    {/* ── Панель ввода курсов (fixed) ── */}
+                    {showRatesPanel && (
+                        <div style={{ position: 'fixed', right: '20px', top: '160px', zIndex: 9999, background: 'var(--bg-card,#161622)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: '12px', padding: '16px 18px', boxShadow: '0 12px 40px rgba(0,0,0,0.6)', minWidth: '280px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <span style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>💱 Курсы валют</span>
+                                <button onClick={() => setShowRatesPanel(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '18px', lineHeight: 1 }}>×</button>
+                            </div>
+                            <p style={{ fontSize: '11px', color: '#888', marginBottom: '12px', margin: '0 0 12px' }}>Укажите сколько сум стоит 1 единица валюты</p>
+                            {[['USD', '$', 'Доллар США'], ['EUR', '€', 'Евро'], ['RUB', '₽', 'Российский рубль']].map(([code, sym, name]) => (
+                                <div key={code} style={{ marginBottom: '10px' }}>
+                                    <label style={{ fontSize: '11px', color: '#a78bfa', display: 'block', marginBottom: '4px' }}>{sym} {code} — {name}</label>
+                                    <input
+                                        type="number" min="1" step="1"
+                                        value={ratesInput[code]}
+                                        onChange={e => setRatesInput(prev => ({ ...prev, [code]: e.target.value }))}
+                                        placeholder={`Текущий курс: ${currencyRates[code] ? currencyRates[code].toLocaleString() : '—'} сум`}
+                                        style={{ width: '100%', fontSize: '13px', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: '#fff', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            ))}
+                            <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+                                <button className="btn btn-primary btn-sm" onClick={handleSaveRates} style={{ flex: 1, padding: '8px' }}>💾 Сохранить курсы</button>
+                                <button className="btn btn-secondary btn-sm" onClick={() => setShowRatesPanel(false)} style={{ padding: '8px 12px' }}>Отмена</button>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Переключатель режимов отображения (8 режимов) */}
                     <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-secondary, #1e1e2e)', borderRadius: '6px', padding: '2px', flexWrap: 'wrap' }}>
@@ -913,9 +1054,9 @@ function Products() {
                                     <td style={{ padding: '6px 8px' }}>{product.category_name || '—'}</td>
                                     <td style={{ padding: '6px 8px' }}>{product.unit}</td>
                                     <td style={{ padding: '6px 8px' }}><strong>{product.quantity || 0}</strong></td>
-                                    <td style={{ padding: '6px 8px' }}>{formatCurrency(product.price_purchase)}</td>
-                                    <td style={{ padding: '6px 8px' }}>{formatCurrency(product.price_sale)}</td>
-                                    <td style={{ padding: '6px 8px' }}>{formatCurrency(product.price_retail)}</td>
+                                    <td style={{ padding: '6px 8px' }}>{formatPriceDisplay(product.price_purchase, product)}</td>
+                                    <td style={{ padding: '6px 8px' }}>{formatPriceDisplay(product.price_sale, product)}</td>
+                                    <td style={{ padding: '6px 8px' }}>{formatPriceDisplay(product.price_retail, product)}</td>
                                     <td style={{ padding: '6px 8px' }}>
                                         <button
                                             className={`btn btn-sm ${product.is_active ? 'btn-success' : 'btn-danger'}`}
@@ -972,6 +1113,33 @@ function Products() {
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Кол-во (остаток)</label><input type="number" value={formData.quantity} onChange={e => setFormData({...formData, quantity: parseInt(e.target.value) || 0})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Мин. остаток</label><input type="number" value={formData.minStock} onChange={e => setFormData({...formData, minStock: parseInt(e.target.value) || 0})} style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
                                                     <div><label style={{ fontSize: '10px', color: '#888', display: 'block' }}>Поставщик</label><input type="text" value={formData.supplier || ''} onChange={e => setFormData({...formData, supplier: e.target.value})} placeholder="Название поставщика" style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }} /></div>
+                                                </div>
+                                                {/* ── Свои курсы для этого товара ── */}
+                                                <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: '8px', marginTop: '4px' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none', marginBottom: '6px' }}>
+                                                        <input type="checkbox"
+                                                            checked={!!formData.useCustomRates}
+                                                            onChange={e => setFormData({ ...formData, useCustomRates: e.target.checked, customRates: e.target.checked ? (formData.customRates || {}) : null })}
+                                                            style={{ width: '14px', height: '14px' }}
+                                                        />
+                                                        <span style={{ color: '#a78bfa' }}>💱 Индивидуальные курсы для этого товара</span>
+                                                    </label>
+                                                    {formData.useCustomRates && (
+                                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', paddingLeft: '20px' }}>
+                                                            {[['USD','$','Доллар'],['EUR','€','Евро'],['RUB','₽','Рубль']].map(([code,sym,name]) => (
+                                                                <div key={code}>
+                                                                    <label style={{ fontSize: '10px', color: '#a78bfa', display: 'block' }}>{sym} {code} — {name} → UZS</label>
+                                                                    <input
+                                                                        type="number" min="1" step="1"
+                                                                        value={formData.customRates?.[code] || ''}
+                                                                        onChange={e => setFormData(prev => ({ ...prev, customRates: { ...(prev.customRates || {}), [code]: e.target.value ? parseFloat(e.target.value) : undefined } }))}
+                                                                        placeholder={`${currencyRates[code] || '—'} (глобальный)`}
+                                                                        style={{ width: '100%', fontSize: '12px', padding: '4px 6px' }}
+                                                                    />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                                                     <div>
@@ -1131,7 +1299,7 @@ function Products() {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                                 <span style={{ color: '#aaa' }}>Цена</span>
-                                <strong style={{ color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</strong>
+                                <strong style={{ color: '#f59e0b' }}>{formatPriceDisplay(product.price_sale, product)}</strong>
                             </div>
                             {product.category_name && <div style={{ fontSize: '10px', color: '#666', marginTop: '6px' }}>📁 {product.category_name}</div>}
                         </div>
@@ -1147,7 +1315,7 @@ function Products() {
                             <code style={{ fontSize: '11px', color: '#888', width: '80px' }}>{product.code}</code>
                             <strong style={{ flex: 1 }}>{product.name}</strong>
                             <span style={{ width: '60px', textAlign: 'right' }}>{product.quantity || 0}</span>
-                            <span style={{ width: '100px', textAlign: 'right', color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</span>
+                            <span style={{ width: '100px', textAlign: 'right', color: '#f59e0b' }}>{formatPriceDisplay(product.price_sale, product)}</span>
                             <div style={{ display: 'flex', gap: '4px' }}>
                                 <button className="btn btn-secondary btn-sm" onClick={() => handleEdit(product)} style={{ padding: '2px 5px' }}><Edit size={12} /></button>
                                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(product.id)} style={{ padding: '2px 5px' }}><Trash2 size={12} /></button>
@@ -1168,7 +1336,7 @@ function Products() {
                                 <Package size={28} style={{ color: 'var(--primary)' }} />
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '12px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#f59e0b' }}>{formatPriceDisplay(product.price_sale, product)}</div>
                             <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginTop: '6px' }}>
                                 <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); handleEdit(product); }} style={{ padding: '3px 5px' }}><Edit size={11} /></button>
@@ -1200,7 +1368,7 @@ function Products() {
                             </div>
                             <div style={{ fontWeight: 700, fontSize: '16px', marginBottom: '6px', lineHeight: 1.3 }}>{product.name}</div>
                             <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>{product.code}</div>
-                            <div style={{ fontSize: '20px', fontWeight: 700, color: '#f59e0b', marginBottom: '4px' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ fontSize: '20px', fontWeight: 700, color: '#f59e0b', marginBottom: '4px' }}>{formatPriceDisplay(product.price_sale, product)}</div>
                             <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '12px', marginTop: '8px' }}>
                                 <span style={{ color: '#aaa' }}>Ост: <strong style={{ color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#10b981' }}>{product.quantity || 0}</strong></span>
                                 {product.category_name && <span style={{ color: '#666' }}>📁 {product.category_name}</span>}
@@ -1228,7 +1396,7 @@ function Products() {
                                 <Package size={38} style={{ color: 'var(--primary)' }} />
                             </div>
                             <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</div>
-                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#f59e0b' }}>{formatPriceDisplay(product.price_sale, product)}</div>
                             <div style={{ fontSize: '11px', color: (Number(product.quantity)||0) <= (Number(product.min_stock)||0) && (Number(product.min_stock)||0) > 0 ? '#ef4444' : '#888', marginTop: '4px' }}>Ост: {product.quantity || 0}</div>
                         </div>
                     ))}
@@ -1285,8 +1453,8 @@ function Products() {
                             </div>
                             {/* Цены */}
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <div style={{ fontSize: '15px', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(product.price_sale)}</div>
-                                <div style={{ fontSize: '11px', color: '#666' }}>Закуп: {formatCurrency(product.price_purchase)}</div>
+                                <div style={{ fontSize: '15px', fontWeight: 700, color: '#f59e0b' }}>{formatPriceDisplay(product.price_sale, product)}</div>
+                                <div style={{ fontSize: '11px', color: '#666' }}>Закуп: {formatPriceDisplay(product.price_purchase, product)}</div>
                             </div>
                             {/* Остаток */}
                             <div style={{ textAlign: 'center', flexShrink: 0, minWidth: '60px' }}>

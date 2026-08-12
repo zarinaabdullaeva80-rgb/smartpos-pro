@@ -462,7 +462,7 @@ function Layout({ onLogout }) {
                 </div>
             </aside>
 
-            <main className="main-content">
+            <main className="main-content" key={lang}>
                 <Outlet />
             </main>
 

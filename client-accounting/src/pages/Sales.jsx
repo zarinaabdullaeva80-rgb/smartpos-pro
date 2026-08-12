@@ -10,6 +10,7 @@ import { useActionHandler } from '../hooks/useActionHandler';
 import ExportButton from '../components/ExportButton';
 import { useToast } from '../components/ToastProvider';
 import { useI18n } from '../i18n';
+import { useShortcutAction } from '../hooks/useKeyboardShortcuts';
 
 function Sales() {
     const toast = useToast();
@@ -78,11 +79,31 @@ function Sales() {
     });
 
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const searchRef = useRef(null);
 
     useEffect(() => {
         loadSales();
         loadFormData();
     }, [refreshTrigger]);
+
+    // ── Горячие клавиши ──
+    useShortcutAction('new', () => { setShowModal(true); setEditingSale(null); });
+    useShortcutAction('refresh', () => setRefreshTrigger(t => t + 1));
+    useShortcutAction('escape', () => {
+        if (showModal) setShowModal(false);
+        else if (showReturnModal) setShowReturnModal(false);
+        else if (showLoyaltyModal) setShowLoyaltyModal(false);
+        else if (showQRPayment) setShowQRPayment(false);
+        else if (showReceiptModal) setShowReceiptModal(false);
+        else if (showScannerMode) setShowScannerMode(false);
+    });
+    useShortcutAction('print', () => {
+        if (saleForReceipt) setShowReceiptModal(true);
+    });
+    useShortcutAction('search', () => {
+        const el = document.querySelector('.sales-search input, input[placeholder*="Поиск"], input[placeholder*="оиск"]');
+        if (el) el.focus();
+    });
 
     // ── Карта лояльности: функции ──
 

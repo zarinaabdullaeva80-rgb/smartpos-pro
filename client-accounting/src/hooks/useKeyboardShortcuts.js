@@ -3,73 +3,110 @@ import { useNavigate } from 'react-router-dom';
 
 /**
  * Global keyboard shortcuts hook for SmartPOS Pro
- * 
- * Navigation:
- *   F1        — Dashboard (Главная)
- *   F2        — Sales (Продажи / Касса)
+ *
+ * Navigation (F-keys):
+ *   F1        — Dashboard
+ *   F2        — Sales (Касса)
  *   F3        — Products (Товары)
  *   F4        — Warehouse (Склад)
- *   F5        — Refresh page
+ *   F5        — Refresh (shortcut event)
  *   F6        — Reports (Отчёты)
  *   F7        — Finance (Финансы)
  *   F8        — CRM / Клиенты
  *   F9        — Settings (Настройки)
  *   F10       — Employees (Сотрудники)
+ *   F11       — Purchases (Закупки)
+ *   F12       — Shifts (Смены)
  *
- * Actions:
- *   Ctrl+N    — New item (triggers custom event)
- *   Ctrl+F    — Focus search
- *   Ctrl+S    — Save (triggers custom event)
- *   Ctrl+P    — Print (triggers custom event)
- *   Ctrl+E    — Export
- *   Ctrl+I    — Import
- *   Ctrl+Shift+S — New Sale
- *   Ctrl+Shift+P — New Purchase
+ * Quick navigation (Ctrl+):
+ *   Ctrl+D    — Dashboard
+ *   Ctrl+Shift+S  — New Sale (navigate + trigger new)
+ *   Ctrl+Shift+P  — New Purchase
+ *   Ctrl+Shift+W  — Warehouse
+ *   Ctrl+Shift+R  — Reports
+ *
+ * Actions (Ctrl+):
+ *   Ctrl+N    — New item (shortcut event)
+ *   Ctrl+F    — Focus search (shortcut event + focus)
+ *   Ctrl+S    — Save (shortcut event)
+ *   Ctrl+P    — Print (shortcut event)
+ *   Ctrl+E    — Export (shortcut event)
+ *   Ctrl+I    — Import (shortcut event)
+ *   Ctrl+Z    — Undo (shortcut event)
+ *   Ctrl+A    — Select all (shortcut event, only outside input)
+ *   Ctrl+/    — Show shortcuts help overlay
  *   Escape    — Close modal / cancel
- *   Ctrl+?    — Show shortcuts help
+ *   Alt+←     — Browser back
+ *   Alt+→     — Browser forward
  */
 
-// Shortcut definitions for display in help overlay
+// Static shortcut map for display — categories with keys + descriptions (RU)
 export const SHORTCUT_MAP = [
-    { category: 'Навигация', shortcuts: [
-        { keys: 'F1', description: 'Главная (Dashboard)' },
-        { keys: 'F2', description: 'Продажи / Касса' },
-        { keys: 'F3', description: 'Товары' },
-        { keys: 'F4', description: 'Склад' },
-        { keys: 'F5', description: 'Обновить страницу' },
-        { keys: 'F6', description: 'Отчёты' },
-        { keys: 'F7', description: 'Финансы' },
-        { keys: 'F8', description: 'CRM / Клиенты' },
-        { keys: 'F9', description: 'Настройки' },
-        { keys: 'F10', description: 'Сотрудники' },
-    ]},
-    { category: 'Действия', shortcuts: [
-        { keys: 'Ctrl+N', description: 'Создать новый элемент' },
-        { keys: 'Ctrl+F', description: 'Поиск' },
-        { keys: 'Ctrl+S', description: 'Сохранить' },
-        { keys: 'Ctrl+P', description: 'Печать' },
-        { keys: 'Ctrl+E', description: 'Экспорт' },
-        { keys: 'Ctrl+I', description: 'Импорт' },
-        { keys: 'Escape', description: 'Закрыть / Отмена' },
-        { keys: 'Ctrl+/', description: 'Показать горячие клавиши' },
-    ]},
+    {
+        category: 'Навигация (F-клавиши)',
+        shortcuts: [
+            { keys: 'F1', description: 'Главная (Dashboard)' },
+            { keys: 'F2', description: 'Продажи / Касса' },
+            { keys: 'F3', description: 'Товары' },
+            { keys: 'F4', description: 'Склад' },
+            { keys: 'F5', description: 'Обновить страницу' },
+            { keys: 'F6', description: 'Отчёты' },
+            { keys: 'F7', description: 'Финансы' },
+            { keys: 'F8', description: 'CRM / Клиенты' },
+            { keys: 'F9', description: 'Настройки' },
+            { keys: 'F10', description: 'Сотрудники' },
+            { keys: 'F11', description: 'Закупки' },
+            { keys: 'F12', description: 'Смены' },
+        ],
+    },
+    {
+        category: 'Действия',
+        shortcuts: [
+            { keys: 'Ctrl+N', description: 'Создать новый элемент' },
+            { keys: 'Ctrl+F', description: 'Поиск по странице' },
+            { keys: 'Ctrl+S', description: 'Сохранить' },
+            { keys: 'Ctrl+P', description: 'Печать' },
+            { keys: 'Ctrl+E', description: 'Экспорт данных' },
+            { keys: 'Ctrl+I', description: 'Импорт данных' },
+            { keys: 'Ctrl+Z', description: 'Отменить действие' },
+            { keys: 'Escape', description: 'Закрыть / Отмена' },
+            { keys: 'Ctrl+/', description: 'Показать горячие клавиши' },
+        ],
+    },
+    {
+        category: 'Быстрая навигация (Ctrl+Shift)',
+        shortcuts: [
+            { keys: 'Ctrl+Shift+S', description: 'Новая продажа' },
+            { keys: 'Ctrl+Shift+P', description: 'Новая закупка' },
+            { keys: 'Ctrl+Shift+W', description: 'Склад' },
+            { keys: 'Ctrl+Shift+R', description: 'Отчёты' },
+            { keys: 'Ctrl+Shift+E', description: 'Сотрудники' },
+            { keys: 'Ctrl+Shift+C', description: 'CRM / Клиенты' },
+            { keys: 'Ctrl+Shift+F', description: 'Финансы' },
+        ],
+    },
 ];
 
 export function useKeyboardShortcuts() {
     const navigate = useNavigate();
 
     const handleKeyDown = useCallback((e) => {
-        // Don't trigger shortcuts when typing in inputs
         const target = e.target;
-        const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+        const isInput =
+            target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.tagName === 'SELECT' ||
+            target.isContentEditable;
 
-        // Allow F-keys and Escape even in inputs
+        // Allow F-keys and Escape even when inside inputs
         const isFKey = e.key.startsWith('F') && e.key.length <= 3;
         const isEscape = e.key === 'Escape';
 
         if (isInput && !isFKey && !isEscape) return;
 
-        // === F-KEY NAVIGATION ===
+        // =====================
+        // F-KEY NAVIGATION
+        // =====================
         if (!e.ctrlKey && !e.altKey && !e.shiftKey) {
             switch (e.key) {
                 case 'F1':
@@ -112,51 +149,86 @@ export function useKeyboardShortcuts() {
                     e.preventDefault();
                     navigate('/employees');
                     return;
+                case 'F11':
+                    e.preventDefault();
+                    navigate('/purchases');
+                    return;
+                case 'F12':
+                    e.preventDefault();
+                    navigate('/shifts');
+                    return;
                 case 'Escape':
                     window.dispatchEvent(new CustomEvent('shortcut:escape'));
                     return;
             }
         }
 
-        // === CTRL + KEY ACTIONS ===
+        // =====================
+        // CTRL + KEY ACTIONS
+        // =====================
         if (e.ctrlKey && !e.altKey) {
-            switch (e.key.toLowerCase()) {
-                case 'n':
-                    if (!e.shiftKey) {
+            const key = e.key.toLowerCase();
+
+            // Ctrl+Shift combos
+            if (e.shiftKey) {
+                switch (key) {
+                    case 's':
                         e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('shortcut:new'));
-                    }
+                        navigate('/sales');
+                        setTimeout(() => window.dispatchEvent(new CustomEvent('shortcut:new')), 300);
+                        return;
+                    case 'p':
+                        e.preventDefault();
+                        navigate('/purchases');
+                        setTimeout(() => window.dispatchEvent(new CustomEvent('shortcut:new')), 300);
+                        return;
+                    case 'w':
+                        e.preventDefault();
+                        navigate('/warehouse');
+                        return;
+                    case 'r':
+                        e.preventDefault();
+                        navigate('/reports');
+                        return;
+                    case 'e':
+                        e.preventDefault();
+                        navigate('/employees');
+                        return;
+                    case 'c':
+                        e.preventDefault();
+                        navigate('/crm');
+                        return;
+                    case 'f':
+                        e.preventDefault();
+                        navigate('/finance');
+                        return;
+                }
+                return;
+            }
+
+            // Ctrl-only combos
+            switch (key) {
+                case 'n':
+                    e.preventDefault();
+                    window.dispatchEvent(new CustomEvent('shortcut:new'));
                     return;
                 case 'f':
                     e.preventDefault();
                     window.dispatchEvent(new CustomEvent('shortcut:search'));
-                    // Also try to focus search input
                     setTimeout(() => {
-                        const searchInput = document.querySelector('.search-bar input, input[type="search"], input[placeholder*="оиск"], input[placeholder*="earch"]');
+                        const searchInput = document.querySelector(
+                            '.search-bar input, input[type="search"], input[placeholder*="оиск"], input[placeholder*="earch"], input[placeholder*="Поиск"]'
+                        );
                         if (searchInput) searchInput.focus();
                     }, 50);
                     return;
                 case 's':
-                    if (e.shiftKey) {
-                        // Ctrl+Shift+S — New Sale
-                        e.preventDefault();
-                        navigate('/sales');
-                        setTimeout(() => window.dispatchEvent(new CustomEvent('shortcut:new')), 300);
-                    } else {
-                        e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('shortcut:save'));
-                    }
+                    e.preventDefault();
+                    window.dispatchEvent(new CustomEvent('shortcut:save'));
                     return;
                 case 'p':
-                    if (e.shiftKey) {
-                        // Ctrl+Shift+P — New Purchase
-                        e.preventDefault();
-                        navigate('/purchases');
-                        setTimeout(() => window.dispatchEvent(new CustomEvent('shortcut:new')), 300);
-                    } else {
-                        e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('shortcut:print'));
-                    }
+                    e.preventDefault();
+                    window.dispatchEvent(new CustomEvent('shortcut:print'));
                     return;
                 case 'e':
                     e.preventDefault();
@@ -166,11 +238,42 @@ export function useKeyboardShortcuts() {
                     e.preventDefault();
                     window.dispatchEvent(new CustomEvent('shortcut:import'));
                     return;
+                case 'z':
+                    e.preventDefault();
+                    window.dispatchEvent(new CustomEvent('shortcut:undo'));
+                    return;
+                case 'd':
+                    e.preventDefault();
+                    navigate('/');
+                    return;
                 case '/':
                 case '?':
                     e.preventDefault();
                     window.dispatchEvent(new CustomEvent('shortcut:help'));
                     return;
+                // Ctrl+A — select-all shortcut event (only outside inputs)
+                case 'a':
+                    if (!isInput) {
+                        e.preventDefault();
+                        window.dispatchEvent(new CustomEvent('shortcut:selectall'));
+                    }
+                    return;
+            }
+        }
+
+        // =====================
+        // ALT + ARROW (browser-like navigation)
+        // =====================
+        if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                window.history.back();
+                return;
+            }
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                window.history.forward();
+                return;
             }
         }
     }, [navigate]);
@@ -182,15 +285,17 @@ export function useKeyboardShortcuts() {
 }
 
 /**
- * Hook to listen for a specific shortcut event
- * @param {string} shortcutName - e.g. 'new', 'save', 'search', 'escape', 'refresh'
- * @param {Function} handler - callback
+ * Hook to listen for a specific shortcut event in any page/component.
+ * @param {string} shortcutName - e.g. 'new', 'save', 'search', 'escape', 'refresh', 'print', 'export', 'import', 'undo', 'selectall'
+ * @param {Function} handler - callback to invoke when shortcut fires
+ * @param {Array} deps - extra deps for the handler (like useCallback deps)
  */
-export function useShortcutAction(shortcutName, handler) {
+export function useShortcutAction(shortcutName, handler, deps = []) {
     useEffect(() => {
         const eventName = `shortcut:${shortcutName}`;
         const listener = () => handler();
         window.addEventListener(eventName, listener);
         return () => window.removeEventListener(eventName, listener);
-    }, [shortcutName, handler]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shortcutName, ...deps]);
 }
