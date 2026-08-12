@@ -268,6 +268,8 @@ export async function initDatabase(pool) {
                 discount_percent DECIMAL(5, 2) DEFAULT 0,
                 final_amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
                 payment_type VARCHAR(50),
+                payment_status VARCHAR(50) DEFAULT 'unpaid',
+                payment_method VARCHAR(50),
                 warehouse_id INTEGER REFERENCES warehouses(id),
                 status VARCHAR(50) DEFAULT 'confirmed',
                 user_id INTEGER REFERENCES users(id),
