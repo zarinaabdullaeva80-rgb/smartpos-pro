@@ -863,6 +863,112 @@ router.post('/detach-card', authenticateToken, async (req, res) => {
     }
 });
 
+/**
+ * Полное удаление карты лояльности из БД
+ */
+router.delete('/card/:id', authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { id } = req.params;
+        const orgId = req.user?.organization_id || 1;
+
+        await client.query('BEGIN');
+
+        const isNum = /^\d+$/.test(String(id).trim());
+        let custRes;
+        if (isNum) {
+            custRes = await client.query(
+                'SELECT id FROM customers WHERE (id = $1 OR card_number = $2) AND (organization_id = $3 OR organization_id IS NULL)',
+                [parseInt(id), String(id), orgId]
+            );
+        } else {
+            custRes = await client.query(
+                'SELECT id FROM customers WHERE card_number = $1 AND (organization_id = $2 OR organization_id IS NULL)',
+                [String(id), orgId]
+            );
+        }
+
+        if (custRes.rows.length > 0) {
+            const custId = custRes.rows[0].id;
+            await client.query('DELETE FROM loyalty_transactions WHERE customer_id = $1', [custId]).catch(() => {});
+            await client.query('DELETE FROM customer_deposits WHERE customer_id = $1', [custId]).catch(() => {});
+            await client.query('UPDATE sales SET customer_id = NULL WHERE customer_id = $1', [custId]).catch(() => {});
+            await client.query('DELETE FROM customers WHERE id = $1', [custId]);
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Карта полностью удалена из базы данных' });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Delete card error:', error);
+        res.status(500).json({ error: 'Ошибка удаления карты из БД' });
+    } finally {
+        client.release();
+    }
+});
+
+/**
+ * Пакетное удаление карт лояльности из БД
+ */
+router.post('/cards/delete-batch', authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    try {
+        const { cardIds, cardNumbers } = req.body;
+        const orgId = req.user?.organization_id || 1;
+        const ids = Array.isArray(cardIds) ? cardIds : [];
+        const numbers = Array.isArray(cardNumbers) ? cardNumbers : [];
+
+        await client.query('BEGIN');
+
+        for (const rawId of ids) {
+            const isNum = /^\d+$/.test(String(rawId).trim());
+            let custRes;
+            if (isNum) {
+                custRes = await client.query(
+                    'SELECT id FROM customers WHERE (id = $1 OR card_number = $2) AND (organization_id = $3 OR organization_id IS NULL)',
+                    [parseInt(rawId), String(rawId), orgId]
+                );
+            } else {
+                custRes = await client.query(
+                    'SELECT id FROM customers WHERE card_number = $1 AND (organization_id = $2 OR organization_id IS NULL)',
+                    [String(rawId), orgId]
+                );
+            }
+
+            if (custRes.rows.length > 0) {
+                const custId = custRes.rows[0].id;
+                await client.query('DELETE FROM loyalty_transactions WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('DELETE FROM customer_deposits WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('UPDATE sales SET customer_id = NULL WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('DELETE FROM customers WHERE id = $1', [custId]);
+            }
+        }
+
+        for (const num of numbers) {
+            const custRes = await client.query(
+                'SELECT id FROM customers WHERE card_number = $1 AND (organization_id = $2 OR organization_id IS NULL)',
+                [String(num), orgId]
+            );
+            if (custRes.rows.length > 0) {
+                const custId = custRes.rows[0].id;
+                await client.query('DELETE FROM loyalty_transactions WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('DELETE FROM customer_deposits WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('UPDATE sales SET customer_id = NULL WHERE customer_id = $1', [custId]).catch(() => {});
+                await client.query('DELETE FROM customers WHERE id = $1', [custId]);
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ success: true, message: 'Все выбранные карты удалены из базы данных' });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Batch delete cards error:', error);
+        res.status(500).json({ error: 'Ошибка при пакетном удалении карт' });
+    } finally {
+        client.release();
+    }
+});
+
 // ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 
 function generateCardNumber(customerId) {

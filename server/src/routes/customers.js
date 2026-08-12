@@ -105,10 +105,9 @@ function generateCardNumber(customerId) {
 // Создать нового клиента (с автоматической генерацией карты лояльности)
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        const { name, phone, email, discount = 0, notes, loyalty_points } = req.body;
-
-        if (!name) {
-            return res.status(400).json({ error: 'Имя обязательно' });
+        let customerName = name?.trim();
+        if (!customerName) {
+            customerName = `Карта № ${Date.now().toString().slice(-6)}`;
         }
 
         const orgId = getOrgId(req);
@@ -126,7 +125,7 @@ router.post('/', authenticateToken, async (req, res) => {
             `INSERT INTO customers (name, phone, email, discount, loyalty_points, notes, organization_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING *`,
-            [name, phone || null, email || null, parseFloat(discount) || 0, welcomeBonus, notes || null, orgId || 1]
+            [customerName, phone || null, email || null, parseFloat(discount) || 0, welcomeBonus, notes || null, orgId || 1]
         );
 
         const customer = result.rows[0];

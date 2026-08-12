@@ -81,13 +81,107 @@ function LoyaltyCards() {
     const loadCustomers = async () => {
         try {
             const response = await crmAPI.getCustomers();
-            setCustomers(response.data?.customers || []);
+            const dbCustomers = response.data?.customers || [];
+            setCustomers(dbCustomers);
+
+            // Загружаем карты из базы данных (клиенты с номером карты)
+            const dbCards = dbCustomers
+                .filter(c => c.card_number)
+                .map(c => ({
+                    id: c.id,
+                    number: c.card_number,
+                    name: c.name || '',
+                    phone: c.phone || '',
+                    email: c.email || '',
+                    level: 'Standard',
+                    balance: c.loyalty_points || 0,
+                    earnedTotal: c.loyalty_points || 0,
+                    spentTotal: 0,
+                    created_at: c.created_at,
+                    is_blank: false
+                }));
+
+            // ── Авто-синхронизация карт из localStorage в базу данных ──
+            const localCards = (() => {
+                try { return JSON.parse(localStorage.getItem('loyalty_cards') || '[]'); }
+                catch { return []; }
+            })();
+
+            // Находим карты в localStorage которых нет в БД
+            const cardsToSync = localCards.filter(local => {
+                if (!local.name && !local.phone) return false; // пустые карты без данных — пропускаем
+                const alreadyInDB = dbCustomers.some(db =>
+                    (local.phone && db.phone && db.phone === local.phone) ||
+                    (local.number && db.card_number && db.card_number === local.number)
+                );
+                return !alreadyInDB;
+            });
+
+            if (cardsToSync.length > 0) {
+                console.log(`[LoyaltyCards] Авто-синхронизация ${cardsToSync.length} карт в БД...`);
+                const syncedCustomers = [];
+                for (const card of cardsToSync) {
+                    try {
+                        const res = await crmAPI.createCustomer({
+                            name: card.name || `Клиент ${card.number?.slice(-4) || ''}`,
+                            phone: card.phone || null,
+                            email: card.email || null,
+                            loyalty_points: card.balance || 0
+                        });
+                        if (res.data?.customer) {
+                            // Если у карты из localStorage был свой номер — обновляем клиента в БД с этим номером
+                            const newCust = res.data.customer;
+                            if (card.number && card.number !== newCust.card_number) {
+                                try {
+                                    await crmAPI.updateCustomer(newCust.id, { card_number: card.number });
+                                } catch (e) { /* игнорируем */ }
+                            }
+                            syncedCustomers.push(newCust);
+                        }
+                    } catch (e) {
+                        console.warn('[LoyaltyCards] Sync error for card:', card.number, e.message);
+                    }
+                }
+                if (syncedCustomers.length > 0) {
+                    console.log(`[LoyaltyCards] Синхронизировано ${syncedCustomers.length} карт`);
+                    // Перезагружаем данные после синхронизации
+                    const refreshed = await crmAPI.getCustomers();
+                    const allDbCustomers = refreshed.data?.customers || [];
+                    setCustomers(allDbCustomers);
+                    const allDbCards = allDbCustomers
+                        .filter(c => c.card_number)
+                        .map(c => ({
+                            id: c.id,
+                            number: c.card_number,
+                            name: c.name || '',
+                            phone: c.phone || '',
+                            email: c.email || '',
+                            level: 'Standard',
+                            balance: c.loyalty_points || 0,
+                            earnedTotal: c.loyalty_points || 0,
+                            spentTotal: 0,
+                            created_at: c.created_at,
+                            is_blank: false
+                        }));
+                    setCards(allDbCards);
+                    return;
+                }
+            }
+
+            // Объединяем с локальными картами (без дублей по id)
+            setCards(prev => {
+                const localOnlyCards = prev.filter(
+                    local => !dbCards.some(db => String(db.id) === String(local.id))
+                );
+                return [...dbCards, ...localOnlyCards];
+            });
         } catch (error) {
             console.error('Error loading customers:', error);
         } finally {
             setLoading(false);
         }
     };
+
 
     const loadSettings = async () => {
         try {
@@ -121,30 +215,48 @@ function LoyaltyCards() {
         return prefix + random;
     };
 
-    // Создание новой карты
-    const createCard = () => {
-        if (!newCard.name || !newCard.phone) {
-            toast.info('Заполните имя и телефон');
-            return;
+    // Создание новой карты (без обязательной привязки персональных данных)
+    const createCard = async () => {
+        const generatedNum = generateCardNumber();
+        const cardName = newCard.name?.trim() || `Карта № ${generatedNum.slice(-6)}`;
+
+        try {
+            // Создаем карту в базе данных
+            const res = await crmAPI.createCustomer({
+                name: cardName,
+                phone: newCard.phone?.trim() || null,
+                email: newCard.email?.trim() || null,
+                loyalty_points: settings.welcome_bonus || 0
+            });
+
+            if (res.data?.success && res.data?.customer) {
+                const customer = res.data.customer;
+                
+                const card = {
+                    id: customer.id,
+                    number: customer.card_number || generatedNum,
+                    name: customer.name,
+                    phone: customer.phone || '',
+                    email: customer.email || '',
+                    balance: customer.loyalty_points || 0,
+                    earnedTotal: customer.loyalty_points || 0,
+                    spentTotal: 0,
+                    created_at: customer.created_at || new Date().toISOString()
+                };
+
+                setCards(prev => [...prev, card]);
+                toast.success(`Карта ${card.number} успешно создана!`);
+            } else {
+                toast.error('Не удалось создать карту на сервере');
+            }
+        } catch (err) {
+            console.error('Error creating card:', err);
+            toast.error('Ошибка при создании карты в базе данных');
+        } finally {
+            setNewCard({ name: '', phone: '', email: '' });
+            setShowCreateCard(false);
+            loadCustomers();
         }
-
-        const card = {
-            id: Date.now(),
-            number: generateCardNumber(),
-            name: newCard.name,
-            phone: newCard.phone,
-            email: newCard.email,
-            level: 'Standard',
-            balance: 0,
-            earnedTotal: 0,
-            spentTotal: 0,
-            created_at: new Date().toISOString()
-        };
-
-        setCards([...cards, card]);
-        setNewCard({ name: '', phone: '', email: '' });
-        setShowCreateCard(false);
-        toast.success(`Карта ${card.number} создана!`);
     };
 
     // Генерация пакета баркодов
@@ -201,7 +313,7 @@ function LoyaltyCards() {
                     .card-owner { font-size: 9px; text-transform: uppercase; opacity: 0.9; }
                     .card-level { font-size: 8px; color: #ffd700; }
                     .barcode-box { background: white; padding: 0.5mm 1mm; border-radius: 4px; margin-top: 1mm; text-align: center; display: flex; justify-content: center; align-items: center; }
-                    .barcode-box img { width: 100%; height: 12mm; object-fit: fill; }
+                    .barcode-box img { width: 92%; height: 12mm; object-fit: fill; margin: 0 auto; display: block; }
                     .card-footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 8px; opacity: 0.9; margin-top: 1mm; }
                     .card-cashback { background: rgba(255,215,0,0.2); padding: 0.5mm 2mm; border-radius: 2px; color: #ffd700; font-weight: bold; }
                 </style>
@@ -216,7 +328,7 @@ function LoyaltyCards() {
                                         `<div></div>` : 
                                         `<div class="card-logo">SmartPOS <span>${t('loyaltycards.bonus', 'Бонус')}</span></div>`
                                     }
-                                    <div class="card-level">${c.level}</div>
+                                    <div class="card-level">Кэшбек ${settings.cashback_percent || 2}%</div>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1mm;">
                                     <div class="card-number">${c.number.replace(/(.{4})/g, '$1 ')}</div>
@@ -351,7 +463,7 @@ function LoyaltyCards() {
                         <div class="customer-name">${selectedCustomer?.name}</div>
                         ${settings.card_text ? `<div style="font-size: 8px; opacity: 0.8; max-width: 40mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${settings.card_text}</div>` : ''}
                     </div>
-                    <div class="level">★ ${cardData?.level || 'Standard'}</div>
+                    <div class="level">Кэшбек ${settings.cashback_percent || 2}%</div>
                     <div class="barcode-box">
                         ${barcodeImage ? `<img src="${barcodeImage}" alt="barcode" />` : '<div style="height:10mm;color:#999;font-size:8px">Barcode</div>'}
                     </div>
@@ -393,23 +505,58 @@ function LoyaltyCards() {
         }
     };
 
-    const deleteSelectedCards = () => {
-        setCards(prev => prev.filter(c => !selectedCards.has(c.id)));
+    const deleteSelectedCards = async () => {
+        const cardIdsToDelete = Array.from(selectedCards);
+        const cardNumbersToDelete = cards
+            .filter(c => selectedCards.has(c.id))
+            .map(c => c.number)
+            .filter(Boolean);
+
+        try {
+            await loyaltyAPI.deleteBatchCards({
+                cardIds: cardIdsToDelete,
+                cardNumbers: cardNumbersToDelete
+            });
+        } catch (err) {
+            console.error('Error deleting cards on server DB:', err);
+        }
+
+        setCards(prev => {
+            const updated = prev.filter(c => !selectedCards.has(c.id));
+            localStorage.setItem('loyalty_cards', JSON.stringify(updated));
+            return updated;
+        });
+
         setSelectedCards(new Set());
         setShowDeleteModal(false);
-        toast.success(`Удалено ${selectedCards.size} карт(ы)`);
+        toast.success(`Удалено ${cardIdsToDelete.length} карт(ы) из базы данных`);
+        loadCustomers();
     };
 
-    const handleAttachCustomer = (customer) => {
+    const handleAttachCustomer = async (customer) => {
         if (!attachModal) return;
-        setCards(prev => prev.map(c =>
-            c.id === attachModal.cardId
-                ? { ...c, name: customer.name, phone: customer.phone || '', is_blank: false }
-                : c
-        ));
-        toast.success(`Карта ${attachModal.cardNumber} прикреплена к ${customer.name}`);
-        setAttachModal(null);
-        setAttachSearch('');
+        try {
+            // 1. Обновляем карту клиента на сервере в базе данных
+            await crmAPI.updateCustomer(customer.id, { card_number: attachModal.cardNumber });
+
+            // 2. Обновляем локальное состояние карт
+            setCards(prev => prev.map(c =>
+                c.id === attachModal.cardId
+                    ? { ...c, name: customer.name, phone: customer.phone || '', is_blank: false }
+                    : c
+            ));
+
+            // 3. Обновляем список клиентов
+            loadCustomers();
+
+            toast.success(`Карта ${attachModal.cardNumber} прикреплена к ${customer.name}`);
+        } catch (err) {
+            console.error('Error attaching card to customer:', err);
+            toast.error('Ошибка при привязке карты к клиенту на сервере');
+        } finally {
+            setAttachModal(null);
+            setAttachSearch('');
+        }
     };
 
     const handleExportExcel = () => {
@@ -590,11 +737,29 @@ function LoyaltyCards() {
         event.target.value = '';
     };
 
-    const filteredCustomers = customers.filter(c =>
-        c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone?.includes(searchTerm) ||
-        c.card_number?.includes(searchTerm)
-    );
+    const filteredCustomers = customers.filter(c => {
+        const term = searchTerm.trim();
+        if (!term) return true;
+        const termLower = term.toLowerCase();
+        // Поиск по имени, телефону, полному номеру карты, или последним цифрам карты
+        return (
+            c.name?.toLowerCase().includes(termLower) ||
+            c.phone?.includes(term) ||
+            c.card_number?.includes(term) ||
+            c.card_number?.endsWith(term)
+        );
+    });
+
+    // Пустые карты (не прикрепленные) - показываем только если есть поисковый запрос или пользователь видит все карты
+    const filteredBlankCards = searchTerm.trim()
+        ? cards.filter(c => {
+            const term = searchTerm.trim();
+            return (
+                !c.customerId && // пустая карта
+                (c.number?.includes(term) || c.number?.endsWith(term))
+            );
+        })
+        : [];
 
     return (
         <div className="loyalty-cards-page fade-in">
@@ -640,7 +805,7 @@ function LoyaltyCards() {
                             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
                             <input
                                 type="text"
-                                placeholder="Поиск по имени, телефону, карте..."
+                                placeholder="Поиск по имени, телефону, карте, последним 4 цифрам..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 style={{ paddingLeft: '40px', width: '100%' }}
@@ -686,6 +851,40 @@ function LoyaltyCards() {
                                     </div>
                                 </div>
                             ))
+                        )}
+                        {/* Пустые карты по поиску */}
+                        {filteredBlankCards.length > 0 && (
+                            <>
+                                <div style={{ padding: '8px 16px', fontSize: '11px', color: '#888', background: 'rgba(255,255,255,0.03)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                    Пустые карты
+                                </div>
+                                {filteredBlankCards.map(card => (
+                                    <div
+                                        key={card.id}
+                                        style={{
+                                            padding: '12px 16px',
+                                            borderBottom: '1px solid var(--border-color)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '12px',
+                                            opacity: 0.75
+                                        }}
+                                    >
+                                        <div style={{
+                                            width: '40px', height: '40px', borderRadius: '50%',
+                                            background: 'linear-gradient(135deg, #374151 0%, #6b7280 100%)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: 'white', fontSize: '18px'
+                                        }}>
+                                            🎟️
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: 500, fontFamily: 'monospace', fontSize: '13px' }}>{card.number}</div>
+                                            <div style={{ fontSize: '11px', color: '#f59e0b' }}>Пустая карта</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
                         )}
                     </div>
                 </div>
@@ -741,7 +940,7 @@ function LoyaltyCards() {
                                             )}
                                         </div>
                                         <div style={{ fontSize: '12px', color: '#ffd700', marginTop: '4px' }}>
-                                            {cardData.level}
+                                            Кэшбек {settings.cashback_percent || 2}%
                                         </div>
                                         <div ref={printRef} style={{
                                             position: 'absolute', bottom: '16px', left: '16px', right: '16px',
@@ -749,7 +948,7 @@ function LoyaltyCards() {
                                             textAlign: 'center'
                                         }}>
                                             {barcodeImage ? (
-                                                <img src={barcodeImage} alt="barcode" style={{ width: '100%', height: '42px', objectFit: 'fill' }} />
+                                                <img src={barcodeImage} alt="barcode" style={{ width: '92%', height: '42px', objectFit: 'fill', display: 'block', margin: '0 auto' }} />
                                             ) : (
                                                 <div style={{ color: '#999', fontSize: '11px', padding: '8px 0' }}>{t('loyaltycards.zagruzka', 'Загрузка barcode...')}</div>
                                             )}
@@ -799,15 +998,36 @@ function LoyaltyCards() {
                                             </div>
                                         </div>
 
-                                        <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+                                        <div style={{ marginTop: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                             <button className="btn btn-primary" onClick={printCard}>
                                                 <Printer size={18} /> Печать карты
                                             </button>
                                             <button className="btn btn-warning" style={{ color: '#fff' }} onClick={() => setShowSpendModal(true)}>
                                                 ➖ Списать баллы
                                             </button>
-                                            <button className="btn btn-secondary" onClick={() => toast.info('Скачивание PDF карты...')}>
-                                                <Download size={18} /> Скачать PDF
+                                            <button
+                                                className="btn"
+                                                style={{ background: '#ef4444', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                onClick={async () => {
+                                                    if (confirm(`Вы уверены, что хотите НАВСЕГДА удалить карту № ${cardData.number} из базы данных?`)) {
+                                                        try {
+                                                            await loyaltyAPI.deleteCard(selectedCustomer?.id || cardData.number);
+                                                            setCards(prev => {
+                                                                const updated = prev.filter(c => c.number !== cardData.number && c.id !== selectedCustomer?.id);
+                                                                localStorage.setItem('loyalty_cards', JSON.stringify(updated));
+                                                                return updated;
+                                                            });
+                                                            setSelectedCustomer(null);
+                                                            setCardData(null);
+                                                            toast.success('Карта удалена из базы данных');
+                                                            loadCustomers();
+                                                        } catch (e) {
+                                                            toast.error('Ошибка удаления карты');
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                <Trash2 size={18} /> Удалить карту
                                             </button>
                                         </div>
                                     </div>
@@ -912,7 +1132,16 @@ function LoyaltyCards() {
                         </div>
                         <div className="modal-footer">
                             <button className="btn btn-secondary" onClick={() => setShowSettings(false)}>{t('loyaltycards.otmena', 'Отмена')}</button>
-                            <button className="btn btn-primary" onClick={() => { /* save settings */ setShowSettings(false); }}>
+                            <button className="btn btn-primary" onClick={async () => {
+                                try {
+                                    await loyaltyAPI.updateSettings(settings);
+                                    toast.success('✅ Настройки сохранены!');
+                                } catch (err) {
+                                    console.error('Save settings error:', err);
+                                    toast.error('Ошибка сохранения настроек');
+                                }
+                                setShowSettings(false);
+                            }}>
                                 Сохранить
                             </button>
                         </div>
@@ -929,16 +1158,16 @@ function LoyaltyCards() {
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
-                                <label>{t('loyaltycards.fio_klienta', 'ФИО клиента *')}</label>
+                                <label>ФИО клиента (необязательно)</label>
                                 <input
                                     type="text"
                                     value={newCard.name}
                                     onChange={e => setNewCard({ ...newCard, name: e.target.value })}
-                                    placeholder="Иванов Иван Иванович"
+                                    placeholder="Оставьте пустым для безымянной карты"
                                 />
                             </div>
                             <div className="form-group">
-                                <label>{t('loyaltycards.telefon', 'Телефон *')}</label>
+                                <label>Телефон (необязательно)</label>
                                 <input
                                     type="tel"
                                     value={newCard.phone}
@@ -1126,17 +1355,24 @@ function LoyaltyCards() {
                                                             <td style={{ padding: '8px 8px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                                                                 <button
                                                                     style={{
-                                                                        padding: '3px 10px', borderRadius: '6px', fontSize: '11px',
-                                                                        background: 'rgba(99,102,241,0.15)', color: '#818cf8',
-                                                                        border: '1px solid rgba(99,102,241,0.3)', cursor: 'pointer',
-                                                                        display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'
+                                                                        padding: '3px 8px', borderRadius: '6px', fontSize: '11px',
+                                                                        background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                                                                        border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer',
+                                                                        display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'
                                                                     }}
-                                                                    onClick={() => {
-                                                                        setAttachModal({ cardId: card.id, cardNumber: card.number });
-                                                                        setAttachSearch('');
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await loyaltyAPI.deleteCard(card.id || card.number);
+                                                                        } catch (_) {}
+                                                                        setCards(prev => {
+                                                                            const updated = prev.filter(c => c.id !== card.id && c.number !== card.number);
+                                                                            localStorage.setItem('loyalty_cards', JSON.stringify(updated));
+                                                                            return updated;
+                                                                        });
+                                                                        loadCustomers();
                                                                     }}
                                                                 >
-                                                                    <User size={11} /> {card.name ? 'Изменить' : 'Прикрепить'}
+                                                                    <Trash2 size={11} /> Удалить
                                                                 </button>
                                                             </td>
                                                         </tr>
@@ -1331,8 +1567,7 @@ function LoyaltyCards() {
                                 Вы уверены, что хотите удалить <strong style={{ color: '#ef4444' }}>{selectedCards.size}</strong> карт(ы)?
                             </p>
                             <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '12px', fontSize: '13px', color: '#f87171' }}>
-                                ⚠️ Это действие удалит выбранные карты из локального хранилища. Восстановить их будет невозможно.
-                                Карты клиентов в базе данных не затрагиваются — удаляются только заготовки для печати.
+                                ⚠️ Это действие НАВСЕГДА удалит выбранные карты из базы данных и всей системы. Восстановить их будет невозможно.
                             </div>
                         </div>
                         <div className="modal-footer">

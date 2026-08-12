@@ -817,24 +817,28 @@ export const employeesAPI = {
     ),
     resetPassword: (id) => api.post(`/employees/${id}/reset-password`),
     massCalculatePayroll: (data) => api.post('/employees/payroll/mass-calculate', data),
-    payPayroll: (id, data) => api.post(`/employees/payroll/${id}/pay`, data)
+    payPayroll: (id, data) => api.post(`/employees/payroll/${id}/pay`, data),
+    getKPI: (params) => withFallback(
+        () => api.get('/employees/kpi', { params }),
+        () => ({ kpi: [], period: {} })
+    )
 };
 
 // Inventory API with offline fallback
 export const inventoryAPI = {
     getAll: (params) => withFallback(
-        () => api.get('/warehouses/inventories', { params }),
+        () => api.get('/wms', { params }),
         () => {
             const inventories = ls.getItems('inventories');
             return { inventories, total: inventories.length };
         }
     ),
     getById: (id) => withFallback(
-        () => api.get(`/warehouses/inventories/${id}`),
+        () => api.get(`/wms/${id}`),
         () => ls.getItemById('inventories', id)
     ),
     create: (data) => withFallback(
-        () => api.post('/warehouses/inventories', data),
+        () => api.post('/wms', data),
         () => {
             const count = ls.getItems('inventories').length;
             const inventory = ls.addItemWithSync('inventories', {
@@ -847,19 +851,19 @@ export const inventoryAPI = {
         }
     ),
     start: (id) => withFallback(
-        () => api.post(`/warehouses/inventories/${id}/start`),
+        () => api.post(`/wms/${id}/start`),
         () => ({ inventory: ls.updateItemWithSync('inventories', id, { status: 'in_progress' }) })
     ),
     complete: (id) => withFallback(
-        () => api.post(`/warehouses/inventories/${id}/complete`),
+        () => api.post(`/wms/${id}/complete`),
         () => ({ inventory: ls.updateItemWithSync('inventories', id, { status: 'completed' }) })
     ),
     updateItem: (inventoryId, itemId, data) => withFallback(
-        () => api.put(`/warehouses/inventories/${inventoryId}/items/${itemId}`, data),
+        () => api.put(`/wms/${inventoryId}/items/${itemId}`, data),
         () => ({ success: true })
     ),
     getAdjustments: (id) => withFallback(
-        () => api.get(`/warehouses/inventories/${id}/adjustments`),
+        () => api.get(`/wms/${id}/adjustments`),
         () => ([])
     ),
     getHistory: () => withFallback(
@@ -957,6 +961,8 @@ export const loyaltyAPI = {
     getTransactions: (customerId) => api.get(`/loyalty/transactions/${customerId}`),
     getAllTransactions: (params) => api.get('/loyalty/transactions', { params }),
     importCards: (data) => api.post('/loyalty/import', data),
+    deleteCard: (id) => api.delete(`/loyalty/card/${id}`),
+    deleteBatchCards: (data) => api.post('/loyalty/cards/delete-batch', data),
     getBarcode: (customerId) => api.get(`/loyalty/card/${customerId}/barcode`),
     generateBarcode: (text) => api.get('/loyalty/barcode/generate', { params: { text } }),
     getQR: (customerId) => api.get(`/loyalty/card/${customerId}/qr`),
