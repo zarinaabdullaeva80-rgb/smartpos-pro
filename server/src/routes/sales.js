@@ -5,6 +5,18 @@ import { updateStockBalance } from '../utils/stockBalance.js';
 
 const router = express.Router();
 
+// Ensure sales table has payment_status and payment_method columns
+(async () => {
+    try {
+        await pool.query(`
+            ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'unpaid';
+            ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+        `);
+    } catch (e) {
+        console.error('⚠️ Sales column auto-check error:', e.message);
+    }
+})();
+
 // All queries now use mandatory organization_id filtering derived from JWT
 
 // Получение всех продаж
@@ -121,6 +133,14 @@ router.get('/:id', authenticate, async (req, res) => {
 
 // Создание продажи
 router.post('/', authenticate, authorize('Администратор', 'Продавец', 'Кассир', 'Продавец-кассир'), async (req, res) => {
+    // Defensive check: guarantee columns exist in PostgreSQL
+    try {
+        await pool.query(`
+            ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT 'unpaid';
+            ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);
+        `);
+    } catch (_) {}
+
     const client = await pool.connect();
 
     try {
