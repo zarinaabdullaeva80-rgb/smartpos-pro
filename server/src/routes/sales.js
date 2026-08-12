@@ -14,10 +14,11 @@ router.get('/', authenticate, async (req, res) => {
         const orgId = req.user.organization_id;
 
         let query = `
-      SELECT s.*, u.full_name as user_name, w.name as warehouse_name
+      SELECT s.*, u.full_name as user_name, w.name as warehouse_name, c.name as customer_name
       FROM sales s
       LEFT JOIN warehouses w ON s.warehouse_id = w.id
       LEFT JOIN users u ON s.user_id = u.id
+      LEFT JOIN customers c ON s.customer_id = c.id
       WHERE s.organization_id = $1
     `;
         const params = [orgId];
@@ -84,10 +85,11 @@ router.get('/:id', authenticate, async (req, res) => {
         const orgId = req.user.organization_id;
 
         const saleResult = await pool.query(
-            `SELECT s.*, w.name as warehouse_name, u.full_name as user_name
+            `SELECT s.*, w.name as warehouse_name, u.full_name as user_name, c.name as customer_name
              FROM sales s
              LEFT JOIN warehouses w ON s.warehouse_id = w.id
              LEFT JOIN users u ON s.user_id = u.id
+             LEFT JOIN customers c ON s.customer_id = c.id
              WHERE s.id = $1 AND s.organization_id = $2`,
             [id, orgId]
         );
@@ -134,7 +136,8 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             loyaltyPointsUsed,
             notes, 
             autoConfirm, 
-            payment_methods 
+            payment_methods,
+            paymentStatus
         } = req.body;
         const orgId = req.user.organization_id;
 
@@ -203,9 +206,9 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                 document_number, document_date, customer_id, warehouse_id, 
                 total_amount, discount_percent, discount_amount, 
                 loyalty_points_used, loyalty_points_earned,
-                final_amount, user_id, notes, status, organization_id, shift_id
+                final_amount, user_id, notes, status, organization_id, shift_id, payment_status
             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
              RETURNING *`,
             [
                 documentNumber || `SALE-${Date.now()}`, 
@@ -222,7 +225,8 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                 notes, 
                 status, 
                 orgId,
-                shiftId
+                shiftId,
+                paymentStatus || 'unpaid'
             ]
         );
 

@@ -141,7 +141,7 @@ async function handleCheckPerformTransaction(id, params) {
         return paymeError(id, -31050, 'Заказ не найден в базе SmartPOS Pro');
     }
 
-    if (sale.payment_status === 'paid' || sale.status === 'paid' || sale.status === 'completed') {
+    if (sale.payment_status === 'paid') {
         return paymeError(id, -31099, 'Заказ уже оплачен');
     }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI, loyaltyAPI } from '../services/api';
+import { salesAPI, productsAPI, counterpartiesAPI, warehousesAPI, loyaltyAPI, crmAPI } from '../services/api';
 import api from '../services/api';
 import { Plus, ShoppingCart, Trash2, X, Package, Star, Printer, QrCode, RotateCcw, Minus, Scan, Volume2, AlertCircle, CreditCard } from 'lucide-react';
 import { formatCurrency as formatCurrencyUZS } from '../utils/formatters';
@@ -29,6 +29,8 @@ function Sales() {
     const [saleForReceipt, setSaleForReceipt] = useState(null);
     const [showQRPayment, setShowQRPayment] = useState(false);
     const [qrPaymentData, setQRPaymentData] = useState({ amount: 0, orderId: '' });
+    const [qrLoading, setQrLoading] = useState(false);
+    const [qrSaleId, setQrSaleId] = useState(null);
 
     // Возврат товаров
     const [showReturnModal, setShowReturnModal] = useState(false);
@@ -61,6 +63,8 @@ function Sales() {
     const [loyaltySpendAmount, setLoyaltySpendAmount] = useState('');
     const [loyaltyLoading, setLoyaltyLoading] = useState(false);
     const [loyaltyTransactions, setLoyaltyTransactions] = useState([]);
+    const [scanningLoyalty, setScanningLoyalty] = useState(false);
+    const loyaltySearchInputRef = React.useRef(null);
 
     const [formData, setFormData] = useState({
         documentNumber: '',
@@ -80,10 +84,147 @@ function Sales() {
         loadFormData();
     }, [refreshTrigger]);
 
+    // ── Карта лояльности: функции ──
+
+    // Поиск карты локально (в localStorage) — резервный если сервер не нашёл
+    const tryLocalFallback = (queryVal) => {
+        const localCards = (() => {
+            try { return JSON.parse(localStorage.getItem('loyalty_cards') || '[]'); }
+            catch { return []; }
+        })();
+
+        const q = queryVal.toLowerCase();
+        const foundLocal = localCards.find(c =>
+            (c.number && (c.number === queryVal || c.number.endsWith(queryVal))) ||
+            (c.phone && c.phone.includes(queryVal)) ||
+            (c.name && c.name.toLowerCase().includes(q))
+        );
+
+        if (foundLocal) {
+            setLoyaltyCustomer({
+                id: 'local_' + (foundLocal.id || Math.random().toString(36).slice(2)),
+                name: foundLocal.name || `Пустая карта (${foundLocal.number?.slice(-4) || ''})`,
+                full_name: foundLocal.name || `Пустая карта (${foundLocal.number?.slice(-4) || ''})`,
+                phone: foundLocal.phone || '',
+                email: foundLocal.email || '',
+                points: foundLocal.balance || 0,
+                loyalty_points: foundLocal.balance || 0,
+                is_local: true
+            });
+            setLoyaltyCard({
+                number: foundLocal.number,
+                balance: parseFloat(foundLocal.balance || 0),
+                earnedTotal: parseFloat(foundLocal.earnedTotal || 0),
+                spentTotal: parseFloat(foundLocal.spentTotal || 0),
+                level: foundLocal.level || 'Standard'
+            });
+            setLoyaltyTransactions([]);
+            return true;
+        } else {
+            toast.error('Клиент не найден');
+            setLoyaltyCustomer(null);
+            setLoyaltyCard(null);
+            return false;
+        }
+    };
+
+    const performLoyaltySearch = async (searchTermStr) => {
+        const queryVal = searchTermStr ? searchTermStr.trim() : '';
+        if (!queryVal) return false;
+        setLoyaltyLoading(true);
+        setLoyaltyCustomer(null);
+        setLoyaltyCard(null);
+        setLoyaltyTransactions([]);
+        try {
+            const res = await loyaltyAPI.searchCustomer(queryVal);
+            if (res.data && res.data.customer) {
+                const customer = res.data.customer;
+                setLoyaltyCustomer(customer);
+                const cardRes = await loyaltyAPI.getCard(customer.id);
+                if (cardRes.data) {
+                    setLoyaltyCard({
+                        number: cardRes.data.card_number,
+                        balance: parseFloat(cardRes.data.total_points || 0),
+                        earnedTotal: parseFloat(cardRes.data.earned_points || 0),
+                        spentTotal: parseFloat(cardRes.data.spent_points || 0),
+                        level: cardRes.data.level || 'Standard'
+                    });
+                }
+                const txRes = await loyaltyAPI.getTransactions(customer.id);
+                setLoyaltyTransactions(txRes.data?.transactions || []);
+                return true;
+            } else {
+                return tryLocalFallback(queryVal);
+            }
+        } catch (err) {
+            console.log('[Sales] Server lookup failed, trying local fallback:', err.message);
+            return tryLocalFallback(queryVal);
+        } finally {
+            setLoyaltyLoading(false);
+            setScanningLoyalty(false);
+        }
+    };
+
+    const handleLoyaltySearch = () => performLoyaltySearch(loyaltySearch);
+
+    // Прикрепить карту к продаже (при необходимости — сначала создать клиента в облаке)
+    const handleAttachLoyaltyToSale = async (spendAmount = 0) => {
+        if (!loyaltyCustomer) return;
+        let customerId = loyaltyCustomer.id;
+
+        // Если карта только локальная — сначала зарегистрируем в базе
+        if (typeof customerId === 'string' && customerId.startsWith('local_')) {
+            setLoyaltyLoading(true);
+            try {
+                const res = await crmAPI.createCustomer({
+                    name: loyaltyCustomer.name.startsWith('Пустая карта')
+                        ? `Клиент ${loyaltyCard?.number?.slice(-4) || ''}`
+                        : loyaltyCustomer.name,
+                    phone: loyaltyCustomer.phone || null,
+                    email: loyaltyCustomer.email || null,
+                    loyalty_points: loyaltyCustomer.points || 0,
+                    card_number: loyaltyCard?.number || null
+                });
+                if (res.data?.customer) {
+                    const newCust = res.data.customer;
+                    customerId = newCust.id;
+                    setLoyaltyCustomer(prev => ({ ...prev, id: newCust.id, is_local: false }));
+                    // Обновим localStorage
+                    try {
+                        const localCards = JSON.parse(localStorage.getItem('loyalty_cards') || '[]');
+                        const updated = localCards.map(c =>
+                            c.number === loyaltyCard?.number ? { ...c, id: newCust.id, is_blank: false } : c
+                        );
+                        localStorage.setItem('loyalty_cards', JSON.stringify(updated));
+                    } catch (_) {}
+                    toast.success('Клиент зарегистрирован в базе данных');
+                } else {
+                    throw new Error('Не удалось создать клиента');
+                }
+            } catch (err) {
+                console.error('[Sales] Sync local customer error:', err);
+                toast.error('Ошибка регистрации карты: ' + (err.response?.data?.error || err.message));
+                setLoyaltyLoading(false);
+                return;
+            } finally {
+                setLoyaltyLoading(false);
+            }
+        }
+
+        setFormData(prev => ({
+            ...prev,
+            loyaltyPointsUsed: spendAmount,
+            counterpartyId: customerId
+        }));
+        setShowLoyaltyModal(false);
+        toast.success(spendAmount > 0 ? `Баллы (${spendAmount}) применены к продаже` : 'Карта лояльности привязана к продаже');
+    };
+
+    const scanStateRef = useRef();
+    scanStateRef.current = { showModal, products, defaultWarehouseId, warehouses };
+
     // Глобальный перехват сканирования штрихкода при открытом окне продажи
     useEffect(() => {
-        if (!showModal) return;
-
         let buffer = '';
         let lastKeyTime = Date.now();
 
@@ -110,17 +251,20 @@ function Sales() {
 
             if (e.key === 'Enter') {
                 if (buffer.trim().length >= 4) {
-                    e.preventDefault();
                     const barcode = buffer.trim();
-                    console.log('[SALES] Global scan detected:', barcode);
+                    const { showModal, products, defaultWarehouseId, warehouses } = scanStateRef.current;
+                    
                     // Ищем товар по штрихкоду, коду или ID
                     const foundProduct = products.find(p => 
                         String(p.barcode) === barcode || 
                         String(p.code) === barcode || 
                         String(p.id) === barcode
                     );
+                    
                     if (foundProduct) {
-                        handleProductSelect(foundProduct);
+                        e.preventDefault();
+                        e.stopPropagation();
+
                         // Проиграть приятный пик
                         try {
                             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -136,6 +280,57 @@ function Sales() {
                         } catch (soundErr) {
                             console.warn('Sound play failed:', soundErr);
                         }
+
+                        if (!showModal) {
+                            // Открываем модальное окно новой продажи и сразу добавляем первый товар
+                            const warehouseToUse = defaultWarehouseId
+                                ? parseInt(defaultWarehouseId)
+                                : (warehouses[0]?.id || '');
+                            
+                            setFormData({
+                                documentNumber: `ПРД-${Date.now()}`,
+                                documentDate: new Date().toISOString().split('T')[0],
+                                counterpartyId: '',
+                                warehouseId: warehouseToUse,
+                                notes: '',
+                                items: [{
+                                    productId: foundProduct.id,
+                                    productName: foundProduct.name,
+                                    quantity: 1,
+                                    price: foundProduct.price_sale || foundProduct.price || 0,
+                                    vatRate: 20
+                                }],
+                                discountPercent: 0,
+                                loyaltyPointsUsed: 0
+                            });
+                            setShowModal(true);
+                        } else {
+                            // Добавляем к текущему открытому заказу в модальном окне
+                            setFormData(prev => {
+                                const existingIndex = prev.items.findIndex(i => String(i.productId) === String(foundProduct.id));
+                                let newItems;
+                                if (existingIndex >= 0) {
+                                    newItems = [...prev.items];
+                                    newItems[existingIndex].quantity += 1;
+                                } else {
+                                    newItems = [
+                                        ...prev.items,
+                                        {
+                                            productId: foundProduct.id,
+                                            productName: foundProduct.name,
+                                            quantity: 1,
+                                            price: foundProduct.price_sale || foundProduct.price || 0,
+                                            vatRate: 20
+                                        }
+                                    ];
+                                }
+                                return {
+                                    ...prev,
+                                    items: newItems
+                                };
+                            });
+                        }
+                        toast.success(`Товар добавлен: ${foundProduct.name}`);
                     }
                     buffer = '';
                 }
@@ -144,9 +339,9 @@ function Sales() {
             }
         };
 
-        window.addEventListener('keydown', handleGlobalKeyDown);
-        return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-    }, [showModal, products, formData]);
+        window.addEventListener('keydown', handleGlobalKeyDown, true);
+        return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    }, []);
 
     const loadSales = async () => {
         try {
@@ -356,6 +551,51 @@ function Sales() {
         }
     };
 
+    /**
+     * handleOpenQRPayment:
+     * 1. Сохраняет продажу в БД (чтобы Payme/Click мог найти заказ)
+     * 2. Открывает QR-модал с реальным ID из БД
+     */
+    const handleOpenQRPayment = async () => {
+        if (formData.items.length === 0) {
+            toast.info('Добавьте хотя бы один товар');
+            return;
+        }
+        setQrLoading(true);
+        try {
+            // Сохраняем продажу как pending (не autoConfirm) чтобы не списывать склад до оплаты
+            const response = await salesAPI.create({
+                ...formData,
+                autoConfirm: true,
+                paymentStatus: 'pending_qr'
+            });
+            const createdSale = response.data.sale;
+            const saleId = createdSale.id;
+            const docNum = createdSale.document_number || formData.documentNumber;
+
+            setQrSaleId(saleId);
+            setQRPaymentData({
+                amount: calculateTotal(),
+                orderId: String(saleId) // Payme получит числовой ID — найдёт в БД
+            });
+            setShowModal(false);
+            setShowQRPayment(true);
+
+            // Показать чек тоже
+            try {
+                const saleDetails = await salesAPI.getById(saleId);
+                setSaleForReceipt(saleDetails.data.sale);
+            } catch (_) {
+                setSaleForReceipt({ ...createdSale, items: formData.items });
+            }
+        } catch (error) {
+            console.error('[QR] Error saving sale before QR:', error);
+            toast.error('Ошибка сохранения продажи: ' + (error.response?.data?.error || error.message));
+        } finally {
+            setQrLoading(false);
+        }
+    };
+
     const handleEdit = async (sale) => {
         setEditingSale(sale);
         // Load sale details
@@ -522,47 +762,7 @@ function Sales() {
         return <span className={`badge ${s.class}`}>{s.label}</span>;
     };
 
-    // ── Карта лояльности: функции ──
-    const handleLoyaltySearch = async () => {
-        if (!loyaltySearch.trim()) return;
-        setLoyaltyLoading(true);
-        setLoyaltyCustomer(null);
-        setLoyaltyCard(null);
-        setLoyaltyTransactions([]);
-        try {
-            const res = await loyaltyAPI.searchCustomer(loyaltySearch.trim());
-            if (res.data && res.data.customer) {
-                const customer = res.data.customer;
-                setLoyaltyCustomer(customer);
-                
-                // Fetch full details (balance, earned, spent)
-                const cardRes = await loyaltyAPI.getCard(customer.id);
-                if (cardRes.data) {
-                    setLoyaltyCard({
-                        number: cardRes.data.card_number,
-                        balance: parseFloat(cardRes.data.total_points || 0),
-                        earnedTotal: parseFloat(cardRes.data.earned_points || 0),
-                        spentTotal: parseFloat(cardRes.data.spent_points || 0),
-                        level: cardRes.data.level || 'Standard'
-                    });
-                }
-                
-                // Fetch transactions
-                const txRes = await loyaltyAPI.getTransactions(customer.id);
-                setLoyaltyTransactions(txRes.data?.transactions || []);
-            } else {
-                toast.error('Клиент не найден');
-                setLoyaltyCustomer(null);
-                setLoyaltyCard(null);
-            }
-        } catch (err) {
-            toast.error(err.response?.data?.error || 'Ошибка при поиске');
-            setLoyaltyCustomer(null);
-            setLoyaltyCard(null);
-        } finally {
-            setLoyaltyLoading(false);
-        }
-    };
+    // (loyalty search functions moved to top — see tryLocalFallback / performLoyaltySearch)
 
     const handleLoyaltySpend = async () => {
         const amount = parseInt(loyaltySpendAmount);
@@ -651,19 +851,6 @@ function Sales() {
                     >
                         <RotateCcw size={20} />
                         {t('sales.return', 'Возврат')}
-                    </button>
-                    <button
-                        className="btn"
-                        onClick={() => {
-                            setShowScannerMode(true);
-                            setScannerItems([]);
-                            setScanHistory([]);
-                            setLastScanResult(null);
-                        }}
-                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', fontWeight: 600 }}
-                    >
-                        <Scan size={20} />
-                        Продажа по сканеру
                     </button>
                     <button className="btn btn-primary" onClick={handleCreateNew}>
                         <Plus size={20} />
@@ -1149,16 +1336,13 @@ function Sales() {
                                         <button
                                             type="button"
                                             className="btn btn-info"
-                                            style={{ fontSize: '13px' }}
-                                            onClick={() => {
-                                                setQRPaymentData({
-                                                    amount: calculateTotal(),
-                                                    orderId: formData.documentNumber
-                                                });
-                                                setShowQRPayment(true);
-                                            }}
+                                            style={{ fontSize: '13px', minWidth: '70px' }}
+                                            onClick={handleOpenQRPayment}
+                                            disabled={qrLoading}
                                         >
-                                            <QrCode size={14} /> QR
+                                            {qrLoading
+                                                ? <span style={{ fontSize: '12px' }}>⏳ Сохр...</span>
+                                                : <><QrCode size={14} /> QR</>}
                                         </button>
                                     )}
                                     <button
@@ -1178,341 +1362,7 @@ function Sales() {
                     </div>
                 </div>
             )}
-            {showScannerMode && (
-                <div style={{ background: 'var(--bg-card, #1a1a2e)', borderRadius: '16px', border: '1px solid rgba(16,185,129,0.3)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', marginBottom: '20px', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
-                    <div onClick={e => e.stopPropagation()} style={{ height: '70vh', display: 'flex', flexDirection: 'column' }}>
-                        {/* Шапка */}
-                        <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Scan size={22} color="#fff" />
-                                </div>
-                                <div>
-                                    <h2 style={{ margin: 0, fontSize: '18px' }}>Продажа по сканеру</h2>
-                                    <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>Сканируйте штрих-коды товаров (USB/COM)</p>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <button
-                                    onClick={() => setScannerSound(!scannerSound)}
-                                    className={`btn btn-sm ${scannerSound ? 'btn-success' : 'btn-secondary'}`}
-                                    title={scannerSound ? 'Звук вкл' : 'Звук выкл'}
-                                    style={{ padding: '6px 10px' }}
-                                >
-                                    <Volume2 size={14} />
-                                </button>
-                                <button 
-                                    onClick={() => setShowScannerMode(false)} 
-                                    style={{
-                                        background: 'linear-gradient(135deg, #ff0080 0%, #7b2ff7 50%, #0066ff 100%)',
-                                        border: 'none',
-                                        borderRadius: '6px',
-                                        width: '32px',
-                                        height: '32px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#fff',
-                                        cursor: 'pointer',
-                                        boxShadow: '0 0 10px rgba(255, 0, 128, 0.3)',
-                                        transition: 'all 0.2s ease',
-                                    }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.transform = 'scale(1.1)';
-                                        e.currentTarget.style.boxShadow = '0 0 15px rgba(255, 0, 128, 0.6)';
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.transform = 'scale(1)';
-                                        e.currentTarget.style.boxShadow = '0 0 10px rgba(255, 0, 128, 0.3)';
-                                    }}
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* Поле ввода штрих-кода */}
-                        <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                <div style={{ flex: 1, position: 'relative' }}>
-                                    <input
-                                        ref={scanInputRef}
-                                        type="text"
-                                        value={scanBuffer}
-                                        onChange={e => setScanBuffer(e.target.value)}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter' && scanBuffer.trim()) {
-                                                // Поиск товара по штрих-коду
-                                                const barcode = scanBuffer.trim();
-                                                const product = products.find(p =>
-                                                    p.barcode === barcode || p.code === barcode || p.id === parseInt(barcode)
-                                                );
-                                                if (product) {
-                                                    // Добавить или увеличить количество
-                                                    setScannerItems(prev => {
-                                                        const existing = prev.findIndex(i => i.productId === product.id);
-                                                        if (existing >= 0) {
-                                                            const updated = [...prev];
-                                                            updated[existing].quantity += 1;
-                                                            return updated;
-                                                        }
-                                                        return [...prev, {
-                                                            productId: product.id,
-                                                            productName: product.name,
-                                                            barcode: product.barcode,
-                                                            quantity: 1,
-                                                            price: product.price_sale || 0
-                                                        }];
-                                                    });
-                                                    setLastScanResult({ success: true, message: `✅ ${product.name}`, product });
-                                                    setScanHistory(prev => [{ barcode, name: product.name, time: new Date(), success: true }, ...prev.slice(0, 19)]);
-                                                    if (scannerSound) {
-                                                        try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVtZS4wMCA=').play().catch(() => {}); } catch(e) {}
-                                                        // Simple beep via Web Audio API
-                                                        try {
-                                                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                                                            const osc = ctx.createOscillator();
-                                                            osc.type = 'sine';
-                                                            osc.frequency.value = 1200;
-                                                            osc.connect(ctx.destination);
-                                                            osc.start();
-                                                            setTimeout(() => { osc.stop(); ctx.close(); }, 150);
-                                                        } catch(e) {}
-                                                    }
-                                                } else {
-                                                    setLastScanResult({ success: false, message: `❌ Товар с кодом "${barcode}" не найден` });
-                                                    setScanHistory(prev => [{ barcode, name: 'Не найден', time: new Date(), success: false }, ...prev.slice(0, 19)]);
-                                                    if (scannerSound) {
-                                                        try {
-                                                            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                                                            const osc = ctx.createOscillator();
-                                                            osc.type = 'square';
-                                                            osc.frequency.value = 400;
-                                                            osc.connect(ctx.destination);
-                                                            osc.start();
-                                                            setTimeout(() => { osc.stop(); ctx.close(); }, 300);
-                                                        } catch(e) {}
-                                                    }
-                                                }
-                                                setScanBuffer('');
-                                                e.preventDefault();
-                                            }
-                                        }}
-                                        placeholder="Наведите сканер или введите штрих-код..."
-                                        autoFocus
-                                        style={{ fontSize: '18px', padding: '12px 16px', fontFamily: 'monospace', letterSpacing: '2px', background: 'var(--bg-primary, #0f0f23)', border: '2px solid rgba(16,185,129,0.4)', borderRadius: '10px' }}
-                                    />
-                                    {lastScanResult && (
-                                        <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: lastScanResult.success ? '#10b981' : '#ef4444', fontWeight: 600, animation: 'fadeIn 0.2s' }}>
-                                            {lastScanResult.message}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Таблица товаров */}
-                        <div style={{ flex: 1, overflow: 'auto', padding: '0 20px' }}>
-                            {scannerItems.length === 0 ? (
-                                <div style={{ textAlign: 'center', padding: '60px 0', color: '#666' }}>
-                                    <Scan size={64} style={{ opacity: 0.2, marginBottom: '16px' }} />
-                                    <h3 style={{ color: '#888', fontWeight: 500 }}>Ожидание сканирования...</h3>
-                                    <p style={{ fontSize: '13px', color: '#666' }}>Подключите USB-сканер или введите штрих-код вручную</p>
-                                    <div style={{ marginTop: '20px', padding: '12px 20px', background: 'rgba(16,185,129,0.08)', borderRadius: '10px', display: 'inline-block', fontSize: '12px', color: '#10b981' }}>
-                                        💡 USB HID-сканеры работают автоматически (эмуляция клавиатуры)<br />
-                                        🔌 COM-порт сканеры: настройте в Настройки → Оборудование
-                                    </div>
-                                </div>
-                            ) : (
-                                <table style={{ fontSize: '13px', marginTop: '12px' }}>
-                                    <thead>
-                                        <tr>
-                                            <th style={{ padding: '8px 12px' }}>Товар</th>
-                                            <th style={{ padding: '8px 12px', width: '100px' }}>Штрих-код</th>
-                                            <th style={{ padding: '8px 12px', width: '100px', textAlign: 'center' }}>Кол-во</th>
-                                            <th style={{ padding: '8px 12px', width: '120px', textAlign: 'right' }}>Цена</th>
-                                            <th style={{ padding: '8px 12px', width: '120px', textAlign: 'right' }}>Сумма</th>
-                                            <th style={{ padding: '8px 12px', width: '40px' }}></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {scannerItems.map((item, idx) => (
-                                            <tr key={item.productId} style={{ animation: 'fadeIn 0.3s' }}>
-                                                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{item.productName}</td>
-                                                <td style={{ padding: '8px 12px' }}><code style={{ fontSize: '11px', color: '#888' }}>{item.barcode || '—'}</code></td>
-                                                <td style={{ padding: '8px 12px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
-                                                        <button type="button" onClick={() => {
-                                                            setScannerItems(prev => {
-                                                                if (prev[idx].quantity <= 1) return prev.filter((_, i) => i !== idx);
-                                                                const u = [...prev]; u[idx].quantity--; return u;
-                                                            });
-                                                        }} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            <Minus size={12} />
-                                                        </button>
-                                                        <strong style={{ fontSize: '15px', minWidth: '30px', textAlign: 'center' }}>{item.quantity}</strong>
-                                                        <button type="button" onClick={() => {
-                                                            setScannerItems(prev => { const u = [...prev]; u[idx].quantity++; return u; });
-                                                        }} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                            <Plus size={12} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '8px 12px', textAlign: 'right' }}>{formatCurrency(item.price)}</td>
-                                                <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(item.quantity * item.price)}</td>
-                                                <td style={{ padding: '8px 12px' }}>
-                                                    <button onClick={() => setScannerItems(prev => prev.filter((_, i) => i !== idx))} style={{ width: '24px', height: '24px', borderRadius: '6px', border: 'none', background: '#fee2e2', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                        <X size={12} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-
-                        {/* Футер: скидка + способ оплаты + итого + кнопки */}
-                        <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', background: 'var(--bg-secondary, #1a1a2e)' }}>
-                            {/* Скидка + способ оплаты */}
-                            <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', alignItems: 'end', flexWrap: 'wrap' }}>
-                                {/* Произвольная скидка */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <label style={{ fontSize: '11px', color: '#888', fontWeight: 500 }}>Скидка (сумма)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="100"
-                                        value={scannerDiscount || ''}
-                                        onChange={e => setScannerDiscount(parseFloat(e.target.value) || 0)}
-                                        placeholder="0"
-                                        style={{ width: '130px', fontSize: '14px', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'var(--bg-primary, #0f0f23)', color: '#f59e0b', fontWeight: 600, textAlign: 'right' }}
-                                    />
-                                </div>
-                                {/* Способ оплаты */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <label style={{ fontSize: '11px', color: '#888', fontWeight: 500 }}>Способ оплаты</label>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                        {[
-                                            { key: 'cash', label: '💵 Наличные', color: '#10b981' },
-                                            { key: 'card', label: '💳 Карта', color: '#3b82f6' },
-                                            { key: 'qr', label: '📱 QR-код', color: '#8b5cf6' }
-                                        ].map(pm => (
-                                            <button
-                                                key={pm.key}
-                                                type="button"
-                                                onClick={() => {
-                                                    setScannerPaymentMethod(pm.key);
-                                                    if (pm.key === 'qr' && scannerItems.length > 0) {
-                                                        const subtotal = scannerItems.reduce((s, i) => s + i.quantity * i.price, 0);
-                                                        const total = Math.max(0, subtotal - (scannerDiscount || 0));
-                                                        setQRPaymentData({ amount: total, orderId: `SCN-${Date.now()}` });
-                                                        setShowQRPayment(true);
-                                                    }
-                                                }}
-                                                style={{
-                                                    padding: '8px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                                                    border: scannerPaymentMethod === pm.key ? `2px solid ${pm.color}` : '1px solid rgba(255,255,255,0.1)',
-                                                    background: scannerPaymentMethod === pm.key ? `${pm.color}22` : 'transparent',
-                                                    color: scannerPaymentMethod === pm.key ? pm.color : '#aaa',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                            >
-                                                {pm.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                {/* Карта лояльности */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <label style={{ fontSize: '11px', color: '#888', fontWeight: 500 }}>Кешбек / Лояльность</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setShowLoyaltyModal(true); setLoyaltySearch(''); setLoyaltyCustomer(null); setLoyaltyCard(null); }}
-                                        style={{
-                                            padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                                            border: loyaltyCard ? '2px solid #f59e0b' : '1px solid rgba(255,255,255,0.1)',
-                                            background: loyaltyCard ? 'rgba(245,158,11,0.12)' : 'transparent',
-                                            color: loyaltyCard ? '#f59e0b' : '#aaa',
-                                            transition: 'all 0.2s',
-                                            display: 'flex', alignItems: 'center', gap: '6px'
-                                        }}
-                                    >
-                                        <CreditCard size={14} />
-                                        {loyaltyCard ? `${loyaltyCard.balance} баллов` : 'Карта лояльности'}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ fontSize: '13px', color: '#888' }}>
-                                    {scannerItems.length} позиций · {scannerItems.reduce((s, i) => s + i.quantity, 0)} шт
-                                    {scanHistory.length > 0 && <span style={{ marginLeft: '12px', color: '#666' }}>Сканирований: {scanHistory.length}</span>}
-                                    {(scannerDiscount || 0) > 0 && (
-                                        <span style={{ marginLeft: '12px', color: '#f59e0b' }}>
-                                            Скидка: -{formatCurrency(scannerDiscount)}
-                                        </span>
-                                    )}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                    <div style={{ fontSize: '24px', fontWeight: 700, color: '#10b981' }}>
-                                        {formatCurrency(Math.max(0, scannerItems.reduce((s, i) => s + i.quantity * i.price, 0) - (scannerDiscount || 0)))}
-                                    </div>
-                                    <button
-                                        className="btn"
-                                        disabled={scannerItems.length === 0}
-                                        onClick={async () => {
-                                            // Создать продажу из сканированных товаров
-                                            const warehouseToUse = defaultWarehouseId
-                                                ? parseInt(defaultWarehouseId)
-                                                : (warehouses[0]?.id || '');
-                                            const subtotal = scannerItems.reduce((s, i) => s + i.quantity * i.price, 0);
-                                            const discountAmt = scannerDiscount || 0;
-                                            const paymentMethod = scannerPaymentMethod || 'cash';
-                                            const paymentLabel = paymentMethod === 'card' ? 'Карта' : paymentMethod === 'qr' ? 'QR-код' : 'Наличные';
-                                            try {
-                                                const discountPercent = subtotal > 0 ? (discountAmt / subtotal) * 100 : 0;
-                                                const response = await salesAPI.create({
-                                                    documentNumber: `SCN-${Date.now()}`,
-                                                    documentDate: new Date().toISOString().split('T')[0],
-                                                    counterpartyId: '',
-                                                    warehouseId: warehouseToUse,
-                                                    notes: `Продажа по сканеру | Оплата: ${paymentLabel}${discountAmt > 0 ? ` | Скидка: ${formatCurrency(discountAmt)}` : ''}`,
-                                                    items: scannerItems.map(i => ({
-                                                        productId: i.productId,
-                                                        productName: i.productName,
-                                                        quantity: i.quantity,
-                                                        price: i.price
-                                                    })),
-                                                    discountPercent: discountPercent,
-                                                    paymentMethod: paymentMethod,
-                                                    autoConfirm: true
-                                                });
-                                                const createdSale = response.data.sale;
-                                                try {
-                                                    const saleDetails = await salesAPI.getById(createdSale.id);
-                                                    setSaleForReceipt(saleDetails.data.sale);
-                                                    setShowReceiptModal(true);
-                                                } catch (e) {}
-                                                toast.success(`✅ Продажа #${createdSale.id} создана! Оплата: ${paymentLabel}`);
-                                                setShowScannerMode(false);
-                                                setScannerDiscount(0);
-                                                setScannerPaymentMethod('cash');
-                                                setRefreshTrigger(prev => prev + 1);
-                                            } catch (error) {
-                                                toast.error(error.response?.data?.error || 'Ошибка создания продажи');
-                                            }
-                                        }}
-                                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', padding: '12px 28px', fontSize: '15px', fontWeight: 700, borderRadius: '10px', cursor: scannerItems.length === 0 ? 'not-allowed' : 'pointer', opacity: scannerItems.length === 0 ? 0.5 : 1 }}
-                                    >
-                                        ✓ Оформить продажу
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
             <div className="card">
                 {loading ? (
                     <div className="loading-container">
@@ -1615,16 +1465,15 @@ function Sales() {
             {/* QR Payment Modal */}
             <QRPaymentModal
                 isOpen={showQRPayment}
-                onClose={() => setShowQRPayment(false)}
+                onClose={() => { setShowQRPayment(false); setRefreshTrigger(prev => prev + 1); }}
                 amount={qrPaymentData.amount}
                 orderId={qrPaymentData.orderId}
                 onPaymentConfirmed={(payment) => {
                     console.log('[SALES] QR Payment confirmed:', payment);
-                    setFormData(prev => ({
-                        ...prev,
-                        notes: `${prev.notes} | Оплата через ${payment.system.toUpperCase()}`
-                    }));
-                    toast.info(`✅ Оплата через ${payment.system.toUpperCase()} подтверждена!`);
+                    toast.success(`✅ Оплата через ${payment.system.toUpperCase()} подтверждена!`);
+                    setShowQRPayment(false);
+                    setRefreshTrigger(prev => prev + 1); // обновить список продаж
+                    if (saleForReceipt) setShowReceiptModal(true); // показать чек
                 }}
             />
 
@@ -1710,9 +1559,7 @@ function Sales() {
                                             <button className="btn btn-primary" onClick={() => {
                                                 const amount = parseInt(loyaltySpendAmount);
                                                 if (amount > 0 && amount <= loyaltyCard.balance) {
-                                                    setFormData(prev => ({ ...prev, loyaltyPointsUsed: amount, counterpartyId: loyaltyCustomer.id }));
-                                                    setShowLoyaltyModal(false);
-                                                    toast.success(`Баллы (${amount}) применены к продаже`);
+                                                    handleAttachLoyaltyToSale(amount);
                                                 } else {
                                                     toast.error('Некорректная сумма баллов');
                                                 }
@@ -1770,6 +1617,16 @@ function Sales() {
                             )}
                         </div>
                         <div className="modal-footer">
+                            {loyaltyCustomer && (
+                                <button 
+                                    className="btn btn-primary" 
+                                    onClick={() => handleAttachLoyaltyToSale(0)}
+                                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none' }}
+                                    disabled={loyaltyLoading}
+                                >
+                                    Прикрепить карту к продаже
+                                </button>
+                            )}
                             <button className="btn btn-secondary" onClick={() => setShowLoyaltyModal(false)}>Закрыть</button>
                         </div>
                     </div>
