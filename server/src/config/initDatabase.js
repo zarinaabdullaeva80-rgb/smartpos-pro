@@ -568,10 +568,14 @@ export async function initDatabase(pool) {
         await pool.query(`
             CREATE TABLE IF NOT EXISTS system_settings (
                 id SERIAL PRIMARY KEY,
-                setting_key VARCHAR(100) UNIQUE NOT NULL,
+                setting_key VARCHAR(100) NOT NULL,
                 setting_value JSONB,
                 description TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by INTEGER,
+                organization_id INTEGER,
+                license_id INTEGER,
+                CONSTRAINT system_settings_key_org_unique UNIQUE (setting_key, organization_id)
             )
         `);
         console.log('  ✓ system_settings');
@@ -926,6 +930,8 @@ async function addMissingColumns(pool) {
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(15,2) DEFAULT 0',
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(15,2) DEFAULT 0',
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50)',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_status VARCHAR(50) DEFAULT \'unpaid\'',
+        'ALTER TABLE sales ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50)',
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS shift_id INTEGER',
         // Loyalty points tracking on sales
         'ALTER TABLE sales ADD COLUMN IF NOT EXISTS loyalty_points_used NUMERIC DEFAULT 0',
@@ -1781,6 +1787,68 @@ async function addMissingColumns(pool) {
             )
         `);
         console.log('  ✓ stock_movements table');
+    } catch (e) { /* ignore */ }
+
+    // Payme Transactions
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS payme_transactions (
+                id VARCHAR(255) PRIMARY KEY,
+                payme_time BIGINT NOT NULL,
+                amount BIGINT NOT NULL,
+                account_order_id INT NOT NULL REFERENCES sales(id),
+                create_time BIGINT NOT NULL,
+                perform_time BIGINT DEFAULT 0,
+                cancel_time BIGINT DEFAULT 0,
+                state INT NOT NULL,
+                reason INT,
+                receivers JSONB,
+                organization_id INT REFERENCES organizations(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('  ✓ payme_transactions table');
+    } catch (e) { /* ignore */ }
+
+    // Click Transactions
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS click_transactions (
+                id SERIAL PRIMARY KEY,
+                click_trans_id BIGINT UNIQUE NOT NULL,
+                service_id INT NOT NULL,
+                click_paydoc_send_id BIGINT,
+                merchant_trans_id INT NOT NULL REFERENCES sales(id),
+                merchant_prepare_id BIGINT,
+                amount NUMERIC(15, 2) NOT NULL,
+                action INT NOT NULL,
+                payment_type VARCHAR(50) DEFAULT 'QR',
+                sign_time VARCHAR(255),
+                error INT DEFAULT 0,
+                error_note VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'WAITING',
+                organization_id INT REFERENCES organizations(id),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('  ✓ click_transactions table');
+    } catch (e) { /* ignore */ }
+
+    // Payment Provider Logs
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS payment_provider_logs (
+                id SERIAL PRIMARY KEY,
+                provider VARCHAR(50) NOT NULL,
+                method VARCHAR(100),
+                request_headers JSONB,
+                request_body JSONB,
+                response_body JSONB,
+                ip_address VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log('  ✓ payment_provider_logs table');
     } catch (e) { /* ignore */ }
 
     console.log('✅ Проверка колонок и таблиц завершена');
