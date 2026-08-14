@@ -464,6 +464,7 @@ app.use('/api/currencies', currenciesRoutes);
 app.use('/api/eds', edsRoutes);
 app.use('/api/payments', paymeRoutes);
 app.use('/api/payments', clickRoutes);
+app.use('/api', clickRoutes);           // fallback: /api/click/prepare, /api/click, etc.
 app.use('/api/payments', clickPassRoutes);
 app.use('/api/payments', paymentsRoutes);
 
