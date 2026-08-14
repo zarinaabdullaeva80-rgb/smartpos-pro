@@ -1854,5 +1854,20 @@ async function addMissingColumns(pool) {
         console.log('  ✓ payment_provider_logs table');
     } catch (e) { /* ignore */ }
 
+    // Seed Payme / Click test orders for provider integration verification
+    try {
+        await pool.query(`
+            INSERT INTO sales (id, document_number, total_amount, final_amount, status, payment_status, organization_id)
+            VALUES 
+                (1001, 'TEST-1001', 1000.00, 1000.00, 'draft', 'unpaid', 1),
+                (1002, 'TEST-1002', 2000.00, 2000.00, 'draft', 'unpaid', 1),
+                (1003, 'TEST-1003', 5000.00, 5000.00, 'draft', 'unpaid', 1)
+            ON CONFLICT (id) DO UPDATE SET payment_status = 'unpaid', status = 'draft';
+        `);
+        console.log('  ✓ seeded payme test orders (1001, 1002, 1003)');
+    } catch (e) {
+        console.error('Notice seeding test sales:', e.message);
+    }
+
     console.log('✅ Проверка колонок и таблиц завершена');
 }
