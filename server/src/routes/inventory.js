@@ -132,13 +132,23 @@ router.post('/save', authenticate, async (req, res) => {
                 'SELECT id FROM warehouses WHERE is_active = true AND organization_id = $1 LIMIT 1',
                 [orgId]
             );
-            if (wh.rows.length > 0) warehouseId = wh.rows[0].id;
+            if (wh.rows.length > 0) {
+                warehouseId = wh.rows[0].id;
+            } else {
+                // Автоматически создаём склад по умолчанию, если его ещё нет
+                const newWh = await pool.query(
+                    `INSERT INTO warehouses (name, is_active, organization_id, created_at)
+                     VALUES ('Основной склад', true, $1, NOW())
+                     RETURNING id`,
+                    [orgId]
+                );
+                warehouseId = newWh.rows[0].id;
+                console.log(`[Inventory] Auto-created warehouse ${warehouseId} for org ${orgId}`);
+            }
         } else {
             const whCheck = await pool.query('SELECT 1 FROM warehouses WHERE id = $1 AND organization_id = $2', [warehouseId, orgId]);
             if (whCheck.rows.length === 0) return res.status(403).json({ error: 'Склад не принадлежит организации' });
         }
-        
-        if (!warehouseId) return res.status(400).json({ error: 'Склад не найден' });
 
         for (const item of items) {
             try {
@@ -162,15 +172,15 @@ router.post('/save', authenticate, async (req, res) => {
                         `Инвентаризация: ожидалось ${item.expected_quantity}, факт ${item.actual_quantity}`
                     ]);
 
-                    // Обновить stock_balances
+                    // Обновить stock_balances — устанавливаем фактическое количество (не прибавляем)
                     await pool.query(`
                         INSERT INTO stock_balances (product_id, warehouse_id, quantity, updated_at)
                         VALUES ($1, $2, $3, NOW())
                         ON CONFLICT (product_id, warehouse_id)
                         DO UPDATE SET 
-                            quantity = stock_balances.quantity + $4,
+                            quantity = $3,
                             updated_at = NOW()
-                    `, [item.product_id, warehouseId, item.actual_quantity, diff]);
+                    `, [item.product_id, warehouseId, item.actual_quantity]);
                 }
 
                 results.push({

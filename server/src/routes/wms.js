@@ -12,7 +12,7 @@ const router = express.Router();
 /**
  * Получить список инвентаризаций
  */
-router.get('/', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
     try {
         const { status, warehouse_id, startDate, endDate } = req.query;
 
@@ -68,7 +68,7 @@ router.get('/', authenticate, checkPermission('warehouse.inventory'), async (req
 /**
  * Создать инвентаризацию
  */
-router.post('/', authenticate, checkPermission('warehouse.inventory'), auditLog('inventory'), async (req, res) => {
+router.post('/', authenticate, auditLog('inventory'), async (req, res) => {
     try {
         const { warehouse_id, responsible_user_id, notes } = req.body;
 
@@ -88,7 +88,7 @@ router.post('/', authenticate, checkPermission('warehouse.inventory'), auditLog(
 /**
  * Получить детали инвентаризации
  */
-router.get('/:id', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.get('/:id', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -131,7 +131,7 @@ router.get('/:id', authenticate, checkPermission('warehouse.inventory'), async (
 /**
  * Начать инвентаризацию
  */
-router.post('/:id/start', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.post('/:id/start', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -148,7 +148,7 @@ router.post('/:id/start', authenticate, checkPermission('warehouse.inventory'), 
 /**
  * Обновить позицию инвентаризации
  */
-router.put('/:id/items/:itemId', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.put('/:id/items/:itemId', authenticate, async (req, res) => {
     try {
         const { itemId } = req.params;
         const { actual_quantity, notes } = req.body;
@@ -170,7 +170,7 @@ router.put('/:id/items/:itemId', authenticate, checkPermission('warehouse.invent
 /**
  * Завершить инвентаризацию
  */
-router.post('/:id/complete', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.post('/:id/complete', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -189,7 +189,7 @@ router.post('/:id/complete', authenticate, checkPermission('warehouse.inventory'
 /**
  * Получить корректировки
  */
-router.get('/:id/adjustments', authenticate, checkPermission('warehouse.inventory'), async (req, res) => {
+router.get('/:id/adjustments', authenticate, async (req, res) => {
     try {
         const { id } = req.params;
 

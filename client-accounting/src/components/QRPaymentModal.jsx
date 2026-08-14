@@ -160,8 +160,8 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
     const anyConfigured = paymentConfig.some(s => s.configured);
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+        <div className="modal-overlay" onClick={onClose} style={{ zIndex: 10500, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0, 0, 0, 0.8)', backdropFilter: 'blur(8px)' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px', width: '92%', maxHeight: '90vh', overflowY: 'auto', margin: 'auto' }}>
                 <div className="modal-header">
                     <h2><QrCode size={24} /> QR-оплата</h2>
                     <button onClick={onClose} className="btn-close">×</button>

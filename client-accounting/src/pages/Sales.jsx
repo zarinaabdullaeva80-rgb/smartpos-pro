@@ -74,7 +74,9 @@ function Sales() {
         warehouseId: '',
         notes: '',
         items: [],
+        discountType: 'percent',
         discountPercent: 0,
+        discountAmount: 0,
         loyaltyPointsUsed: 0
     });
 
@@ -511,7 +513,11 @@ function Sales() {
     };
 
     const calculateDiscountAmount = () => {
-        return (calculateSubtotal() * (formData.discountPercent || 0)) / 100;
+        const subtotal = calculateSubtotal();
+        if (formData.discountType === 'amount') {
+            return Math.min(subtotal, Math.max(0, formData.discountAmount || 0));
+        }
+        return (subtotal * (formData.discountPercent || 0)) / 100;
     };
 
     const calculateTotal = () => {
@@ -534,9 +540,14 @@ function Sales() {
 
         try {
             console.log('[SALES] Sending create request with autoConfirm...');
-            // Send autoConfirm: true so creation + stock deduction + payment happen in single transaction
+            const subtotal = calculateSubtotal();
+            const discountAmt = calculateDiscountAmount();
+            const computedPercent = subtotal > 0 ? (discountAmt / subtotal) * 100 : 0;
+
             const response = await salesAPI.create({
                 ...formData,
+                discountPercent: computedPercent,
+                discountAmount: discountAmt,
                 autoConfirm: true
             });
             console.log('[SALES] Create response:', response);
@@ -550,7 +561,6 @@ function Sales() {
                 setShowReceiptModal(true);
             } catch (loadErr) {
                 console.error('[SALES] Error loading sale details:', loadErr);
-                // Use basic data if can't load full details
                 setSaleForReceipt({
                     ...createdSale,
                     items: formData.items.map(item => ({
@@ -564,7 +574,7 @@ function Sales() {
             toast.success('Продажа создана и проведена успешно!');
 
             setShowModal(false);
-            setRefreshTrigger(prev => prev + 1); // Trigger refresh
+            setRefreshTrigger(prev => prev + 1);
         } catch (error) {
             console.error('[SALES] Error saving:', error);
             const errorMessage = error.response?.data?.error || error.message || 'Ошибка сохранения';
@@ -584,9 +594,14 @@ function Sales() {
         }
         setQrLoading(true);
         try {
-            // Сохраняем продажу как pending (не autoConfirm) чтобы не списывать склад до оплаты
+            const subtotal = calculateSubtotal();
+            const discountAmt = calculateDiscountAmount();
+            const computedPercent = subtotal > 0 ? (discountAmt / subtotal) * 100 : 0;
+
             const response = await salesAPI.create({
                 ...formData,
+                discountPercent: computedPercent,
+                discountAmount: discountAmt,
                 autoConfirm: true,
                 paymentStatus: 'pending_qr'
             });
@@ -1280,15 +1295,54 @@ function Sales() {
                                     <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(123, 47, 247, 0.05)', borderRadius: '10px', border: '1px solid rgba(123, 47, 247, 0.2)' }}>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <span style={{ fontSize: '13px', color: 'var(--text-secondary, #c9b0e8)' }}>Скидка (%):</span>
-                                                <input 
-                                                    type="number" 
-                                                    min="0" 
-                                                    max="100" 
-                                                    value={formData.discountPercent} 
-                                                    onChange={e => setFormData({ ...formData, discountPercent: parseFloat(e.target.value) || 0 })}
-                                                    style={{ width: '60px', height: '30px', fontSize: '13px' }}
-                                                />
+                                                <span style={{ fontSize: '13px', color: 'var(--text-secondary, #c9b0e8)', fontWeight: 500 }}>Скидка:</span>
+                                                <div style={{ display: 'inline-flex', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '2px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, discountType: 'percent' }))}
+                                                        style={{
+                                                            padding: '2px 8px', fontSize: '12px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                                                            background: (formData.discountType || 'percent') === 'percent' ? 'var(--primary-color, #ff0080)' : 'transparent',
+                                                            color: (formData.discountType || 'percent') === 'percent' ? '#fff' : '#aaa',
+                                                            fontWeight: (formData.discountType || 'percent') === 'percent' ? 'bold' : 'normal'
+                                                        }}
+                                                    >
+                                                        %
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({ ...prev, discountType: 'amount' }))}
+                                                        style={{
+                                                            padding: '2px 8px', fontSize: '12px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                                                            background: formData.discountType === 'amount' ? 'var(--primary-color, #ff0080)' : 'transparent',
+                                                            color: formData.discountType === 'amount' ? '#fff' : '#aaa',
+                                                            fontWeight: formData.discountType === 'amount' ? 'bold' : 'normal'
+                                                        }}
+                                                    >
+                                                        сум
+                                                    </button>
+                                                </div>
+
+                                                {(formData.discountType || 'percent') === 'percent' ? (
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max="100" 
+                                                        value={formData.discountPercent || ''} 
+                                                        placeholder="0"
+                                                        onChange={e => setFormData({ ...formData, discountPercent: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                                                        style={{ width: '65px', height: '30px', fontSize: '13px', textAlign: 'center' }}
+                                                    />
+                                                ) : (
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        value={formData.discountAmount || ''} 
+                                                        placeholder="0"
+                                                        onChange={e => setFormData({ ...formData, discountAmount: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                                        style={{ width: '110px', height: '30px', fontSize: '13px', textAlign: 'right' }}
+                                                    />
+                                                )}
                                             </div>
                                             {loyaltyCard && (
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end' }}>

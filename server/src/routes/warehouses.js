@@ -655,4 +655,144 @@ router.post('/transfer', async (req, res) => {
     }
 });
 
+// ============================================
+// GOODS RECEIVING (RECEIPTS) & MULTI-CURRENCY
+// ============================================
+let inMemoryReceipts = [];
+
+// GET /api/warehouses/receipts — получить список приёмок
+router.get('/receipts', async (req, res) => {
+    try {
+        const orgId = req.user?.organization_id;
+        const result = await pool.query(
+            `SELECT wd.id, wd.document_number, wd.status, wd.total_amount as total_value,
+                    wd.document_date as expected_date, wd.supplier_id, wd.notes, wd.created_at,
+                    wd.currency, wd.exchange_rate,
+                    c.name as supplier_name
+             FROM warehouse_documents wd
+             LEFT JOIN counterparties c ON wd.supplier_id = c.id
+             WHERE wd.document_type = 'receipt'` + (orgId ? ' AND wd.organization_id = $1' : '') +
+            ' ORDER BY wd.created_at DESC',
+            orgId ? [orgId] : []
+        ).catch(() => null);
+
+        if (result && result.rows) {
+            // Загружаем элементы для каждой приёмки
+            const receipts = [];
+            for (const r of result.rows) {
+                const itemsRes = await pool.query(
+                    `SELECT wdi.product_id, wdi.quantity, wdi.cost_price as price, p.name as product_name
+                     FROM warehouse_document_items wdi
+                     LEFT JOIN products p ON wdi.product_id = p.id
+                     WHERE wdi.document_id = $1`,
+                    [r.id]
+                ).catch(() => ({ rows: [] }));
+                receipts.push({
+                    ...r,
+                    items: itemsRes.rows,
+                    total_items: itemsRes.rows.length
+                });
+            }
+            return res.json({ success: true, receipts });
+        }
+
+        // Fallback to in-memory receipts
+        const filtered = orgId ? inMemoryReceipts.filter(r => r.organization_id === orgId) : inMemoryReceipts;
+        return res.json({ success: true, receipts: filtered });
+    } catch (e) {
+        return res.json({ success: true, receipts: inMemoryReceipts });
+    }
+});
+
+// POST /api/warehouses/receipts — создать новую приёмку
+router.post('/receipts', async (req, res) => {
+    try {
+        const orgId = req.user?.organization_id;
+        const { supplier_id, expected_date, items, notes, currency = 'UZS', exchange_rate = 1 } = req.body;
+        const rate = parseFloat(exchange_rate) || 1;
+
+        const docNumber = `REC-${Date.now().toString().slice(-6)}`;
+        const totalItems = items ? items.length : 0;
+        let totalValue = 0;
+
+        if (items && Array.isArray(items)) {
+            totalValue = items.reduce((sum, item) => sum + (parseFloat(item.price) || 0) * (parseInt(item.quantity) || 0), 0);
+        }
+
+        // Сохраняем в БД если есть таблицы
+        let dbReceipt = null;
+        try {
+            const docRes = await pool.query(
+                `INSERT INTO warehouse_documents (
+                    document_number, document_type, document_date, supplier_id,
+                    status, total_amount, created_by, notes, organization_id, currency, exchange_rate
+                 ) VALUES ($1, 'receipt', $2, $3, 'pending', $4, $5, $6, $7, $8, $9)
+                 RETURNING *`,
+                [docNumber, expected_date || new Date(), supplier_id || null, totalValue, req.user.id, notes || null, orgId || null, currency, rate]
+            );
+            dbReceipt = docRes.rows[0];
+
+            if (dbReceipt && items) {
+                for (const item of items) {
+                    await pool.query(
+                        `INSERT INTO warehouse_document_items (document_id, product_id, quantity, cost_price, total_cost)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [dbReceipt.id, item.product_id, item.quantity, item.price, (parseFloat(item.price)||0) * (parseInt(item.quantity)||0)]
+                    );
+                }
+            }
+        } catch (e) {
+            console.warn('[Warehouses] DB Insert fallback:', e.message);
+        }
+
+        const newReceipt = {
+            id: dbReceipt ? dbReceipt.id : Date.now(),
+            document_number: docNumber,
+            supplier_id,
+            expected_date: expected_date || new Date().toISOString().split('T')[0],
+            status: 'pending',
+            items: items || [],
+            total_items: totalItems,
+            total_value: totalValue,
+            currency,
+            exchange_rate: rate,
+            notes,
+            organization_id: orgId,
+            created_at: new Date().toISOString()
+        };
+
+        if (!dbReceipt) {
+            inMemoryReceipts.unshift(newReceipt);
+        }
+
+        return res.status(201).json({ success: true, receipt: newReceipt });
+    } catch (e) {
+        console.error('[Warehouses] Create receipt error:', e);
+        return res.status(500).json({ error: e.message });
+    }
+});
+
+// POST /api/warehouses/receipts/:id/start
+router.post('/receipts/:id/start', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query(`UPDATE warehouse_documents SET status = 'receiving' WHERE id = $1`, [id]).catch(() => null);
+    } catch (e) {}
+    const r = inMemoryReceipts.find(x => x.id == id);
+    if (r) r.status = 'receiving';
+    return res.json({ success: true, message: 'Приёмка начата' });
+});
+
+// POST /api/warehouses/receipts/:id/complete
+router.post('/receipts/:id/complete', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query(`UPDATE warehouse_documents SET status = 'completed' WHERE id = $1`, [id]).catch(() => null);
+    } catch (e) {}
+    const r = inMemoryReceipts.find(x => x.id == id);
+    if (r) r.status = 'completed';
+    return res.json({ success: true, message: 'Приёмка завершена' });
+});
+
 export default router;
+

@@ -178,8 +178,10 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
             totalAmount += item.quantity * price;
         }
 
-        const discountAmount = (totalAmount * (discountPercent || 0)) / 100;
-        const amountAfterDiscount = totalAmount - discountAmount;
+        const discountAmount = req.body.discountAmount !== undefined
+            ? parseFloat(req.body.discountAmount) || 0
+            : (totalAmount * (discountPercent || 0)) / 100;
+        const amountAfterDiscount = Math.max(0, totalAmount - discountAmount);
         
         // Логика баллов
         const pointsToCurrency = loyaltySettings.points_to_currency || 1;

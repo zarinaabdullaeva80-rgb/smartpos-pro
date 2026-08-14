@@ -488,4 +488,124 @@ router.post('/sync', async (req, res) => {
     }
 });
 
+// ============================================
+// KPI — расчёт реальных показателей из продаж
+// ============================================
+router.get('/kpi', authenticate, async (req, res) => {
+    try {
+        const orgId = getOrgId(req);
+        const { period } = req.query; // '2026-07'
+        
+        let dateFrom, dateTo;
+        if (period && /^\d{4}-\d{2}$/.test(period)) {
+            dateFrom = `${period}-01`;
+            const [y, m] = period.split('-').map(Number);
+            const lastDay = new Date(y, m, 0).getDate();
+            dateTo = `${period}-${String(lastDay).padStart(2, '0')}`;
+        } else {
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            dateFrom = `${y}-${m}-01`;
+            const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+            dateTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+        }
+
+        // Получаем всех сотрудников организации
+        let usersQuery = `SELECT id, full_name, username, role, position FROM users WHERE 1=1`;
+        const usersParams = [];
+        if (orgId) {
+            usersQuery += ` AND organization_id = $1`;
+            usersParams.push(orgId);
+        }
+        usersQuery += ` ORDER BY full_name`;
+        const usersRes = await pool.query(usersQuery, usersParams);
+
+        // Для каждого сотрудника считаем реальные продажи за период
+        const kpiData = [];
+        for (const user of usersRes.rows) {
+            try {
+                // Общая сумма продаж
+                const salesRes = await pool.query(
+                    `SELECT COALESCE(SUM(final_amount), 0) as total_sales,
+                            COUNT(*) as sales_count,
+                            COALESCE(AVG(final_amount), 0) as avg_check
+                     FROM sales
+                     WHERE user_id = $1 AND document_date >= $2 AND document_date <= $3
+                       AND status IN ('confirmed', 'completed', 'paid')` +
+                    (orgId ? ` AND organization_id = $4` : ''),
+                    orgId ? [user.id, dateFrom, dateTo, orgId] : [user.id, dateFrom, dateTo]
+                );
+
+                const totalSales = parseFloat(salesRes.rows[0]?.total_sales) || 0;
+                const salesCount = parseInt(salesRes.rows[0]?.sales_count) || 0;
+                const avgCheck = parseFloat(salesRes.rows[0]?.avg_check) || 0;
+
+                // Цели — можно настроить; пока берём средние ожидания
+                const salesTarget = 35000000;
+                const avgCheckTarget = 150000;
+                const conversionTarget = 70;
+                const satisfactionTarget = 90;
+
+                // Конверсия — % завершённых от всех
+                let conversion = 0;
+                try {
+                    const allSalesRes = await pool.query(
+                        `SELECT COUNT(*) as total FROM sales WHERE user_id = $1 AND document_date >= $2 AND document_date <= $3` +
+                        (orgId ? ` AND organization_id = $4` : ''),
+                        orgId ? [user.id, dateFrom, dateTo, orgId] : [user.id, dateFrom, dateTo]
+                    );
+                    const totalAll = parseInt(allSalesRes.rows[0]?.total) || 0;
+                    conversion = totalAll > 0 ? Math.round((salesCount / totalAll) * 100) : 0;
+                } catch(e) { conversion = 0; }
+
+                // Удовлетворённость — имитация на основе возвратов
+                let satisfaction = 95;
+                try {
+                    const returnsRes = await pool.query(
+                        `SELECT COUNT(*) as cnt FROM sales WHERE user_id = $1 AND document_date >= $2 AND document_date <= $3 AND status = 'cancelled'` +
+                        (orgId ? ` AND organization_id = $4` : ''),
+                        orgId ? [user.id, dateFrom, dateTo, orgId] : [user.id, dateFrom, dateTo]
+                    );
+                    const returnsCnt = parseInt(returnsRes.rows[0]?.cnt) || 0;
+                    satisfaction = salesCount > 0 ? Math.max(70, 100 - Math.round((returnsCnt / Math.max(salesCount, 1)) * 30)) : 90;
+                } catch(e) {}
+
+                const salesPct = salesTarget > 0 ? Math.round((totalSales / salesTarget) * 100) : 0;
+                const avgPct = avgCheckTarget > 0 ? Math.round((avgCheck / avgCheckTarget) * 100) : 0;
+                const convPct = conversionTarget > 0 ? Math.round((conversion / conversionTarget) * 100) : 0;
+                const satPct = satisfactionTarget > 0 ? Math.round((satisfaction / satisfactionTarget) * 100) : 0;
+
+                const totalScore = Math.round(salesPct * 0.4 + avgPct * 0.2 + convPct * 0.2 + satPct * 0.2);
+                const bonus = totalScore >= 110 ? 1200000 : totalScore >= 100 ? 850000 : totalScore >= 90 ? 450000 : totalScore >= 80 ? 250000 : 0;
+
+                kpiData.push({
+                    id: user.id,
+                    name: user.full_name || user.username,
+                    position: user.position || user.role || 'Сотрудник',
+                    total_score: totalScore,
+                    bonus,
+                    sales_count: salesCount,
+                    kpis: {
+                        sales: { weight: 40, actual: totalSales, target: salesTarget },
+                        avg_check: { weight: 20, actual: Math.round(avgCheck), target: avgCheckTarget },
+                        conversion: { weight: 20, actual: conversion, target: conversionTarget },
+                        satisfaction: { weight: 20, actual: satisfaction, target: satisfactionTarget }
+                    }
+                });
+            } catch (empErr) {
+                console.warn(`[KPI] Error for user ${user.id}:`, empErr.message);
+            }
+        }
+
+        // Сортируем по баллу
+        kpiData.sort((a, b) => b.total_score - a.total_score);
+
+        res.json({ success: true, kpi: kpiData, period: { from: dateFrom, to: dateTo } });
+    } catch (error) {
+        console.error('[KPI] Error:', error);
+        res.status(500).json({ error: 'Ошибка расчёта KPI', details: error.message });
+    }
+});
+
 export default router;

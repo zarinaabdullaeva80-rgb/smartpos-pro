@@ -100,6 +100,7 @@ router.get('/', authenticate, async (req, res) => {
              p.price_purchase, p.price_sale, p.price_retail, 
              p.vat_rate, p.description, p.barcode, p.image_url, 
              p.is_active, p.organization_id, p.min_stock, p.supplier, p.created_at, p.updated_at,
+             p.custom_rates,
              pc.name as category_name,
              COALESCE(NULLIF((
                SELECT SUM(CASE WHEN im.document_type IN ('receipt','adjustment','inventory') THEN im.quantity
@@ -346,10 +347,11 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
     try {
         const {
             code, name, categoryId, unit, pricePurchase, priceSale, priceRetail,
-            vatRate, description, barcode, imageUrl, quantity
+            vatRate, description, barcode, imageUrl, quantity, customRates
         } = req.body;
         const is_active = req.body.is_active !== undefined ? req.body.is_active : (req.body.isActive !== undefined ? req.body.isActive : true);
         const minStock = req.body.minStock !== undefined ? req.body.minStock : (req.body.min_stock || 0);
+        const customRatesJson = customRates ? JSON.stringify(customRates) : null;
 
         const orgId = getOrgId(req);
         const licenseId = req.user.organization_id || null;
@@ -374,24 +376,43 @@ router.post('/', authenticate, authorize('Администратор', 'Прод
                     description = $8, barcode = $9, image_url = $10, 
                     is_active = $11, min_stock = $12,
                     organization_id = COALESCE($13, organization_id),
+                    custom_rates = COALESCE($14, custom_rates),
                     updated_at = CURRENT_TIMESTAMP
-                WHERE code = $14`;
-            const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, is_active, minStock, licenseId, code];
+                WHERE code = $15`;
+            const updateParams = [name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, is_active, minStock, licenseId, customRatesJson, code];
             if (orgId) {
-                updateQuery += ' AND organization_id = $15';
+                updateQuery += ' AND organization_id = $16';
                 updateParams.push(orgId);
             }
             updateQuery += ' RETURNING *';
-            result = await pool.query(updateQuery, updateParams);
+            result = await pool.query(updateQuery, updateParams).catch(async (e) => {
+                // Fallback if custom_rates column doesn't exist yet
+                if (e.message.includes('custom_rates')) {
+                    let q2 = `UPDATE products SET name=$1,category_id=$2,unit=$3,price_purchase=$4,price_sale=$5,price_retail=$6,vat_rate=$7,description=$8,barcode=$9,image_url=$10,is_active=$11,min_stock=$12,organization_id=COALESCE($13,organization_id),updated_at=CURRENT_TIMESTAMP WHERE code=$14`;
+                    const p2 = [name,categoryId||null,unit||'шт',pricePurchase||0,priceSale||0,priceRetail||0,vatRate||20,description||null,barcode||null,imageUrl||null,is_active,minStock,licenseId,code];
+                    if (orgId) { q2 += ' AND organization_id=$15'; p2.push(orgId); }
+                    q2 += ' RETURNING *';
+                    return pool.query(q2, p2);
+                }
+                throw e;
+            });
             action = 'UPDATE';
         } else {
             // Create new product
             result = await pool.query(
-                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, min_stock, is_active)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                `INSERT INTO products (code, name, category_id, unit, price_purchase, price_sale, price_retail, vat_rate, description, barcode, image_url, organization_id, min_stock, is_active, custom_rates)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 RETURNING *`,
-                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null, minStock, is_active]
-            );
+                [code, name, categoryId || null, unit || 'шт', pricePurchase || 0, priceSale || 0, priceRetail || 0, vatRate || 20, description || null, barcode || null, imageUrl || null, orgId || licenseId || null, minStock, is_active, customRatesJson]
+            ).catch(async (e) => {
+                if (e.message.includes('custom_rates')) {
+                    return pool.query(
+                        `INSERT INTO products (code,name,category_id,unit,price_purchase,price_sale,price_retail,vat_rate,description,barcode,image_url,organization_id,min_stock,is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+                        [code,name,categoryId||null,unit||'шт',pricePurchase||0,priceSale||0,priceRetail||0,vatRate||20,description||null,barcode||null,imageUrl||null,orgId||licenseId||null,minStock,is_active]
+                    );
+                }
+                throw e;
+            });
             action = 'CREATE';
         }
 
@@ -456,10 +477,11 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         const { id } = req.params;
         const {
             code, name, categoryId, unit, pricePurchase, priceSale, priceRetail,
-            vatRate, description, barcode, imageUrl, quantity, supplier
+            vatRate, description, barcode, imageUrl, quantity, supplier, customRates
         } = req.body;
         const is_active = req.body.is_active !== undefined ? req.body.is_active : (req.body.isActive !== undefined ? req.body.isActive : true);
         const minStock = req.body.minStock !== undefined ? req.body.minStock : (req.body.min_stock || 0);
+        const customRatesJson = customRates ? JSON.stringify(customRates) : null;
 
         const oldData = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
 
@@ -468,17 +490,27 @@ router.put('/:id', authenticate, authorize('Администратор', 'Про
         code = $1, name = $2, category_id = $3, unit = $4, price_purchase = $5,
         price_sale = $6, price_retail = $7, vat_rate = $8, description = $9,
         barcode = $10, image_url = $11, is_active = $12, min_stock = $13,
-        supplier = $14, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $15`;
-        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, is_active, minStock, supplier || null, id];
+        supplier = $14, custom_rates = COALESCE($15, custom_rates), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $16`;
+        const updateParams = [code, name, categoryId || null, unit, pricePurchase, priceSale, priceRetail, vatRate, description, barcode, imageUrl, is_active, minStock, supplier || null, customRatesJson, id];
 
         if (orgId) {
-            updateQuery += ' AND organization_id = $16';
+            updateQuery += ' AND organization_id = $17';
             updateParams.push(orgId);
         }
         updateQuery += ' RETURNING *';
 
-        const result = await pool.query(updateQuery, updateParams);
+        const result = await pool.query(updateQuery, updateParams).catch(async (e) => {
+            if (e.message.includes('custom_rates')) {
+                // Fallback: update without custom_rates if column missing
+                let q2 = `UPDATE products SET code=$1,name=$2,category_id=$3,unit=$4,price_purchase=$5,price_sale=$6,price_retail=$7,vat_rate=$8,description=$9,barcode=$10,image_url=$11,is_active=$12,min_stock=$13,supplier=$14,updated_at=CURRENT_TIMESTAMP WHERE id=$15`;
+                const p2 = [code,name,categoryId||null,unit,pricePurchase,priceSale,priceRetail,vatRate,description,barcode,imageUrl,is_active,minStock,supplier||null,id];
+                if (orgId) { q2 += ' AND organization_id=$16'; p2.push(orgId); }
+                q2 += ' RETURNING *';
+                return pool.query(q2, p2);
+            }
+            throw e;
+        });
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Товар не найден' });

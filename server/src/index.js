@@ -140,6 +140,10 @@ import payrollRoutes from './routes/payroll.js';
 import inventoryRoutes from './routes/inventory.js';
 import currenciesRoutes from './routes/currencies.js';
 import edsRoutes from './routes/eds.js';
+import paymeRoutes from './routes/payme.js';
+import clickRoutes from './routes/click.js';
+import clickPassRoutes from './routes/clickPass.js';
+import paymentsRoutes from './routes/payments.js';
 
 import { apiLogger } from './middleware/apiLogger.js';
 import { initRedis } from './services/redis.js';
@@ -458,6 +462,10 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/currencies', currenciesRoutes);
 app.use('/api/eds', edsRoutes);
+app.use('/api/payments', paymeRoutes);
+app.use('/api/payments', clickRoutes);
+app.use('/api/payments', clickPassRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 
 
