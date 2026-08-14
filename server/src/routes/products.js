@@ -186,6 +186,15 @@ router.get('/', authenticate, async (req, res) => {
         }
     } catch (error) {
         console.error('Ошибка получения товаров:', error);
+        if (error.message && error.message.includes('custom_rates')) {
+            try {
+                const fallbackQuery = query.replace('p.custom_rates,', '');
+                const result = await pool.query(fallbackQuery, params);
+                return res.json({ products: result.rows });
+            } catch (fallbackErr) {
+                console.error('Fallback query error:', fallbackErr);
+            }
+        }
         res.status(500).json({ error: 'Ошибка сервера', details: error.message });
     }
 });

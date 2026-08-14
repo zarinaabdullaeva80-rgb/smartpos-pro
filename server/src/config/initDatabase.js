@@ -914,6 +914,7 @@ async function addMissingColumns(pool) {
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS purchase_price DECIMAL(15,2)',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_purchase DECIMAL(15,2) DEFAULT 0',
         'ALTER TABLE products ADD COLUMN IF NOT EXISTS price_sale DECIMAL(15,2) DEFAULT 0',
+        'ALTER TABLE products ADD COLUMN IF NOT EXISTS custom_rates JSONB',
         // ============================================
         // INVENTORY_MOVEMENTS: missing columns
         // ============================================
