@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { QrCode, CreditCard, Smartphone, CheckCircle, RefreshCw, X, Copy, ExternalLink, Settings } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { useToast } from '../components/ToastProvider';
+import { salesAPI } from '../services/api';
 
 /**
  * Конфигурация платёжных систем (defaults)
@@ -107,6 +108,44 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
         }
     }, [isOpen, paymentConfig]);
 
+    const handleCheckStatus = async (isAutoPoll = false) => {
+        if (!orderId) return false;
+        if (!isAutoPoll) setChecking(true);
+        try {
+            const res = await salesAPI.getById(orderId);
+            const sale = res.data?.sale || res.data;
+            if (sale && (sale.payment_status === 'paid' || sale.status === 'confirmed' || sale.status === 'completed')) {
+                if (onPaymentConfirmed) {
+                    onPaymentConfirmed({
+                        system: selectedSystem || 'click',
+                        amount,
+                        orderId,
+                        confirmedAt: new Date().toISOString()
+                    });
+                }
+                onClose();
+                return true;
+            } else if (!isAutoPoll) {
+                toast.info('Оплата ещё не получена. Подождите или подтвердите вручную.');
+            }
+        } catch (e) {
+            console.error('[QRPaymentModal] Error checking status:', e);
+            if (!isAutoPoll) toast.info('Оплата ещё не получена. Подождите или подтвердите вручную.');
+        } finally {
+            if (!isAutoPoll) setChecking(false);
+        }
+        return false;
+    };
+
+    // Автоматическая проверка статуса каждые 3 секунды
+    useEffect(() => {
+        if (!isOpen || !orderId) return;
+        const interval = setInterval(() => {
+            handleCheckStatus(true);
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [isOpen, orderId, selectedSystem]);
+
     if (!isOpen) return null;
 
     const system = paymentConfig.find(s => s.id === selectedSystem) || paymentConfig[0];
@@ -132,14 +171,6 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
         navigator.clipboard.writeText(paymentUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-    };
-
-    const handleCheckStatus = async () => {
-        setChecking(true);
-        // Симуляция проверки
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        setChecking(false);
-        toast.info('Оплата ещё не получена. Подождите или подтвердите вручную.');
     };
 
     const handleConfirm = () => {
