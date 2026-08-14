@@ -50,13 +50,21 @@ router.post('/click/prepare', async (req, res) => {
 
     const config = getClickConfig();
 
-    // 1. Verify Sign String for Prepare:
-    // md5(click_trans_id + service_id + secret_key + merchant_trans_id + amount + action + sign_time)
-    const expectedSign = md5(
-        `${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${amount}${action}${sign_time}`
-    );
+    console.log('[CLICK PREPARE INCOMING]', JSON.stringify(body));
 
-    if (sign_string !== expectedSign) {
+    const paramAmt = body.param_amount !== undefined && body.param_amount !== null ? body.param_amount : amount;
+    const numAmt = parseFloat(paramAmt || 0);
+
+    const possibleSigns = [
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${paramAmt}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${amount}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${numAmt.toFixed(2)}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${numAmt.toFixed(4)}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${Math.round(numAmt)}${action}${sign_time}`)
+    ];
+
+    if (!possibleSigns.includes(sign_string)) {
+        console.error(`❌ Click Prepare SIGN CHECK FAILED! Received: ${sign_string}, Expected one of:`, possibleSigns);
         const errResp = {
             click_trans_id,
             merchant_trans_id,
@@ -99,14 +107,14 @@ router.post('/click/prepare', async (req, res) => {
         if (isNum) {
             saleRes = await pool.query(
                 `SELECT id, total_amount, final_amount, status, payment_status, organization_id 
-                 FROM sales WHERE id = $1 OR document_number = $2 LIMIT 1`,
-                [parseInt(strVal), strVal]
+                 FROM sales WHERE id = $1 OR document_number = $2 OR document_number = $3 LIMIT 1`,
+                [parseInt(strVal), strVal, `ПРД-${strVal}`]
             );
         } else {
             saleRes = await pool.query(
                 `SELECT id, total_amount, final_amount, status, payment_status, organization_id 
-                 FROM sales WHERE document_number = $1 LIMIT 1`,
-                [strVal]
+                 FROM sales WHERE document_number = $1 OR document_number = $2 LIMIT 1`,
+                [strVal, strVal.replace(/^ПРД-/, '')]
             );
         }
         sale = saleRes.rows[0] || null;
@@ -115,6 +123,7 @@ router.post('/click/prepare', async (req, res) => {
     }
 
     if (!sale) {
+        console.error(`❌ Click Prepare ORDER NOT FOUND: ${merchant_trans_id}`);
         const errResp = {
             click_trans_id,
             merchant_trans_id,
@@ -137,10 +146,15 @@ router.post('/click/prepare', async (req, res) => {
         return res.json(errResp);
     }
 
-    const expectedAmount = parseFloat(sale.final_amount || sale.total_amount);
-    const reqAmount = parseFloat(amount);
+    const expectedAmount = parseFloat(
+        sale.final_amount !== null && sale.final_amount !== undefined && parseFloat(sale.final_amount) > 0
+            ? sale.final_amount
+            : sale.total_amount
+    );
+    const reqAmount = parseFloat(numAmt);
 
     if (Math.abs(expectedAmount - reqAmount) > 0.01) {
+        console.error(`❌ Click Prepare INCORRECT AMOUNT: expected ${expectedAmount}, received ${reqAmount}`);
         const errResp = {
             click_trans_id,
             merchant_trans_id,
@@ -228,13 +242,21 @@ router.post('/click/complete', async (req, res) => {
 
     const config = getClickConfig();
 
-    // 1. Verify Sign String for Complete:
-    // md5(click_trans_id + service_id + secret_key + merchant_trans_id + merchant_prepare_id + amount + action + sign_time)
-    const expectedSign = md5(
-        `${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${amount}${action}${sign_time}`
-    );
+    console.log('[CLICK COMPLETE INCOMING]', JSON.stringify(body));
 
-    if (sign_string !== expectedSign) {
+    const paramAmt = body.param_amount !== undefined && body.param_amount !== null ? body.param_amount : amount;
+    const numAmt = parseFloat(paramAmt || 0);
+
+    const possibleSigns = [
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${paramAmt}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${amount}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${numAmt.toFixed(2)}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${numAmt.toFixed(4)}${action}${sign_time}`),
+        md5(`${click_trans_id}${service_id}${config.secretKey}${merchant_trans_id}${merchant_prepare_id}${Math.round(numAmt)}${action}${sign_time}`)
+    ];
+
+    if (!possibleSigns.includes(sign_string)) {
+        console.error(`❌ Click Complete SIGN CHECK FAILED! Received: ${sign_string}, Expected one of:`, possibleSigns);
         const errResp = {
             click_trans_id,
             merchant_trans_id,
