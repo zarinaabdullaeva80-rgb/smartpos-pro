@@ -55,6 +55,7 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
     const [selectedSystem, setSelectedSystem] = useState(null);
     const [checking, setChecking] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [isTestMode, setIsTestMode] = useState(false);
 
     // Получаем настройки из PaymentSettings
     const paymentConfig = useMemo(() => {
@@ -112,8 +113,6 @@ function QRPaymentModal({ isOpen, onClose, amount, orderId, onPaymentConfirmed }
     if (!system) return null;
 
     const isDemo = !system.configured;
-
-    const [isTestMode, setIsTestMode] = useState(false);
 
     const paymentUrl = system.id === 'click'
         ? system.generateUrl(
