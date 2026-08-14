@@ -126,7 +126,7 @@ router.post('/click/prepare', async (req, res) => {
         return res.json(errResp);
     }
 
-    if (sale.payment_status === 'paid' || sale.status === 'paid' || sale.status === 'completed') {
+    if (sale.payment_status === 'paid' || sale.status === 'paid') {
         const errResp = {
             click_trans_id,
             merchant_trans_id,
@@ -314,20 +314,34 @@ router.post('/click/complete', async (req, res) => {
         // Update sale payment status in SmartPOS Pro
         const strMerch = String(merchant_trans_id).trim();
         const isNumMerch = /^\d+$/.test(strMerch);
+        let saleRes;
         if (isNumMerch) {
-            await pool.query(
-                `UPDATE sales 
-                 SET payment_status = 'paid', payment_method = 'click', updated_at = NOW() 
-                 WHERE id = $1 OR document_number = $2`,
-                [parseInt(strMerch), strMerch]
-            );
+            saleRes = await pool.query('SELECT * FROM sales WHERE id = $1 OR document_number = $2 LIMIT 1', [parseInt(strMerch), strMerch]);
         } else {
-            await pool.query(
-                `UPDATE sales 
-                 SET payment_status = 'paid', payment_method = 'click', updated_at = NOW() 
-                 WHERE document_number = $1`,
-                [strMerch]
-            );
+            saleRes = await pool.query('SELECT * FROM sales WHERE document_number = $1 LIMIT 1', [strMerch]);
+        }
+
+        if (saleRes.rows.length > 0) {
+            const sale = saleRes.rows[0];
+            if (sale.status === 'draft' || sale.status === 'pending') {
+                const itemsRes = await pool.query('SELECT * FROM sale_items WHERE sale_id = $1', [sale.id]);
+                for (const item of itemsRes.rows) {
+                    await pool.query(
+                        `INSERT INTO inventory_movements (product_id, warehouse_id, document_type, document_id, quantity, organization_id)
+                         VALUES ($1, $2, 'sale', $3, $4, $5)`,
+                        [item.product_id, sale.warehouse_id, sale.id, item.quantity, sale.organization_id || 1]
+                    );
+                }
+                await pool.query(
+                    `UPDATE sales SET payment_status = 'paid', status = 'confirmed', payment_method = 'click', updated_at = NOW() WHERE id = $1`,
+                    [sale.id]
+                );
+            } else {
+                await pool.query(
+                    `UPDATE sales SET payment_status = 'paid', payment_method = 'click', updated_at = NOW() WHERE id = $1`,
+                    [sale.id]
+                );
+            }
         }
 
         // Insert record into payments table

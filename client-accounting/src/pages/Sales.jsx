@@ -602,7 +602,7 @@ function Sales() {
                 ...formData,
                 discountPercent: computedPercent,
                 discountAmount: discountAmt,
-                autoConfirm: true,
+                autoConfirm: false,
                 paymentStatus: 'pending_qr'
             });
             const createdSale = response.data.sale;
@@ -1543,12 +1543,20 @@ function Sales() {
                 onClose={() => { setShowQRPayment(false); setRefreshTrigger(prev => prev + 1); }}
                 amount={qrPaymentData.amount}
                 orderId={qrPaymentData.orderId}
-                onPaymentConfirmed={(payment) => {
+                onPaymentConfirmed={async (payment) => {
                     console.log('[SALES] QR Payment confirmed:', payment);
+                    if (qrSaleId) {
+                        try {
+                            await salesAPI.confirm(qrSaleId);
+                        } catch (e) {
+                            console.error('[SALES] Error confirming sale on QR payment:', e);
+                        }
+                    }
                     toast.success(`✅ Оплата через ${payment.system.toUpperCase()} подтверждена!`);
                     setShowQRPayment(false);
-                    setRefreshTrigger(prev => prev + 1); // обновить список продаж
-                    if (saleForReceipt) setShowReceiptModal(true); // показать чек
+                    setShowModal(false);
+                    setRefreshTrigger(prev => prev + 1);
+                    if (saleForReceipt) setShowReceiptModal(true);
                 }}
             />
 
