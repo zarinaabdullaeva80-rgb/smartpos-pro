@@ -17,6 +17,7 @@ import { OFFLINE_CONFIG } from '../config/settings';
 export class OfflineManager {
     static PRODUCTS_KEY = 'cached_products';
     static SALES_QUEUE_KEY = 'sales_queue';
+    static INVENTORY_QUEUE_KEY = 'inventory_queue';
     static LAST_SYNC_KEY = 'last_sync_timestamp';
 
     // ==================== КЭШИРОВАНИЕ ТОВАРОВ ====================
@@ -98,6 +99,96 @@ export class OfflineManager {
     static async getPendingSalesCount() {
         const queue = await this.getSalesQueue();
         return queue.filter(s => !s.synced).length;
+    }
+
+    // ==================== ОЧЕРЕДЬ ИНВЕНТАРИЗАЦИИ ====================
+
+    /**
+     * Добавить инвентаризацию в очередь
+     * @param {Object} inventoryData - данные инвентаризации
+     */
+    static async queueInventory(inventoryData) {
+        try {
+            const queue = await this.getInventoryQueue();
+            const queueItem = {
+                ...inventoryData,
+                timestamp: Date.now(),
+                synced: false,
+                id: `offline_inv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            };
+            queue.push(queueItem);
+            await AsyncStorage.setItem(this.INVENTORY_QUEUE_KEY, JSON.stringify(queue));
+            logger.offline('Queue', `Inventory queued: ${queueItem.id}`);
+            return queueItem.id;
+        } catch (error) {
+            logger.error('Offline', 'Failed to queue inventory', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Получить очередь инвентаризаций
+     * @returns {Array} массив инвентаризаций в очереди
+     */
+    static async getInventoryQueue() {
+        try {
+            const queue = await AsyncStorage.getItem(this.INVENTORY_QUEUE_KEY);
+            return queue ? JSON.parse(queue) : [];
+        } catch (error) {
+            console.error('[Offline] Failed to get inventory queue:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Синхронизировать очередь инвентаризаций с сервером
+     */
+    static async syncInventoryQueue() {
+        const queue = await this.getInventoryQueue();
+        const unsynced = queue.filter(item => !item.synced);
+
+        if (unsynced.length === 0) return { success: 0, failed: 0 };
+
+        let successCount = 0;
+        let failedCount = 0;
+        const updatedQueue = [...queue];
+
+        for (let i = 0; i < updatedQueue.length; i++) {
+            const inv = updatedQueue[i];
+            if (inv.synced) continue;
+
+            try {
+                const axios = (await import('axios')).default;
+                const AsyncStorageModule = (await import('@react-native-async-storage/async-storage')).default;
+                const { getApiUrl } = await import('../config/settings');
+
+                const token = await AsyncStorageModule.getItem('token');
+                const apiUrl = getApiUrl();
+
+                await axios.post(`${apiUrl}/inventory/save`, {
+                    items: inv.items,
+                    date: inv.date || new Date().toISOString(),
+                    total_counted: inv.total_counted,
+                    discrepancies: inv.discrepancies,
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: 10000,
+                });
+
+                updatedQueue[i] = { ...inv, synced: true, syncedAt: Date.now() };
+                successCount++;
+            } catch (error) {
+                logger.error('Sync', `Failed to sync inventory: ${inv.id}`, error);
+                failedCount++;
+            }
+        }
+
+        const filteredQueue = updatedQueue.filter(inv => !inv.synced);
+        await AsyncStorage.setItem(this.INVENTORY_QUEUE_KEY, JSON.stringify(filteredQueue));
+        return { success: successCount, failed: failedCount };
     }
 
     // ==================== СИНХРОНИЗАЦИЯ ====================
@@ -190,6 +281,7 @@ export class OfflineManager {
                 setTimeout(async () => {
                     try {
                         const result = await this.syncSalesQueue();
+                        await this.syncInventoryQueue();
                         if (result.success > 0 && onSyncCallback) {
                             onSyncCallback(result);
                         }

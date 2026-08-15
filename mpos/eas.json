@@ -18,6 +18,12 @@
                 "distribution": "internal"
             }
         },
+        "ios-ipa": {
+            "distribution": "internal",
+            "ios": {
+                "simulator": false
+            }
+        },
         "production": {
             "android": {
                 "buildType": "app-bundle"

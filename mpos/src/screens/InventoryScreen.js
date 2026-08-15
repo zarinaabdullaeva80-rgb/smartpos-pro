@@ -5,6 +5,7 @@ import { productsAPI } from '../services/api';
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SoundManager from '../services/sounds';
+import OfflineManager from '../services/offline';
 
 export default function InventoryScreen({ navigation }) {
     const { colors } = useTheme();
@@ -122,7 +123,17 @@ export default function InventoryScreen({ navigation }) {
                             loadProducts(); // Обновляем остатки
                         } catch (error) {
                             console.error('[Inventory] Save error:', error);
-                            // Fallback: сохраняем локально
+                            // Fallback: сохраняем локально через OfflineManager
+                            try {
+                                await OfflineManager.queueInventory({
+                                    items,
+                                    date: new Date().toISOString(),
+                                    total_counted: items.length,
+                                    discrepancies: stats.withDiff,
+                                });
+                            } catch (e) {
+                                console.error('[Inventory] Failed to queue offline inventory:', e);
+                            }
                             SoundManager.playSuccess();
                             Alert.alert('⚠️ Сохранено локально',
                                 'Сервер недоступен. Данные сохранены офлайн и будут отправлены при подключении.');

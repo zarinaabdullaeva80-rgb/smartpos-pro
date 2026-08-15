@@ -33,7 +33,7 @@ if exist "app\build\outputs\apk\release\app-release.apk" (
     echo APK created at:
     echo %~dp0android\app\build\outputs\apk\release\app-release.apk
     echo.
-    pause
+    exit /b 0
 ) else (
     echo.
     echo ========================================
@@ -41,5 +41,5 @@ if exist "app\build\outputs\apk\release\app-release.apk" (
     echo ========================================
     echo Check the error messages above
     echo.
-    pause
+    exit /b 1
 )

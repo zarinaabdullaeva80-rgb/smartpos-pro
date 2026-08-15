@@ -1,0 +1,278 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>SmartPOS Pro — Промо-видео</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;font-family:'Inter',sans-serif;overflow:hidden;width:1280px;height:720px}
+#stage{width:1280px;height:720px;position:relative;overflow:hidden}
+.scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .7s ease}
+.scene.active{opacity:1;pointer-events:auto}
+#pb{position:fixed;bottom:0;left:0;height:4px;background:linear-gradient(90deg,#ff0080,#7b2ff7,#00c6ff);width:0%;z-index:999}
+/* S1 */
+#s1{background:radial-gradient(ellipse at 30% 50%,#1a0533,#0a0015)}
+.stars{position:absolute;inset:0;background-image:radial-gradient(circle,#fff 1px,transparent 1px),radial-gradient(circle,#fff 1px,transparent 1px);background-size:200px 200px,150px 150px;opacity:.4;animation:sm 30s linear infinite}
+@keyframes sm{to{background-position:200px 200px,150px 150px}}
+.ring{position:absolute;border-radius:50%;border:1px solid rgba(123,47,247,.3);top:50%;left:50%;transform:translate(-50%,-50%);animation:rp 3s ease-in-out infinite}
+@keyframes rp{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.6}50%{transform:translate(-50%,-50%) scale(1.05);opacity:1}}
+.intro{text-align:center;z-index:2;animation:ii 1s cubic-bezier(.16,1,.3,1) forwards;opacity:0;transform:translateY(40px)}
+@keyframes ii{to{opacity:1;transform:translateY(0)}}
+.bn{font-size:96px;font-weight:900;background:linear-gradient(135deg,#ff0080,#7b2ff7 40%,#00c6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-2px;line-height:1}
+.bt{font-size:28px;color:rgba(255,255,255,.7);margin-top:16px;font-weight:300;letter-spacing:4px;text-transform:uppercase}
+/* S2 */
+#s2{background:linear-gradient(135deg,#0f0c29,#302b63,#24243e)}
+.prob{text-align:center;z-index:2}
+.pt{font-size:52px;font-weight:700;color:#fff;margin-bottom:40px}
+.pt span{color:#ff4757}
+.pi-row{display:flex;gap:24px;justify-content:center}
+.pi{background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);border-radius:16px;padding:24px 28px;width:220px;text-align:center;opacity:0;transform:translateY(30px);transition:all .5s ease}
+.pi.show{opacity:1;transform:translateY(0)}
+.pi-ico{font-size:40px;margin-bottom:10px}
+.pi-lbl{color:rgba(255,255,255,.8);font-size:14px;line-height:1.4}
+/* S3 */
+#s3{background:linear-gradient(135deg,#0a0a1a,#0d1f3c)}
+.mc{display:flex;gap:40px;align-items:center;padding:40px;z-index:2}
+.ms{background:#12162a;border-radius:20px;border:1px solid rgba(255,255,255,.1);box-shadow:0 40px 80px rgba(0,0,0,.6),0 0 60px rgba(123,47,247,.2);width:680px;height:440px;animation:fl 4s ease-in-out infinite;overflow:hidden}
+@keyframes fl{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.sb{height:40px;background:linear-gradient(90deg,#ff0080,#7b2ff7);display:flex;align-items:center;padding:0 16px;gap:8px}
+.dot{width:12px;height:12px;border-radius:50%}
+.d1{background:#ff5f56}.d2{background:#febc2e}.d3{background:#28c940}
+.st{color:#fff;margin-left:12px;font-size:14px;font-weight:600}
+.sc{padding:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.scard{background:rgba(255,255,255,.05);border-radius:12px;padding:16px;border:1px solid rgba(255,255,255,.08);opacity:0;animation:cp .4s ease forwards}
+.scard:nth-child(1){animation-delay:.2s}.scard:nth-child(2){animation-delay:.4s}.scard:nth-child(3){animation-delay:.6s}.scard:nth-child(4){animation-delay:.8s}
+@keyframes cp{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+.sv{font-size:28px;font-weight:700;color:#fff}.sv.g{color:#10b981}.sv.p{color:#8b5cf6}.sv.y{color:#fbbf24}
+.sl{font-size:11px;color:rgba(255,255,255,.5);margin-top:4px;text-transform:uppercase}
+.fl2{display:flex;flex-direction:column;gap:14px;width:340px}
+.fi{display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.04);border-radius:14px;padding:14px 18px;border:1px solid rgba(255,255,255,.07);opacity:0;transform:translateX(30px);transition:all .5s ease}
+.fi.show{opacity:1;transform:translateX(0)}
+.fib{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.ft strong{color:#fff;font-size:14px;display:block}.ft span{color:rgba(255,255,255,.5);font-size:11px}
+.bc{display:flex;align-items:flex-end;gap:8px;height:110px;padding:0 10px;margin-top:8px}
+.bar{flex:1;border-radius:4px 4px 0 0;background:linear-gradient(to top,#7b2ff7,#ff0080);opacity:.8;animation:bg 1s ease forwards;transform-origin:bottom;transform:scaleY(0)}
+@keyframes bg{to{transform:scaleY(1)}}
+.bar:nth-child(1){animation-delay:.1s;height:40%}.bar:nth-child(2){animation-delay:.2s;height:70%}.bar:nth-child(3){animation-delay:.3s;height:55%}.bar:nth-child(4){animation-delay:.4s;height:90%}.bar:nth-child(5){animation-delay:.5s;height:65%}.bar:nth-child(6){animation-delay:.6s;height:80%}.bar:nth-child(7){animation-delay:.7s;height:100%}
+/* S4 */
+#s4{background:radial-gradient(ellipse at 60% 40%,#1a0533,#0a0015)}
+.ls{display:flex;flex-direction:column;align-items:center;gap:24px;z-index:2}
+.slbl{font-size:16px;text-transform:uppercase;letter-spacing:6px;color:rgba(255,255,255,.4);font-weight:300}
+.stit{font-size:56px;font-weight:800;color:#fff;text-align:center;line-height:1.1}
+.stit span{background:linear-gradient(135deg,#ffd700,#ff6b35);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.cr{display:flex;gap:18px;justify-content:center}
+.lcard{width:310px;height:190px;border-radius:18px;padding:22px;color:#fff;position:relative;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:cfl 4s ease-in-out infinite;opacity:0;transition:opacity .5s ease}
+.lcard.show{opacity:1}
+@keyframes cfl{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.bg1{background:linear-gradient(135deg,#1e3a5f,#2d5a87,#1e3a5f)}
+.bg2{background:linear-gradient(135deg,#4a1942,#8b2fc9,#4a1942)}
+.bg3{background:linear-gradient(135deg,#1a3a1a,#2d8b2f,#1a3a1a)}
+.chip{width:34px;height:26px;background:linear-gradient(135deg,#ffd700,#c8a000);border-radius:5px;margin-bottom:14px}
+.cnum{font-family:monospace;font-size:15px;letter-spacing:2px;margin-bottom:10px}
+.cname{font-size:12px;text-transform:uppercase;opacity:.8}
+.cbal{position:absolute;bottom:16px;right:18px;text-align:right}
+.cbal .v{font-size:22px;font-weight:700;color:#4ade80}
+.cbal .l{font-size:10px;opacity:.6;text-transform:uppercase}
+.holo{position:absolute;top:14px;right:14px;width:36px;height:36px;background:conic-gradient(from 0deg,#ff0080,#7b2ff7,#00c6ff,#ffd700,#ff0080);border-radius:50%;opacity:.6;animation:hs 3s linear infinite}
+@keyframes hs{to{transform:rotate(360deg)}}
+/* S5 */
+#s5{background:linear-gradient(135deg,#020c1b,#0a1628)}
+.fgw{z-index:2;text-align:center;padding:30px}
+.fg{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+.fgi{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:22px 14px;text-align:center;opacity:0;transform:translateY(20px);transition:all .4s ease}
+.fgi.show{opacity:1;transform:translateY(0)}
+.fge{font-size:34px;margin-bottom:10px}
+.fgn{color:#fff;font-size:13px;font-weight:600;margin-bottom:4px}
+.fgd{color:rgba(255,255,255,.4);font-size:11px;line-height:1.3}
+/* S6 */
+#s6{background:radial-gradient(ellipse at 50% 50%,#1a0533,#000)}
+.cw{text-align:center;z-index:2}
+.cbadge{display:inline-block;background:linear-gradient(135deg,rgba(255,0,128,.2),rgba(123,47,247,.2));border:1px solid rgba(255,0,128,.4);border-radius:100px;padding:8px 24px;font-size:13px;color:rgba(255,255,255,.8);margin-bottom:24px;letter-spacing:2px;text-transform:uppercase}
+.ctit{font-size:72px;font-weight:900;color:#fff;line-height:1;margin-bottom:14px}
+.ctit .gr{background:linear-gradient(135deg,#ff0080,#7b2ff7 50%,#00c6ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.csub{font-size:20px;color:rgba(255,255,255,.6);margin-bottom:44px;font-weight:300}
+.cbts{display:flex;gap:18px;justify-content:center}
+.cbp{padding:16px 46px;background:linear-gradient(135deg,#ff0080,#7b2ff7);color:#fff;border:none;border-radius:100px;font-size:19px;font-weight:700;cursor:pointer;box-shadow:0 10px 40px rgba(123,47,247,.5);animation:bg2 2s ease-in-out infinite;font-family:'Inter',sans-serif}
+@keyframes bg2{0%,100%{box-shadow:0 10px 40px rgba(123,47,247,.5)}50%{box-shadow:0 10px 60px rgba(255,0,128,.7)}}
+.cbs{padding:16px 36px;background:transparent;color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.2);border-radius:100px;font-size:17px;cursor:pointer;font-family:'Inter',sans-serif}
+.tw{position:absolute;bottom:60px;left:0;right:0;overflow:hidden;height:34px}
+.tk{display:flex;gap:50px;animation:tm 22s linear infinite;white-space:nowrap}
+.tk span{color:rgba(255,255,255,.3);font-size:13px;letter-spacing:3px;text-transform:uppercase}
+@keyframes tm{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* Controls */
+#ctrl{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:10px;align-items:center;background:rgba(0,0,0,.75);padding:8px 18px;border-radius:100px;border:1px solid rgba(255,255,255,.1);z-index:1000;backdrop-filter:blur(10px)}
+.cb{background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;font-size:17px;padding:3px 7px;transition:color .2s}
+.cb:hover{color:#fff}
+#si{color:rgba(255,255,255,.5);font-size:12px;font-family:'Inter',sans-serif;min-width:50px;text-align:center}
+</style>
+</head>
+<body>
+<div id="pb"></div>
+<div id="stage">
+
+<!-- SCENE 1 -->
+<div class="scene active" id="s1">
+  <div class="stars"></div>
+  <div class="ring" style="width:500px;height:500px"></div>
+  <div class="ring" style="width:700px;height:700px;animation-delay:.5s;border-color:rgba(255,0,128,.2)"></div>
+  <div class="ring" style="width:900px;height:900px;animation-delay:1s;border-color:rgba(0,198,255,.15)"></div>
+  <div class="intro">
+    <div class="bn">SmartPOS Pro</div>
+    <div class="bt">Умная торговля нового поколения</div>
+  </div>
+</div>
+
+<!-- SCENE 2 -->
+<div class="scene" id="s2">
+  <div class="prob">
+    <div class="pt">Устали от <span>хаоса</span> в бизнесе?</div>
+    <div class="pi-row">
+      <div class="pi" id="p1"><div class="pi-ico">📊</div><div class="pi-lbl">Нет понимания выручки в реальном времени</div></div>
+      <div class="pi" id="p2"><div class="pi-ico">📦</div><div class="pi-lbl">Склад не контролируется, товары теряются</div></div>
+      <div class="pi" id="p3"><div class="pi-ico">👥</div><div class="pi-lbl">Клиенты уходят без программы лояльности</div></div>
+      <div class="pi" id="p4"><div class="pi-ico">🧾</div><div class="pi-lbl">Ручная бухгалтерия — ошибки и потери</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENE 3 -->
+<div class="scene" id="s3">
+  <div class="mc">
+    <div class="ms">
+      <div class="sb"><div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div><div class="st">SmartPOS Pro — Панель управления</div></div>
+      <div class="sc">
+        <div class="scard"><div class="sv g">12.4M</div><div class="sl">Выручка сегодня</div></div>
+        <div class="scard"><div class="sv p">247</div><div class="sl">Продажи</div></div>
+        <div class="scard"><div class="sv y">1,842</div><div class="sl">Клиентов</div></div>
+        <div class="scard" style="grid-column:span 3"><div class="sl" style="margin-bottom:6px">Продажи за неделю</div><div class="bc"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div></div>
+      </div>
+    </div>
+    <div class="fl2">
+      <div class="fi" id="f1"><div class="fib" style="background:rgba(16,185,129,.15)">💰</div><div class="ft"><strong>Продажи в один клик</strong><span>Быстрое оформление, штрихкоды</span></div></div>
+      <div class="fi" id="f2"><div class="fib" style="background:rgba(139,92,246,.15)">📦</div><div class="ft"><strong>Управление складом</strong><span>Остатки, приход, перемещения</span></div></div>
+      <div class="fi" id="f3"><div class="fib" style="background:rgba(251,191,36,.15)">📈</div><div class="ft"><strong>Аналитика и отчёты</strong><span>Прибыль, ABC/XYZ, прогноз</span></div></div>
+      <div class="fi" id="f4"><div class="fib" style="background:rgba(255,0,128,.15)">🤝</div><div class="ft"><strong>CRM и клиенты</strong><span>История, долги, уведомления</span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENE 4 -->
+<div class="scene" id="s4">
+  <div class="ls">
+    <div class="slbl">Программа лояльности</div>
+    <div class="stit">Карты постоянных<br><span>клиентов</span></div>
+    <div class="cr">
+      <div class="lcard bg1" id="lc1"><div class="holo"></div><div class="chip"></div><div class="cnum">9999 5218 0575 178</div><div class="cname">Иванов Иван</div><div class="cbal"><div class="v">12,500</div><div class="l">баллов</div></div></div>
+      <div class="lcard bg2" id="lc2" style="transform:rotate(3deg) translateY(18px)"><div class="holo"></div><div class="chip"></div><div class="cnum">9999 4312 8845 392</div><div class="cname">Ахмедова Зарина</div><div class="cbal"><div class="v">8,200</div><div class="l">баллов</div></div></div>
+      <div class="lcard bg3" id="lc3" style="transform:rotate(-3deg) translateY(8px)"><div class="holo"></div><div class="chip"></div><div class="cnum">9999 7741 2234 006</div><div class="cname">Рахимов Бахтиёр</div><div class="cbal"><div class="v">31,000</div><div class="l">баллов</div></div></div>
+    </div>
+    <div style="color:rgba(255,255,255,.5);font-size:15px;text-align:center;max-width:680px;line-height:1.6">Штрихкоды, QR-коды, начисление и списание баллов, история операций.<br>Экспорт и печать в один клик.</div>
+  </div>
+</div>
+
+<!-- SCENE 5 -->
+<div class="scene" id="s5">
+  <div class="fgw">
+    <div class="slbl">Возможности</div>
+    <div class="stit" style="font-size:42px;margin-top:8px">Всё что нужно вашему бизнесу</div>
+    <div class="fg">
+      <div class="fgi" id="fg1"><div class="fge">🛒</div><div class="fgn">Продажи</div><div class="fgd">Касса, сканер, чеки</div></div>
+      <div class="fgi" id="fg2"><div class="fge">📦</div><div class="fgn">Склад</div><div class="fgd">Остатки, приход</div></div>
+      <div class="fgi" id="fg3"><div class="fge">👥</div><div class="fgn">CRM</div><div class="fgd">База клиентов</div></div>
+      <div class="fgi" id="fg4"><div class="fge">🎴</div><div class="fgn">Лояльность</div><div class="fgd">Карты и баллы</div></div>
+      <div class="fgi" id="fg5"><div class="fge">📊</div><div class="fgn">Аналитика</div><div class="fgd">Отчёты и прогноз</div></div>
+      <div class="fgi" id="fg6"><div class="fge">💼</div><div class="fgn">Сотрудники</div><div class="fgd">KPI и смены</div></div>
+      <div class="fgi" id="fg7"><div class="fge">🏦</div><div class="fgn">Финансы</div><div class="fgd">Кассы и счета</div></div>
+      <div class="fgi" id="fg8"><div class="fge">🔗</div><div class="fgn">1С / Excel</div><div class="fgd">Импорт/экспорт</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENE 6 -->
+<div class="scene" id="s6">
+  <div class="tw"><div class="tk"><span>SmartPOS Pro</span><span>•</span><span>Продажи</span><span>•</span><span>Склад</span><span>•</span><span>CRM</span><span>•</span><span>Лояльность</span><span>•</span><span>Аналитика</span><span>•</span><span>SmartPOS Pro</span><span>•</span><span>Продажи</span><span>•</span><span>Склад</span><span>•</span><span>CRM</span><span>•</span><span>Лояльность</span><span>•</span><span>Аналитика</span><span>•</span></div></div>
+  <div class="ring" style="width:500px;height:500px"></div>
+  <div class="ring" style="width:700px;height:700px;animation-delay:.5s;border-color:rgba(255,0,128,.2)"></div>
+  <div class="cw">
+    <div class="cbadge">✨ Новый уровень торговли</div>
+    <div class="ctit">Начните работу с<br><span class="gr">SmartPOS Pro</span></div>
+    <div class="csub">Всё для вашего бизнеса — в одном приложении</div>
+    <div class="cbts">
+      <button class="cbp">🚀 Попробовать бесплатно</button>
+      <button class="cbs">📺 Смотреть демо</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="ctrl">
+  <button class="cb" onclick="prevScene()">⏮</button>
+  <button class="cb" id="pb2" onclick="togglePlay()">⏸</button>
+  <button class="cb" onclick="nextScene()">⏭</button>
+  <span id="si">1 / 6</span>
+</div>
+
+<script>
+const SS=['s1','s2','s3','s4','s5','s6'];
+const DD=[4000,5000,6000,5000,5500,5000];
+let cur=0,playing=true,timer=null;
+
+function show(i){
+  SS.forEach((id,j)=>document.getElementById(id).classList.toggle('active',i===j));
+  document.getElementById('si').textContent=(i+1)+' / '+SS.length;
+  anim(i);
+}
+
+function anim(i){
+  if(i===1)['p1','p2','p3','p4'].forEach((id,k)=>setTimeout(()=>document.getElementById(id)?.classList.add('show'),k*300+400));
+  if(i===2)['f1','f2','f3','f4'].forEach((id,k)=>setTimeout(()=>document.getElementById(id)?.classList.add('show'),k*300+600));
+  if(i===3)['lc1','lc2','lc3'].forEach((id,k)=>setTimeout(()=>document.getElementById(id)?.classList.add('show'),k*300+400));
+  if(i===4)for(let k=1;k<=8;k++)setTimeout(()=>document.getElementById('fg'+k)?.classList.add('show'),(k-1)*150+300);
+}
+
+function reset(i){
+  if(i===1)['p1','p2','p3','p4'].forEach(id=>document.getElementById(id)?.classList.remove('show'));
+  if(i===2)['f1','f2','f3','f4'].forEach(id=>document.getElementById(id)?.classList.remove('show'));
+  if(i===3)['lc1','lc2','lc3'].forEach(id=>document.getElementById(id)?.classList.remove('show'));
+  if(i===4)for(let k=1;k<=8;k++)document.getElementById('fg'+k)?.classList.remove('show');
+}
+
+function nextScene(){reset(cur);cur=(cur+1)%SS.length;show(cur);resetT();}
+function prevScene(){reset(cur);cur=(cur-1+SS.length)%SS.length;show(cur);resetT();}
+function resetT(){clearTimeout(timer);if(playing)schedule();}
+
+function schedule(){
+  clearTimeout(timer);
+  animPB();
+  timer=setTimeout(()=>{
+    if(cur===SS.length-1){playing=false;updateBtn();return;}
+    nextScene();
+  },DD[cur]);
+}
+
+function animPB(){
+  const bar=document.getElementById('pb');
+  const dur=DD[cur];let st=null;
+  function step(ts){
+    if(!st)st=ts;
+    const p=Math.min((ts-st)/dur*100,100);
+    bar.style.width=p+'%';
+    if(p<100&&playing)requestAnimationFrame(step);
+  }
+  bar.style.width='0%';
+  requestAnimationFrame(step);
+}
+
+function togglePlay(){playing=!playing;updateBtn();if(playing)schedule();else clearTimeout(timer);}
+function updateBtn(){document.getElementById('pb2').textContent=playing?'⏸':'▶️';}
+
+show(0);schedule();
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight')nextScene();
+  if(e.key==='ArrowLeft')prevScene();
+  if(e.key===' '){e.preventDefault();togglePlay();}
+});
+</script>
+</body>
+</html>

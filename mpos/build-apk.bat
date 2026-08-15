@@ -52,8 +52,7 @@ if !ERRORLEVEL! EQU 0 (
     echo BUILD FAILED!
 )
 
-echo.
 echo Cleaning build dir...
 cd /d C:\
 rd /s /q "%BUILD_DIR%" 2>nul
-pause
+exit /b 0

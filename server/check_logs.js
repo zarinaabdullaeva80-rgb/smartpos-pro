@@ -1,28 +1,19 @@
-import fetch from 'node-fetch';
+import pool from './src/config/database.js';
 
-const RAILWAY_API = 'https://smartpos-pro-production.up.railway.app';
-const SYNC_SECRET = 'smartpos-sync-key-2026';
+async function checkLogs() {
+  try {
+    console.log('=== RECENT PAYMENT PROVIDER LOGS ===');
+    const res = await pool.query('SELECT * FROM payment_provider_logs ORDER BY created_at DESC LIMIT 10');
+    console.log(JSON.stringify(res.rows, null, 2));
 
-async function check() {
-    console.log('📜 Latest Logs & Errors from Railway:');
-    
-    const resLogs = await fetch(`${RAILWAY_API}/api/license/admin-cleanup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Sync-Secret': SYNC_SECRET },
-        body: JSON.stringify({ action: 'get_logs' })
-    });
-    const dataLogs = await resLogs.json();
-    console.log('\n--- API LOGS ---');
-    console.log(JSON.stringify(dataLogs.results?.logs || [], null, 2));
-
-    const resErrors = await fetch(`${RAILWAY_API}/api/license/admin-cleanup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Sync-Secret': SYNC_SECRET },
-        body: JSON.stringify({ action: 'get_errors' })
-    });
-    const dataErrors = await resErrors.json();
-    console.log('\n--- ERROR LOGS ---');
-    console.log(JSON.stringify(dataErrors.results?.errors || [], null, 2));
+    console.log('=== ORDER 88 DETAILS ===');
+    const orderRes = await pool.query('SELECT id, document_number, total_amount, final_amount, status, payment_status FROM sales WHERE id = 88 OR document_number = \'88\'');
+    console.log(JSON.stringify(orderRes.rows, null, 2));
+  } catch (err) {
+    console.error('Error:', err);
+  } finally {
+    process.exit(0);
+  }
 }
 
-check();
+checkLogs();
