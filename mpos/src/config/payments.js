@@ -14,24 +14,24 @@ export const PAYMENT_CONFIG = {
     // Payme
     payme: {
         enabled: true,
-        merchantId: 'DEMO_PAYME_MERCHANT', // Замените на реальный Merchant ID
-        // Формат QR: https://payme.uz/checkout/{merchantId}?a={amount}&o={orderId}
+        merchantId: '6a7c062740e17562c3de2fb3',
+        // Формат QR: https://checkout.paycom.uz/{base64} или https://payme.uz/checkout/{merchantId}
         // amount в тийинах (сумма * 100)
     },
 
     // Click
     click: {
         enabled: true,
-        serviceId: 'DEMO_SERVICE_ID',     // Замените на реальный Service ID
-        merchantId: 'DEMO_MERCHANT_ID',    // Замените на реальный Merchant ID
-        secretKey: 'DEMO_SECRET_KEY',      // Секретный ключ (для сервера)
+        serviceId: '109579',
+        merchantId: '63646',
+        secretKey: 'fvy6lQSn6o0F',
         // Формат: https://my.click.uz/services/pay?service_id={serviceId}&merchant_id={merchantId}&amount={amount}
     },
 
     // UZUM Bank
     uzum: {
         enabled: true,
-        merchantId: 'DEMO_UZUM_MERCHANT',  // Замените на реальный Merchant ID
+        merchantId: 'DEMO_UZUM_MERCHANT',
         // Формат: https://uzumbank.uz/pay?m={merchantId}&a={amount}&r={orderId}
     },
 
@@ -40,15 +40,14 @@ export const PAYMENT_CONFIG = {
         currency: 'UZS',
         minAmount: 1000,        // Минимальная сумма (so'm)
         maxAmount: 100000000,   // Максимальная сумма (so'm)
-        checkInterval: 5000,    // Интервал проверки статуса (мс)
+        checkInterval: 3000,    // Интервал проверки статуса (мс)
     },
 
     // Webhook URL для получения уведомлений об оплате
-    // Настройте в личном кабинете каждой системы
     webhooks: {
-        payme: 'https://your-server.com/api/payments/payme/webhook',
-        click: 'https://your-server.com/api/payments/click/webhook',
-        uzum: 'https://your-server.com/api/payments/uzum/webhook',
+        payme: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/payme',
+        click: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/click/prepare',
+        uzum: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/uzum/webhook',
     }
 };
 
