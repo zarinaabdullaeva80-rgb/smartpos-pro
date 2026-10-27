@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const SERVER_PORT = 5000;
 
 // URL облачного сервера (Railway)
-const CLOUD_URL = 'https://smartpos-pro-production.up.railway.app';
+const CLOUD_URL = 'https://smartpos-pro-production-f885.up.railway.app';
 
 
 let mainWindow = null;

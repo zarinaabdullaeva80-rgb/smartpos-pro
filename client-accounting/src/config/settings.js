@@ -15,7 +15,7 @@ const DEFAULT_SERVER_URL = 'http://127.0.0.1:5000/api';
 const DEFAULT_PORT = 5000;
 
 // Центральный сервер лицензирования (Railway cloud)
-const LICENSE_SERVER_URL = 'https://smartpos-pro-production.up.railway.app/api';
+const LICENSE_SERVER_URL = 'https://smartpos-pro-production-f885.up.railway.app/api';
 
 // Режимы работы
 export const SERVER_MODES = {
