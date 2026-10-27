@@ -2,10 +2,9 @@ import fetch from 'node-fetch';
 
 // ★ Секрет для синхронизации между локальным сервером и Railway
 const CLOUD_SYNC_SECRET = process.env.CLOUD_SYNC_SECRET || 'smartpos-sync-key-2026';
-// ★ ОБА deployment'а Railway — клиент использует f885, авто-синхронизация шла на оригинальный
+// ★ Основной deployment Railway
 const CLOUD_URLS = [
     process.env.CLOUD_SERVER_URL || 'https://smartpos-pro-production.up.railway.app',
-    'https://smartpos-pro-production-f885.up.railway.app'
 ];
 
 /**

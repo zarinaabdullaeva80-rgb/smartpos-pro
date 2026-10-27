@@ -61,7 +61,7 @@ function Login({ onLogin }) {
     }, [srvMode]);
 
     // Проверка подключения к облачному серверу Railway
-    const CLOUD_API_URL = 'https://smartpos-pro-production-f885.up.railway.app/api';
+    const CLOUD_API_URL = 'https://smartpos-pro-production.up.railway.app/api';
 
     const checkServerConnection = async () => {
         setServerChecking(true);
@@ -105,7 +105,7 @@ function Login({ onLogin }) {
 
         // Автоматическая инициализация: cloud → лицензия → автовход
         // Жёстко устанавливаем облачный URL при каждом запуске
-        setApiUrl('https://smartpos-pro-production-f885.up.railway.app/api');
+        setApiUrl('https://smartpos-pro-production.up.railway.app/api');
         setServerMode(SERVER_MODES.CLOUD);
 
         const init = async () => {

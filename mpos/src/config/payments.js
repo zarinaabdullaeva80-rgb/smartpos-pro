@@ -45,9 +45,9 @@ export const PAYMENT_CONFIG = {
 
     // Webhook URL для получения уведомлений об оплате
     webhooks: {
-        payme: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/payme',
-        click: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/click/prepare',
-        uzum: 'https://smartpos-pro-production-f885.up.railway.app/api/payments/uzum/webhook',
+        payme: 'https://smartpos-pro-production.up.railway.app/api/payments/payme',
+        click: 'https://smartpos-pro-production.up.railway.app/api/payments/click/prepare',
+        uzum: 'https://smartpos-pro-production.up.railway.app/api/payments/uzum/webhook',
     }
 };
 

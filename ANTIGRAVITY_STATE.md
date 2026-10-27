@@ -68,7 +68,7 @@ db6a58b feat: add Devices tab to Settings with sessions, login history and IP bl
 
 ### ☁️ Облачные Эндпоинты (Railway):
 - Главный: `https://smartpos-pro-production.up.railway.app`
-- Резервный: `https://smartpos-pro-production-f885.up.railway.app`
+- ~~Резервный: `https://smartpos-pro-production-f885.up.railway.app`~~ ❌ **УДАЛЁН! Не использовать!**
 - Вебхук Telegram: `🟢 Активен и настроен`
 
 ---
